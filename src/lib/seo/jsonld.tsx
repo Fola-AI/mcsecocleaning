@@ -73,7 +73,7 @@ export function organizationLd() {
     "@id": `${site.url}/#organization`,
     name: site.company.registeredName,
     url: site.url,
-    logo: `${site.url}/icon.png`,
+    logo: `${site.url}/opengraph-image`,
     email: site.contact.email,
     telephone: site.contact.phone,
     address: postalAddress(site.company.registeredAddress),

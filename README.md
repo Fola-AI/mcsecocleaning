@@ -1,36 +1,84 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# mcsecocleaning
 
-## Getting Started
+A UK eco-friendly cleaning company platform: a search-optimised marketing site, an online booking & payments system, an operations/crew system, and a customer portal. Built to the spec in [`docs/PRD_v2.md`](docs/PRD_v2.md).
 
-First, run the development server:
+**Status: Phase 1 (Foundation & Marketing Site) — built, shippable.** See [`docs/BUILD-STATUS.md`](docs/BUILD-STATUS.md) for the phase-by-phase state and the business inputs still required before launch.
+
+## Stack
+
+| Layer | Choice |
+|---|---|
+| Framework | Next.js 16 (App Router, SSR/SSG), React 19, TypeScript |
+| Styling | Tailwind CSS v4, custom eco design system |
+| Database | PostgreSQL via Prisma 6 (Neon/Supabase, eu-west-2) |
+| Scheduler/queue | Inngest (durable cron + event functions) |
+| Payments | Stripe (Phase 2) |
+| Email / SMS | Resend / Twilio |
+| Object storage | Cloudflare R2 (Phase 5) |
+| Hosting | Vercel (London) |
+
+## Getting started
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+cp .env.example .env.local   # fill in values (see below)
+npm run dev                  # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Without a database or API keys the site still runs: lead submissions are logged
+to the server console, and pages render from typed config.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### With a database
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+# set DATABASE_URL + DIRECT_URL in .env.local, then:
+npm run db:push     # create the schema
+npm run db:seed     # seed service types, areas, gated location pages
+```
 
-## Learn More
+## Scripts
 
-To learn more about Next.js, take a look at the following resources:
+| Script | Purpose |
+|---|---|
+| `npm run dev` | Dev server |
+| `npm run build` | Production build (typecheck + prerender) |
+| `npm run lint` | ESLint |
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm run db:push` / `db:migrate` | Apply schema |
+| `npm run db:seed` | Seed reference data |
+| `npm run db:studio` | Prisma Studio |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Project structure
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```
+src/
+  app/                     App Router pages, route handlers, sitemap/robots/llms
+    [service]/             Service hub + content-gated [area] location pages
+    api/inngest/           Durable scheduler endpoint
+    actions/               Server actions (lead capture)
+  components/              layout, marketing, ui, analytics
+  config/                  site (NAP), services, areas, business data
+  content/                 blog articles
+  lib/                     money/VAT, db, email, serviceArea, seo, inngest
+prisma/                    schema + seed
+docs/                      PRD, build status, deployment, Phase 0 checklist
+```
 
-## Deploy on Vercel
+## Key implementation notes
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- **Money is VAT-aware from day one** (`src/lib/money.ts`): every price is
+  net/vat/gross in pence; `VAT_REGISTERED` flips on without a migration (§10.1).
+- **Schedule and billing are decoupled** in the schema: Jobs are materialised
+  from a Subscription's RRULE and exist independently of payment status (§6.2).
+- **Location pages are content-gated** (`src/config/areas.ts`): a service×area
+  page will not publish without ≥400 area-specific words, a local photo, a local
+  review and an area price note — anti-doorway protection (§5.3).
+- **Reviews are shown but never marked up as `AggregateRating`** (§5.2).
+- **Cookie consent gates GA4**; nothing tracks before opt-in (§10.3).
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Before launch
+
+Fill the `TODO(business-input)` placeholders (search the repo) — chiefly
+`src/config/site.ts` (NAP, company number, domain) and pricing in
+`src/config/services.ts`. See [`docs/PHASE-0-CHECKLIST.md`](docs/PHASE-0-CHECKLIST.md)
+and [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
