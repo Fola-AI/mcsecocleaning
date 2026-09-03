@@ -1,0 +1,100 @@
+/**
+ * Seed script — populates ServiceType, AddOn, ServiceArea and LocationPage rows
+ * from the typed config so the database mirrors the marketing site.
+ *
+ * Run once a real DATABASE_URL is provisioned:  npm run db:seed
+ * Safe to re-run (idempotent upserts).
+ */
+import { PrismaClient, PricingModel } from "@prisma/client";
+import { services } from "../src/config/services";
+import { addOns } from "../src/config/services";
+import { areas, canPublishLocationPage, locationWordCount } from "../src/config/areas";
+
+const db = new PrismaClient();
+
+async function main() {
+  // Service types
+  for (const s of services) {
+    await db.serviceType.upsert({
+      where: { slug: s.slug },
+      update: {
+        name: s.name,
+        pricingModel: s.pricingModel as PricingModel,
+        minimumValue: s.fromPricePence ?? 0,
+        remedyWindowHours: s.remedyWindowHours,
+        active: true,
+      },
+      create: {
+        slug: s.slug,
+        name: s.name,
+        pricingModel: s.pricingModel as PricingModel,
+        baseRates: {},
+        durationRates: {},
+        minimumValue: s.fromPricePence ?? 0,
+        remedyWindowHours: s.remedyWindowHours,
+        active: true,
+      },
+    });
+  }
+
+  // Add-ons
+  for (const a of addOns) {
+    await db.addOn.upsert({
+      where: { slug: a.slug },
+      update: { name: a.name, price: a.fromPricePence ?? 0, durationMinutes: a.durationMinutes, serviceTypeIds: a.appliesTo },
+      create: {
+        slug: a.slug,
+        name: a.name,
+        price: a.fromPricePence ?? 0,
+        durationMinutes: a.durationMinutes,
+        serviceTypeIds: a.appliesTo,
+      },
+    });
+  }
+
+  // Service areas + gated location pages
+  for (const area of areas) {
+    for (const district of area.postcodeDistricts) {
+      const sa = await db.serviceArea.upsert({
+        where: { postcodeDistrict: district.toUpperCase() },
+        update: { areaName: area.name, slug: area.slug, active: area.active },
+        create: {
+          postcodeDistrict: district.toUpperCase(),
+          areaName: area.name,
+          slug: area.slug,
+          active: area.active,
+        },
+      });
+
+      for (const sc of area.serviceContent) {
+        const st = await db.serviceType.findUnique({ where: { slug: sc.serviceSlug } });
+        if (!st) continue;
+        const gate = canPublishLocationPage(area, sc.serviceSlug);
+        await db.locationPage.upsert({
+          where: { serviceTypeId_serviceAreaId: { serviceTypeId: st.id, serviceAreaId: sa.id } },
+          update: {
+            wordCount: locationWordCount(area, sc.serviceSlug),
+            published: gate.ok,
+          },
+          create: {
+            serviceTypeId: st.id,
+            serviceAreaId: sa.id,
+            slug: `${sc.serviceSlug}-${area.slug}`,
+            content: sc.intro,
+            wordCount: locationWordCount(area, sc.serviceSlug),
+            published: gate.ok,
+          },
+        });
+      }
+    }
+  }
+
+  console.log("Seed complete.");
+}
+
+main()
+  .catch((e) => {
+    console.error(e);
+    process.exit(1);
+  })
+  .finally(() => db.$disconnect());

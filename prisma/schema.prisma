@@ -1,0 +1,731 @@
+// mcsecocleaning data model (§11).
+// Postgres (Neon/Supabase, eu-west-2). Money is stored as integer pence with a
+// full net/vat/gross breakdown (§10.1). Schedule and billing are DECOUPLED:
+// Jobs are materialised from a Subscription's RRULE and exist independently of
+// payment status (§6.2).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ───────────────────────── Enums ─────────────────────────
+
+enum Role {
+  customer
+  crew
+  supervisor
+  admin
+  owner
+}
+
+enum OrganisationType {
+  commercial
+  managing_agent
+}
+
+enum PricingModel {
+  room
+  hourly
+  quoted
+}
+
+enum PaymentMethod {
+  card
+  bacs
+  invoice
+}
+
+enum SubscriptionStatus {
+  active
+  paused
+  cancelled
+}
+
+enum JobStatus {
+  draft
+  booked
+  payment_authorised
+  scheduled
+  in_progress
+  completed
+  awaiting_feedback
+  closed
+  cancelled
+  on_hold
+  no_access
+}
+
+enum JobSource {
+  web
+  admin
+  phone
+  partner
+}
+
+enum PayType {
+  hourly
+  per_job
+  percentage
+}
+
+enum MediaCategory {
+  pre_job
+  before
+  after
+  issue
+  checklist
+}
+
+enum IssueType {
+  complaint
+  damage_claim
+  general
+}
+
+enum IssueStatus {
+  open
+  resolved
+  converted_to_support
+}
+
+enum IssueResolution {
+  reclean
+  refund
+  explanation
+  none
+}
+
+enum PaymentType {
+  charge
+  refund
+  tip
+  fee
+}
+
+enum FeeReason {
+  cancellation
+  lockout
+}
+
+enum PaymentStatus {
+  pending
+  authorised
+  captured
+  failed
+  refunded
+}
+
+enum DiscountType {
+  percent
+  fixed
+}
+
+enum LeadType {
+  commercial
+  communal
+  waitlist
+}
+
+enum ReviewPlatform {
+  google
+  trustpilot
+  onsite
+}
+
+enum AIInsightStatus {
+  pending
+  approved
+  edited
+  rejected
+}
+
+// ───────────────────────── Core ─────────────────────────
+
+model Organisation {
+  id            String           @id @default(cuid())
+  name          String
+  type          OrganisationType @default(commercial)
+  vatNumber     String?
+  billingEmail  String?
+  billingAddress Json?
+  paymentTerms  String? // e.g. "net30"
+  users         User[]
+  properties    Property[]
+  invoices      Invoice[]
+  leads         Lead[]
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+}
+
+model User {
+  id                String    @id @default(cuid())
+  role              Role      @default(customer)
+  email             String    @unique
+  phone             String?
+  name              String?
+  passwordHash      String? // crew PIN/hash; customers use magic link
+  organisationId    String?
+  organisation      Organisation? @relation(fields: [organisationId], references: [id])
+  marketingConsent  Boolean   @default(false)
+  consentUpdatedAt  DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  properties        Property[]     @relation("CustomerProperties")
+  preferredForProps Property[]     @relation("PreferredCrew")
+  subscriptions     Subscription[]
+  jobs              Job[]          @relation("CustomerJobs")
+  reviews           Review[]
+  crewProfile       CrewProfile?
+  assignments       JobAssignment[]
+  timeEntries       TimeEntry[]
+  accountCredits    AccountCredit[]
+  referralsMade     Referral[]     @relation("Referrer")
+  referredBy        Referral[]     @relation("Referred")
+  issueMessages     IssueMessage[]
+
+  @@index([organisationId])
+  @@index([role])
+}
+
+model Property {
+  id                  String   @id @default(cuid())
+  customerId          String
+  customer            User     @relation("CustomerProperties", fields: [customerId], references: [id])
+  organisationId      String?
+  organisation        Organisation? @relation(fields: [organisationId], references: [id])
+  addressLine1        String
+  addressLine2        String?
+  city                String?
+  postcode            String
+  propertyType        String?
+  // { kitchens, bathrooms, receptions, bedrooms, other }
+  roomCounts          Json
+  entryMethod         String? // key_held | lockbox | client_present | concierge | key_safe
+  accessCodeEncrypted String? // 🔒 encrypted at rest (§6.9)
+  alarmCodeEncrypted  String? // 🔒 encrypted at rest (§6.9)
+  parkingNotes        String?
+  pets                Json? // [{ name, type, temperament, containment }]
+  productPreferences  Json? // { fragranceFree, petSafe, allergySensitive, notes }
+  doNotTouch          String?
+  accessNotes         String?
+  preferredCrewId     String?
+  preferredCrew       User?    @relation("PreferredCrew", fields: [preferredCrewId], references: [id])
+  subscriptions       Subscription[]
+  jobs                Job[]
+  accessCodeAudits    AccessCodeAudit[]
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([customerId])
+  @@index([postcode])
+}
+
+model ServiceType {
+  id                String  @id @default(cuid())
+  slug              String  @unique
+  name              String
+  pricingModel      PricingModel
+  baseRates         Json // per-room rates
+  durationRates     Json // per-room minutes
+  minimumValue      Int     @default(0) // pence
+  remedyWindowHours Int     @default(48)
+  active            Boolean @default(true)
+  templates         ServiceTemplate[]
+  subscriptions     Subscription[]
+  jobs              Job[]
+  quotes            Quote[]
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model AddOn {
+  id              String  @id @default(cuid())
+  slug            String  @unique
+  name            String
+  serviceTypeIds  String[]
+  price           Int // pence (VAT-inclusive display when registered handled at app layer)
+  durationMinutes Int
+  active          Boolean @default(true)
+}
+
+// ───────────────────────── Quote / Booking ─────────────────────────
+
+model Quote {
+  id                      String   @id @default(cuid())
+  customerId              String?
+  propertySnapshot        Json
+  serviceTypeId           String
+  serviceType             ServiceType @relation(fields: [serviceTypeId], references: [id])
+  frequency               String // one_off | weekly | fortnightly | monthly
+  addons                  Json?
+  pricingVersion          String
+  net                     Int
+  vatRate                 Float    @default(0)
+  vatAmount               Int      @default(0)
+  gross                   Int
+  estimatedDurationMinutes Int
+  expiresAt               DateTime
+  convertedJobId          String?
+  createdAt               DateTime @default(now())
+
+  @@index([customerId])
+}
+
+model Subscription {
+  id                       String   @id @default(cuid())
+  customerId               String
+  customer                 User     @relation(fields: [customerId], references: [id])
+  propertyId               String
+  property                 Property @relation(fields: [propertyId], references: [id])
+  serviceTypeId            String
+  serviceType              ServiceType @relation(fields: [serviceTypeId], references: [id])
+  recurrenceRule           String // RRULE, e.g. FREQ=WEEKLY;BYDAY=TU (§6.2)
+  preferredTime            String?
+  stripeSubscriptionId     String? // billing ONLY — never drives job existence
+  gocardlessMandateId      String?
+  paymentMethod            PaymentMethod @default(card)
+  pricePerVisitNet         Int
+  vatAmount                Int      @default(0)
+  gross                    Int
+  status                   SubscriptionStatus @default(active)
+  firstCleanSurchargeApplied Boolean @default(false)
+  generatedUntil           DateTime? // rolling materialisation horizon (§6.2)
+  jobs                     Job[]
+  proposalId               String?
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  @@index([customerId])
+  @@index([status])
+}
+
+model Job {
+  id                       String   @id @default(cuid())
+  customerId               String
+  customer                 User     @relation("CustomerJobs", fields: [customerId], references: [id])
+  propertyId               String
+  property                 Property @relation(fields: [propertyId], references: [id])
+  serviceTypeId            String
+  serviceType              ServiceType @relation(fields: [serviceTypeId], references: [id])
+  subscriptionId           String?
+  subscription             Subscription? @relation(fields: [subscriptionId], references: [id])
+  quoteId                  String?
+  status                   JobStatus @default(draft)
+  scheduledStart           DateTime?
+  scheduledEnd             DateTime?
+  estimatedDurationMinutes Int
+  actualDurationMinutes    Int?
+  net                      Int
+  vatRate                  Float    @default(0)
+  vatAmount                Int      @default(0)
+  gross                    Int
+  addons                   Json?
+  discountCode             String?
+  discountAmount           Int      @default(0)
+  isRecleanForJobId        String? // links a zero-price re-clean to the original (§6.11)
+  // CCR 14-day consent: { givenAt, ip, wordingVersion } (§10.2)
+  ccrConsent               Json?
+  // Payment status is INDEPENDENT of the job's existence (§6.2)
+  paymentStatus            PaymentStatus @default(pending)
+  source                   JobSource @default(web)
+  notes                    String?
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  assignments   JobAssignment[]
+  statusEvents  JobStatusEvent[]
+  timeEntries   TimeEntry[]
+  checklistItems JobChecklistItem[]
+  media         Media[]
+  mediaLinks    MediaLink[]
+  issues        IssueThread[]
+  payments      Payment[]
+
+  @@index([customerId])
+  @@index([subscriptionId])
+  @@index([status])
+  @@index([scheduledStart])
+}
+
+model JobAssignment {
+  id         String   @id @default(cuid())
+  jobId      String
+  job        Job      @relation(fields: [jobId], references: [id])
+  crewId     String
+  crew       User     @relation(fields: [crewId], references: [id])
+  isLead     Boolean  @default(false)
+  assignedAt DateTime @default(now())
+
+  @@unique([jobId, crewId])
+  @@index([crewId])
+}
+
+model JobStatusEvent {
+  id         String    @id @default(cuid())
+  jobId      String
+  job        Job       @relation(fields: [jobId], references: [id])
+  fromStatus JobStatus?
+  toStatus   JobStatus
+  actorId    String? // audit reference (no formal relation to keep User lean)
+  note       String?
+  createdAt  DateTime  @default(now())
+
+  @@index([jobId])
+}
+
+model TimeEntry {
+  id              String    @id @default(cuid())
+  jobId           String
+  job             Job       @relation(fields: [jobId], references: [id])
+  crewId          String
+  crew            User      @relation(fields: [crewId], references: [id])
+  clockInAt       DateTime?
+  clockInLat      Float?
+  clockInLng      Float?
+  clockOutAt      DateTime?
+  clockOutLat     Float?
+  clockOutLng     Float?
+  durationMinutes Int?
+
+  @@index([jobId])
+  @@index([crewId])
+}
+
+// ───────────────────────── Quality ─────────────────────────
+
+model ServiceTemplate {
+  id            String   @id @default(cuid())
+  serviceTypeId String
+  serviceType   ServiceType @relation(fields: [serviceTypeId], references: [id])
+  name          String
+  items         Json // [{ label, requiresPhoto, order }]
+  createdAt     DateTime @default(now())
+}
+
+model JobChecklistItem {
+  id              String   @id @default(cuid())
+  jobId           String
+  job             Job      @relation(fields: [jobId], references: [id])
+  templateItemRef String?
+  label           String
+  completed       Boolean  @default(false)
+  completedBy     String? // audit reference
+  completedAt     DateTime?
+  mediaId         String?
+
+  @@index([jobId])
+}
+
+// ───────────────────────── Media (§6.10) ─────────────────────────
+
+model Media {
+  id             String   @id @default(cuid())
+  jobId          String
+  job            Job      @relation(fields: [jobId], references: [id])
+  uploaderRole   Role
+  storageKey     String
+  mimeType       String
+  category       MediaCategory
+  checklistItemId String?
+  retainUntil    DateTime // 12–24 months; link expires, media does not (§6.10)
+  createdAt      DateTime @default(now())
+
+  @@index([jobId])
+}
+
+model MediaLink {
+  id             String    @id @default(cuid())
+  jobId          String
+  job            Job       @relation(fields: [jobId], references: [id])
+  jwtTokenRef    String
+  expiresAt      DateTime // 48h customer-facing link (§6.10)
+  firstAccessedAt DateTime?
+  accessCount    Int       @default(0)
+
+  @@index([jobId])
+}
+
+// ───────────────────────── Issues (§6.11) ─────────────────────────
+
+model IssueThread {
+  id                   String   @id @default(cuid())
+  jobId                String
+  job                  Job      @relation(fields: [jobId], references: [id])
+  type                 IssueType @default(complaint)
+  status               IssueStatus @default(open)
+  remedyWindowExpiresAt DateTime?
+  sentiment            String?
+  urgency              String?
+  resolution           IssueResolution?
+  resolutionJobId      String?
+  messages             IssueMessage[]
+  openedAt             DateTime @default(now())
+  resolvedAt           DateTime?
+
+  @@index([jobId])
+  @@index([status])
+}
+
+model IssueMessage {
+  id         String   @id @default(cuid())
+  threadId   String
+  thread     IssueThread @relation(fields: [threadId], references: [id])
+  authorId   String?
+  author     User?    @relation(fields: [authorId], references: [id])
+  authorRole Role
+  body       String
+  media      Json?
+  createdAt  DateTime @default(now())
+
+  @@index([threadId])
+}
+
+// ───────────────────────── Payments (§6.5) ─────────────────────────
+
+model Payment {
+  id                    String   @id @default(cuid())
+  jobId                 String?
+  job                   Job?     @relation(fields: [jobId], references: [id])
+  subscriptionId        String?
+  type                  PaymentType
+  feeReason             FeeReason?
+  stripePaymentIntentId String?
+  gocardlessPaymentId   String?
+  net                   Int
+  vatAmount             Int      @default(0)
+  gross                 Int
+  status                PaymentStatus @default(pending)
+  capturedAt            DateTime?
+  createdAt             DateTime @default(now())
+
+  @@index([jobId])
+  @@index([subscriptionId])
+}
+
+model Invoice {
+  id             String   @id @default(cuid())
+  organisationId String
+  organisation   Organisation @relation(fields: [organisationId], references: [id])
+  jobIds         String[]
+  invoiceNumber  String   @unique
+  issueDate      DateTime
+  dueDate        DateTime
+  net            Int
+  vatAmount      Int      @default(0)
+  gross          Int
+  status         String   @default("draft")
+  pdfStorageKey  String?
+
+  @@index([organisationId])
+}
+
+// ───────────────────────── Growth (§6.14) ─────────────────────────
+
+model DiscountCode {
+  id                 String   @id @default(cuid())
+  code               String   @unique
+  type               DiscountType
+  value              Int // percent (0-100) or pence
+  serviceTypeIds     String[]
+  maxUses            Int?
+  uses               Int      @default(0)
+  validFrom          DateTime?
+  validUntil         DateTime?
+  singleUsePerCustomer Boolean @default(false)
+  createdAt          DateTime @default(now())
+}
+
+model Referral {
+  id                 String   @id @default(cuid())
+  referrerCustomerId String
+  referrer           User     @relation("Referrer", fields: [referrerCustomerId], references: [id])
+  code               String   @unique
+  referredCustomerId String?
+  referred           User?    @relation("Referred", fields: [referredCustomerId], references: [id])
+  referrerCredit     Int      @default(0)
+  referredCredit     Int      @default(0)
+  status             String   @default("pending")
+  redeemedAt         DateTime?
+
+  @@index([referrerCustomerId])
+}
+
+model AccountCredit {
+  id             String   @id @default(cuid())
+  customerId     String
+  customer       User     @relation(fields: [customerId], references: [id])
+  amount         Int
+  reason         String?
+  sourceReferralId String?
+  usedAmount     Int      @default(0)
+  expiresAt      DateTime?
+  createdAt      DateTime @default(now())
+
+  @@index([customerId])
+}
+
+// ───────────────────────── Leads / RFQ (§6.6) ─────────────────────────
+
+model Lead {
+  id               String   @id @default(cuid())
+  type             LeadType
+  name             String?
+  email            String?
+  phone            String?
+  organisationName String?
+  organisationId   String?
+  organisation     Organisation? @relation(fields: [organisationId], references: [id])
+  postcode         String?
+  requirements     Json?
+  status           String   @default("new")
+  assignedTo       String?
+  source           String?
+  proposals        Proposal[]
+  createdAt        DateTime @default(now())
+
+  @@index([type])
+  @@index([status])
+}
+
+model Proposal {
+  id             String   @id @default(cuid())
+  leadId         String
+  lead           Lead     @relation(fields: [leadId], references: [id])
+  scope          Json
+  pricePerVisit  Int
+  frequency      String
+  termMonths     Int?
+  status         String   @default("draft")
+  sentAt         DateTime?
+  acceptedAt     DateTime?
+  subscriptionId String?
+  createdAt      DateTime @default(now())
+
+  @@index([leadId])
+}
+
+// ───────────────────────── Crew (§6.16) ─────────────────────────
+
+model CrewProfile {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id])
+  payType      PayType  @default(hourly)
+  payRate      Int // pence per hour / per job, or percentage points
+  workingHours Json? // { mon: [...], tue: [...] }
+  dbsCheckedAt DateTime?
+  startDate    DateTime?
+  unavailability CrewUnavailability[]
+}
+
+model CrewUnavailability {
+  id        String   @id @default(cuid())
+  crewId    String
+  crew      CrewProfile @relation(fields: [crewId], references: [id])
+  startsAt  DateTime
+  endsAt    DateTime
+  reason    String?
+
+  @@index([crewId])
+}
+
+// ───────────────────────── SEO / Content (§5) ─────────────────────────
+
+model ServiceArea {
+  id               String   @id @default(cuid())
+  postcodeDistrict String   @unique
+  areaName         String
+  slug             String
+  active           Boolean  @default(true)
+  travelNotes      String?
+  locationPages    LocationPage[]
+}
+
+model LocationPage {
+  id            String   @id @default(cuid())
+  serviceTypeId String
+  serviceAreaId String
+  serviceArea   ServiceArea @relation(fields: [serviceAreaId], references: [id])
+  slug          String
+  content       String   @db.Text
+  wordCount     Int      @default(0)
+  photoIds      String[]
+  reviewIds     String[]
+  // Gate (§5.3): published only when wordCount>=400 AND photos AND reviews
+  published     Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([serviceTypeId, serviceAreaId])
+}
+
+model Review {
+  id            String   @id @default(cuid())
+  customerId    String?
+  customer      User?    @relation(fields: [customerId], references: [id])
+  jobId         String?
+  rating        Int
+  body          String?
+  serviceAreaId String?
+  platform      ReviewPlatform @default(onsite)
+  requestedAt   DateTime?
+  submittedAt   DateTime?
+  displayOnSite Boolean  @default(false)
+
+  @@index([serviceAreaId])
+}
+
+model BlackoutDate {
+  id        String   @id @default(cuid())
+  date      DateTime
+  reason    String?
+  appliesTo String   @default("all") // all | <serviceTypeId>
+
+  @@unique([date, appliesTo])
+}
+
+// ───────────────────────── AI (Phase 7+) ─────────────────────────
+
+model AIInsight {
+  id                String   @id @default(cuid())
+  type              String
+  relatedEntityType String?
+  relatedEntityId   String?
+  score             Float?
+  reasoning         String?
+  status            AIInsightStatus @default(pending)
+  createdAt         DateTime @default(now())
+}
+
+// ───────────────────────── Ops / Security ─────────────────────────
+
+// Webhook idempotency — store event.id and reject replays (§6.5, §9.2)
+model WebhookEvent {
+  id         String   @id // provider event id (e.g. Stripe evt_...)
+  provider   String
+  type       String?
+  receivedAt DateTime @default(now())
+  payload    Json?
+
+  @@index([provider])
+}
+
+// Every access to an encrypted property code is logged (§6.9)
+model AccessCodeAudit {
+  id         String   @id @default(cuid())
+  propertyId String
+  property   Property @relation(fields: [propertyId], references: [id])
+  accessorId String
+  jobId      String?
+  codeType   String // lockbox | alarm
+  accessedAt DateTime @default(now())
+
+  @@index([propertyId])
+}

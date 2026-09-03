@@ -2,7 +2,7 @@
 
 import Script from "next/script";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 
 /**
  * PECR-compliant cookie consent + GA4 (§5.1, §10.3).
@@ -12,40 +12,48 @@ import { useEffect, useState } from "react";
  *  - GA4 loads ONLY after the user explicitly accepts.
  *  - Privacy-preserving default: nothing tracks until accept; reject is one tap.
  *  - Choice persisted; banner does not reappear once decided.
+ *
+ * Consent is read via useSyncExternalStore so the value stays in sync with
+ * localStorage (an external store) without setState-in-effect.
  */
 
 const STORAGE_KEY = "mcs-cookie-consent";
-type Consent = "granted" | "denied";
+const EVENT = "mcs-consent-change";
+type Consent = "granted" | "denied" | "unset";
+
+function subscribe(callback: () => void): () => void {
+  window.addEventListener(EVENT, callback);
+  window.addEventListener("storage", callback);
+  return () => {
+    window.removeEventListener(EVENT, callback);
+    window.removeEventListener("storage", callback);
+  };
+}
+
+function getSnapshot(): Consent {
+  try {
+    const v = localStorage.getItem(STORAGE_KEY);
+    return v === "granted" || v === "denied" ? v : "unset";
+  } catch {
+    return "unset";
+  }
+}
+
+// Server + first hydration render: nothing decided yet.
+const getServerSnapshot = (): Consent => "unset";
+
+function setConsent(value: Exclude<Consent, "unset">) {
+  try {
+    localStorage.setItem(STORAGE_KEY, value);
+  } catch {
+    /* storage blocked — still updates in-memory via the event below */
+  }
+  window.dispatchEvent(new Event(EVENT));
+}
 
 export function ConsentAnalytics() {
   const gaId = process.env.NEXT_PUBLIC_GA_ID;
-  const [consent, setConsent] = useState<Consent | null>(null);
-  const [decided, setDecided] = useState(true); // avoid banner flash pre-hydration
-
-  useEffect(() => {
-    let stored: string | null = null;
-    try {
-      stored = localStorage.getItem(STORAGE_KEY);
-    } catch {
-      /* storage blocked — treat as undecided, still no tracking */
-    }
-    if (stored === "granted" || stored === "denied") {
-      setConsent(stored);
-      setDecided(true);
-    } else {
-      setDecided(false);
-    }
-  }, []);
-
-  function choose(value: Consent) {
-    try {
-      localStorage.setItem(STORAGE_KEY, value);
-    } catch {
-      /* ignore */
-    }
-    setConsent(value);
-    setDecided(true);
-  }
+  const consent = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 
   return (
     <>
@@ -66,7 +74,7 @@ export function ConsentAnalytics() {
         </>
       )}
 
-      {!decided && (
+      {consent === "unset" && (
         <div
           role="dialog"
           aria-label="Cookie consent"
@@ -85,10 +93,10 @@ export function ConsentAnalytics() {
               .
             </p>
             <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-              <button className="btn btn-primary sm:flex-1" onClick={() => choose("granted")}>
+              <button className="btn btn-primary sm:flex-1" onClick={() => setConsent("granted")}>
                 Accept analytics
               </button>
-              <button className="btn btn-outline sm:flex-1" onClick={() => choose("denied")}>
+              <button className="btn btn-outline sm:flex-1" onClick={() => setConsent("denied")}>
                 Decline
               </button>
             </div>

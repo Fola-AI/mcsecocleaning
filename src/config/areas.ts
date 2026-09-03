@@ -73,6 +73,7 @@ export const areas: Area[] = [
     overview: [
       "Clapham's housing is dominated by Victorian and Edwardian terraces, most long since split into flats, alongside the larger houses fringing Clapham Common. That mix shapes how we clean here: a converted two-bed on Abbeville Road has different bathroom and kitchen counts to a whole house off Clapham Common North Side, and we price on the actual rooms rather than a headline bedroom number.",
       "It is a young, professional and family area with a high turnover of tenancies around the Common and the Old Town, which keeps demand for end of tenancy work steady through the summer. Period features — original floorboards, cornicing, sash windows — reward the gentler, non-toxic products we use as standard rather than harsh chemicals that dull old surfaces.",
+      "The two ends of Clapham behave quite differently for us. Around Abbeville Village and the Old Town, homes are mostly owner-occupied period conversions where regular fortnightly cleaning dominates and clients value keeping the same cleaner. Nearer Clapham North and the Stockwell edge of SW9, and around Clapham Junction in SW11, there are far more shared houses, young-professional flatshares and student lets, which drives a steadier stream of one-off deep cleans and end of tenancy work as people move between rooms and flats. We staff for both patterns, and we know that a Saturday turnaround near the Junction and a weekday maintenance visit off the Common are genuinely different logistics.",
     ],
     propertyStock:
       "Predominantly Victorian/Edwardian conversions and terraces, with mansion blocks near the Common and a growing number of new-build apartments toward Clapham Junction.",
@@ -112,6 +113,7 @@ export const areas: Area[] = [
         notes: [
           "Sash-window sills and original floors cleaned with gentle products that don't dull period surfaces",
           "Fortnightly is the most popular frequency locally and carries the best per-visit rate",
+          "We hold Saturday and early-evening slots for households near the Common and Abbeville Road who are out at work all week",
         ],
       },
       {
@@ -123,6 +125,7 @@ export const areas: Area[] = [
         notes: [
           "72-hour re-clean guarantee covers anything a check-out flags",
           "We coordinate with local letting agents on the Old Town and Northcote Road for key handovers",
+          "Same-day and next-day turnarounds available around the Junction during the summer moving peak, subject to capacity",
         ],
       },
     ],
@@ -137,6 +140,7 @@ export const areas: Area[] = [
     overview: [
       "Islington is Georgian and early-Victorian at its core — the townhouses around Barnsbury and Canonbury, the squares off Upper Street — with a dense layer of converted flats and a band of new developments toward Angel and the canal. Cleaning a four-storey N1 townhouse and a one-bed conversion off Essex Road are very different jobs, so we price on rooms and condition, not postcode averages.",
       "The area has a high concentration of professional renters and short tenancies near Angel and Highbury &amp; Islington, which keeps end of tenancy demand strong year-round rather than only over the summer. Many homes have original features worth protecting, which fits our non-toxic, low-residue approach.",
+      "Islington's density and layout shape how we work here. A lot of the housing is walk-up flats above Upper Street's shops and restaurants, or upper-floor conversions with no lift, so we plan the right time and crew for carrying kit up several flights rather than rushing it. The professional-renter belt around Angel, City Road and the canal turns over quickly and often books cleans at short notice between tenancies, while the family homes of Barnsbury and Canonbury lean towards steady fortnightly domestic visits with a preferred cleaner. Estate agents along Upper Street are a regular source of move-out work, and we're used to coordinating key collection and tight check-out windows with them.",
     ],
     propertyStock:
       "Georgian and Victorian townhouses and conversions around Barnsbury, Canonbury and Highbury, with newer apartment schemes near Angel, City Road and the Regent's Canal.",
@@ -176,6 +180,7 @@ export const areas: Area[] = [
         notes: [
           "Multi-floor townhouses scheduled with enough time so stairs and landings aren't rushed",
           "Fragrance-free and pet-safe product sets stored against your property",
+          "Walk-up flats above Upper Street planned with the right crew and time to carry kit up several flights",
         ],
       },
       {
@@ -187,6 +192,7 @@ export const areas: Area[] = [
         notes: [
           "72-hour re-clean guarantee for anything the check-out flags",
           "We work with Upper Street and Angel letting agents on key collection and access windows",
+          "Short-notice cleans between tenancies handled around the fast rental turnover near Angel, City Road and the canal basin",
         ],
       },
     ],
