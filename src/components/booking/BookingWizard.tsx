@@ -205,7 +205,7 @@ function StepArea({ state, set, areaCheck }: StepProps & { areaCheck: ReturnType
       <input
         id="bw-postcode"
         className="mt-1 w-full max-w-xs rounded-lg border border-line bg-surface px-3 py-3 text-base"
-        placeholder="e.g. SW4 7AA"
+        placeholder="e.g. SW6 1AA"
         autoCapitalize="characters"
         value={state.postcode}
         onChange={(e) => set("postcode", e.target.value)}

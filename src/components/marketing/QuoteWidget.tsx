@@ -68,7 +68,7 @@ export function QuoteWidget() {
         id="qw-postcode"
         inputMode="text"
         autoCapitalize="characters"
-        placeholder="e.g. SW4 7AA"
+        placeholder="e.g. SW6 1AA"
         className="mt-1 w-full rounded-lg border border-line bg-surface px-3 py-3 text-base"
         value={postcode}
         onChange={(e) => setPostcode(e.target.value)}

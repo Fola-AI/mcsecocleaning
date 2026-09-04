@@ -24,11 +24,15 @@ export function buildMetadata({
   images,
 }: PageMetaInput): Metadata {
   const url = `${site.url}${path === "/" ? "" : path}`;
+  // Safety gate: the whole site is noindex until indexing is explicitly enabled
+  // (set NEXT_PUBLIC_ALLOW_INDEXING="true" on the real production domain). This
+  // stops test/preview deployments (e.g. *.vercel.app) getting indexed.
+  const allowIndex = indexingAllowed();
   return {
     title,
     description,
     alternates: { canonical: url },
-    robots: noindex
+    robots: noindex || !allowIndex
       ? { index: false, follow: false, nocache: true }
       : { index: true, follow: true },
     openGraph: {
@@ -51,3 +55,12 @@ export function buildMetadata({
 
 /** Title suffix applied via the root template. */
 export const titleTemplate = `%s | ${site.name}`;
+
+/**
+ * Whether search engines may index this deployment. Defaults to FALSE so test
+ * and preview deployments stay out of the index; set NEXT_PUBLIC_ALLOW_INDEXING
+ * ="true" only on the real production domain.
+ */
+export function indexingAllowed(): boolean {
+  return process.env.NEXT_PUBLIC_ALLOW_INDEXING === "true";
+}
