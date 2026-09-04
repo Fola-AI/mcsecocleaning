@@ -35,5 +35,8 @@ export const heartbeatOnDemand = inngest.createFunction(
   }
 );
 
+export { materialiseSubscriptions } from "./subscriptions";
+import { materialiseSubscriptions } from "./subscriptions";
+
 /** All functions registered with the serve() handler. */
-export const functions = [heartbeat, heartbeatOnDemand];
+export const functions = [heartbeat, heartbeatOnDemand, materialiseSubscriptions];

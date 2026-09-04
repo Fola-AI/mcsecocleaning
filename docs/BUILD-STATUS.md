@@ -30,12 +30,24 @@ Tracks progress against the PRD's phased plan (§13). Updated as phases land.
 - [ ] **Deploy to Vercel, verify Core Web Vitals on real mobile, submit to Search Console** — deploy step (see DEPLOYMENT.md)
 - [ ] Email deliverability (SPF/DKIM/DMARC) — DNS step at deploy
 
-## Phase 2 — Booking & Payments ⏳ not started
-Quote engine (price + duration), capacity/availability, full booking wizard,
-Stripe authorise-at-booking/capture-on-completion, CCR consent, RRULE recurrence
-(jobs materialised 8–12 weeks forward), discount codes, admin-created bookings +
-CSV import, customer dashboard. Schema + money layer + scheduler are already in
-place to support this.
+## Phase 2 — Booking & Payments 🔄 in progress
+
+| Item | Status |
+|---|---|
+| Quote engine — room-based, price **and** duration, VAT-aware, first-clean surcharge, frequency discount, minimum value, hourly mode | ✅ tested |
+| Capacity/availability service — slots from roster/time-off/existing jobs/travel buffer; daily-cap fallback + admin override; never offers an unstaffable slot | ✅ tested |
+| Service-area postcode validation at step 0 | ✅ |
+| Booking wizard — all 8 steps, running price at every step, real slots | ✅ |
+| CCR 14-day consent — versioned wording, stored with timestamp + IP | ✅ |
+| Pre-contract information email (durable medium, §10.2) | ✅ |
+| Recurrence engine (RRULE) + **daily subscription→Job materialisation**, decoupled from billing, blackout-aware, first-clean surcharge | ✅ (logic tested; DB write path guarded) |
+| Stripe authorise-at-booking (manual capture) | 🔄 server path built; needs keys + Stripe Elements payment UI + webhook handler |
+| Discount codes | ⏳ |
+| Admin-created bookings + CSV import | ⏳ |
+| Customer dashboard (reschedule/cancel/pause/skip, saved methods) | ⏳ |
+| Webhook idempotency handler (table exists) | ⏳ |
+
+Tests: `npm test` — 27 passing (quote, recurrence across BST/GMT + bank holiday, capacity, VAT).
 
 ## Phase 3–8 ⏳ not started
 Operations & crew, trust & growth, media & resolution, launch hardening, then
