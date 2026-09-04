@@ -9,6 +9,7 @@ import { PrismaClient, PricingModel } from "@prisma/client";
 import { services } from "../src/config/services";
 import { addOns } from "../src/config/services";
 import { areas, canPublishLocationPage, locationWordCount } from "../src/config/areas";
+import { serviceTemplates } from "../src/config/checklists";
 
 const db = new PrismaClient();
 
@@ -50,6 +51,25 @@ async function main() {
         serviceTypeIds: a.appliesTo,
       },
     });
+  }
+
+  // Service templates (checklists, §6.12)
+  for (const tpl of serviceTemplates) {
+    const st = await db.serviceType.findUnique({ where: { slug: tpl.serviceSlug } });
+    if (!st) continue;
+    const existing = await db.serviceTemplate.findFirst({
+      where: { serviceTypeId: st.id, name: tpl.name },
+    });
+    const data = {
+      serviceTypeId: st.id,
+      name: tpl.name,
+      items: tpl.items as unknown as object,
+    };
+    if (existing) {
+      await db.serviceTemplate.update({ where: { id: existing.id }, data });
+    } else {
+      await db.serviceTemplate.create({ data });
+    }
   }
 
   // Service areas + gated location pages
