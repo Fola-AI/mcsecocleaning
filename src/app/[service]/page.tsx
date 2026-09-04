@@ -62,7 +62,7 @@ export default async function ServiceHubPage({
 
   // Reviews mentioning this service.
   const serviceReviews = areas
-    .flatMap((a) => a.reviews)
+    .flatMap((a) => a.reviews ?? [])
     .filter((r) => r.serviceSlug === service.slug)
     .slice(0, 3);
 

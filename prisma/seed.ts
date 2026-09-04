@@ -86,7 +86,7 @@ async function main() {
         },
       });
 
-      for (const sc of area.serviceContent) {
+      for (const sc of area.serviceContent ?? []) {
         const st = await db.serviceType.findUnique({ where: { slug: sc.serviceSlug } });
         if (!st) continue;
         const gate = canPublishLocationPage(area, sc.serviceSlug);

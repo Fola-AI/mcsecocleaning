@@ -34,7 +34,7 @@ export async function generateMetadata({
   const service = serviceBySlug(sSlug);
   const area = areaBySlug(aSlug);
   if (!service || !area) return {};
-  const sc = area.serviceContent.find((c) => c.serviceSlug === service.slug);
+  const sc = area.serviceContent?.find((c) => c.serviceSlug === service.slug);
   return buildMetadata({
     title: `${service.name} in ${area.name}`,
     description:
@@ -56,8 +56,8 @@ export default async function LocationPage({
   // Enforce the gate at render too, not just at param generation.
   if (!canPublishLocationPage(area, service.slug).ok) notFound();
 
-  const sc = area.serviceContent.find((c) => c.serviceSlug === service.slug)!;
-  const localReviews = area.reviews.filter((r) => r.fromArea);
+  const sc = area.serviceContent!.find((c) => c.serviceSlug === service.slug)!;
+  const localReviews = (area.reviews ?? []).filter((r) => r.fromArea);
   const url = `${site.url}/${service.slug}/${area.slug}`;
 
   return (
@@ -99,7 +99,7 @@ export default async function LocationPage({
           <div className="mt-8 grid gap-10 lg:grid-cols-[1.5fr_1fr]">
             <div className="prose-local">
               <p className="text-lg text-ink">{sc.intro}</p>
-              {area.overview.map((p, i) => (
+              {(area.overview ?? []).map((p, i) => (
                 <p key={i}>{p}</p>
               ))}
 
@@ -116,9 +116,9 @@ export default async function LocationPage({
                 ))}
               </ul>
 
-              {area.landmarks.length > 0 && (
+              {(area.landmarks ?? []).length > 0 && (
                 <p className="text-sm text-ink-soft">
-                  Serving homes near {area.landmarks.join(", ")}.
+                  Serving homes near {(area.landmarks ?? []).join(", ")}.
                 </p>
               )}
             </div>

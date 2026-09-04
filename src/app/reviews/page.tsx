@@ -14,7 +14,7 @@ export const metadata: Metadata = buildMetadata({
 });
 
 export default function ReviewsPage() {
-  const allReviews = areas.flatMap((a) => a.reviews);
+  const allReviews = areas.flatMap((a) => a.reviews ?? []);
 
   return (
     <>

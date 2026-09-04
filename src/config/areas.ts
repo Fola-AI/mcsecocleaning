@@ -10,10 +10,21 @@
  * Templated near-duplicate location pages are doorway/scaled-content abuse and a
  * March-2026 core-update demotion target. Do NOT auto-generate these.
  *
- * TODO(content §16.1): the areas below are HAND-WRITTEN EXAMPLES to prove the
- * gate and the pattern. Replace with the real launch boroughs/towns/postcode
- * districts (4–6, only where you actually operate), with real local photos and
- * real reviews, before submitting these URLs for indexing.
+ * Two kinds of area:
+ *  - COVERAGE-ONLY (name + postcode districts): powers the booking area-check and
+ *    "areas we cover" listing. No location page publishes until it has real
+ *    content + a real photo + a real review (the gate below).
+ *  - FULL (also has overview/serviceContent/photos/reviews): can publish
+ *    location pages once the gate passes.
+ *
+ * Launch boroughs (confirmed): Kensington & Chelsea, Southwark, Croydon, Newham,
+ * Fulham, Islington, Wandsworth, Richmond upon Thames.
+ *
+ * TODO(content §16.1): Islington below is a HAND-WRITTEN EXAMPLE (its photo and
+ * reviews are placeholders). Replace with real local photos and real customer
+ * reviews before indexing, and add full content for the other boroughs as real
+ * coverage + evidence lands. Postcode lists are indicative — refine to actual
+ * coverage.
  */
 
 export interface AreaReview {
@@ -51,84 +62,75 @@ export interface Area {
   /** Region key for the regional pricing multiplier (§4.2). */
   region: string;
   /** Area-specific overview — property stock, feel, who lives here. */
-  overview: string[];
+  overview?: string[];
   /** Local operational specifics that make the page non-templated. */
-  propertyStock: string;
-  parking: string;
-  landmarks: string[];
-  photos: AreaPhoto[];
-  reviews: AreaReview[];
-  serviceContent: AreaServiceContent[];
+  propertyStock?: string;
+  parking?: string;
+  landmarks?: string[];
+  photos?: AreaPhoto[];
+  reviews?: AreaReview[];
+  serviceContent?: AreaServiceContent[];
   active: boolean;
 }
 
 export const areas: Area[] = [
+  // ── Coverage boroughs (postcode coverage; location pages publish once real
+  //    content + a local photo + a local review exist for each). ──
   {
-    slug: "clapham",
-    name: "Clapham",
+    slug: "kensington-and-chelsea",
+    name: "Kensington & Chelsea",
     kind: "borough",
-    postcodeDistricts: ["SW4", "SW11", "SW9"],
+    postcodeDistricts: ["SW3", "SW5", "SW7", "SW10", "W8", "W10", "W11"],
     region: "london",
     active: true,
-    overview: [
-      "Clapham's housing is dominated by Victorian and Edwardian terraces, most long since split into flats, alongside the larger houses fringing Clapham Common. That mix shapes how we clean here: a converted two-bed on Abbeville Road has different bathroom and kitchen counts to a whole house off Clapham Common North Side, and we price on the actual rooms rather than a headline bedroom number.",
-      "It is a young, professional and family area with a high turnover of tenancies around the Common and the Old Town, which keeps demand for end of tenancy work steady through the summer. Period features — original floorboards, cornicing, sash windows — reward the gentler, non-toxic products we use as standard rather than harsh chemicals that dull old surfaces.",
-      "The two ends of Clapham behave quite differently for us. Around Abbeville Village and the Old Town, homes are mostly owner-occupied period conversions where regular fortnightly cleaning dominates and clients value keeping the same cleaner. Nearer Clapham North and the Stockwell edge of SW9, and around Clapham Junction in SW11, there are far more shared houses, young-professional flatshares and student lets, which drives a steadier stream of one-off deep cleans and end of tenancy work as people move between rooms and flats. We staff for both patterns, and we know that a Saturday turnaround near the Junction and a weekday maintenance visit off the Common are genuinely different logistics.",
-    ],
-    propertyStock:
-      "Predominantly Victorian/Edwardian conversions and terraces, with mansion blocks near the Common and a growing number of new-build apartments toward Clapham Junction.",
-    parking:
-      "Most of SW4 and SW11 sits within Lambeth and Wandsworth controlled parking zones, generally operating Monday–Friday. We plan visits and any suspended-bay or visitor-permit needs around the local CPZ so crews arrive on time without parking fines feeding into your price.",
-    landmarks: ["Clapham Common", "Abbeville Village", "Clapham Old Town", "Northcote Road", "Clapham Junction"],
-    photos: [
-      {
-        src: "/images/areas/clapham/team-abbeville.jpg", // TODO(photo): real local shot
-        alt: "mcsecocleaning crew outside a Victorian terrace in Clapham",
-        fromArea: true,
-      },
-    ],
-    reviews: [
-      {
-        author: "Hannah T., SW4",
-        rating: 5,
-        body: "Booked an end of tenancy clean for our flat near Abbeville Road and got the full deposit back. The before/after photos made the check-out completely painless.",
-        serviceSlug: "end-of-tenancy-cleaning",
-        fromArea: true,
-      },
-      {
-        author: "Marcus D., SW11",
-        rating: 5,
-        body: "Fortnightly clean for our conversion near the Common. Same cleaner every time and genuinely eco products — our little one has eczema so that mattered.",
-        serviceSlug: "domestic-cleaning",
-        fromArea: true,
-      },
-    ],
-    serviceContent: [
-      {
-        serviceSlug: "domestic-cleaning",
-        intro:
-          "Regular domestic cleaning across Clapham's conversions and terraces, with the same cleaner kept on your home wherever we can. Non-toxic, pet- and allergy-safe products suit the many young families around the Common and the period surfaces common in SW4 and SW11.",
-        pricingNote:
-          "Clapham domestic visits start from £48 per maintenance visit with a frequency discount for weekly or fortnightly bookings; a longer first clean brings a new home up to baseline and is shown separately in your quote.",
-        notes: [
-          "Sash-window sills and original floors cleaned with gentle products that don't dull period surfaces",
-          "Fortnightly is the most popular frequency locally and carries the best per-visit rate",
-          "We hold Saturday and early-evening slots for households near the Common and Abbeville Road who are out at work all week",
-        ],
-      },
-      {
-        serviceSlug: "end-of-tenancy-cleaning",
-        intro:
-          "End of tenancy cleaning for Clapham's busy lettings market around the Common and Old Town, cleaned to the inventory-clerk checklist and photographed throughout so your deposit is protected. Turnaround slots through the June–September peak book up fast here.",
-        pricingNote:
-          "Clapham end of tenancy cleans start from £150 for a smaller conversion flat and are priced on rooms and condition; carpet cleaning and oven interiors are common add-ons in older lets and are shown with their own price and time.",
-        notes: [
-          "72-hour re-clean guarantee covers anything a check-out flags",
-          "We coordinate with local letting agents on the Old Town and Northcote Road for key handovers",
-          "Same-day and next-day turnarounds available around the Junction during the summer moving peak, subject to capacity",
-        ],
-      },
-    ],
+  },
+  {
+    slug: "southwark",
+    name: "Southwark",
+    kind: "borough",
+    postcodeDistricts: ["SE1", "SE5", "SE15", "SE16", "SE17", "SE22"],
+    region: "london",
+    active: true,
+  },
+  {
+    slug: "croydon",
+    name: "Croydon",
+    kind: "borough",
+    postcodeDistricts: ["CR0", "CR2", "CR7", "SE25"],
+    region: "london",
+    active: true,
+  },
+  {
+    slug: "newham",
+    name: "Newham",
+    kind: "borough",
+    postcodeDistricts: ["E6", "E7", "E13", "E15", "E16", "E20"],
+    region: "london",
+    active: true,
+  },
+  {
+    slug: "fulham",
+    name: "Fulham",
+    kind: "borough",
+    postcodeDistricts: ["SW6", "W14"],
+    region: "london",
+    active: true,
+  },
+  {
+    slug: "wandsworth",
+    name: "Wandsworth",
+    kind: "borough",
+    postcodeDistricts: ["SW11", "SW12", "SW15", "SW17", "SW18"],
+    region: "london",
+    active: true,
+  },
+  {
+    slug: "richmond-upon-thames",
+    name: "Richmond upon Thames",
+    kind: "borough",
+    postcodeDistricts: ["TW1", "TW9", "TW10", "SW13", "SW14"],
+    region: "london",
+    active: true,
   },
   {
     slug: "islington",
@@ -201,11 +203,11 @@ export const areas: Area[] = [
 
 /** Count words across the area-specific content for a service page. */
 export function locationWordCount(area: Area, serviceSlug: string): number {
-  const sc = area.serviceContent.find((c) => c.serviceSlug === serviceSlug);
+  const sc = area.serviceContent?.find((c) => c.serviceSlug === serviceSlug);
   const parts = [
-    ...area.overview,
-    area.propertyStock,
-    area.parking,
+    ...(area.overview ?? []),
+    area.propertyStock ?? "",
+    area.parking ?? "",
     sc?.intro ?? "",
     sc?.pricingNote ?? "",
     ...(sc?.notes ?? []),
@@ -222,17 +224,12 @@ export function canPublishLocationPage(
   serviceSlug: string
 ): { ok: boolean; reasons: string[] } {
   const reasons: string[] = [];
-  const sc = area.serviceContent.find((c) => c.serviceSlug === serviceSlug);
+  const sc = area.serviceContent?.find((c) => c.serviceSlug === serviceSlug);
   if (!sc) reasons.push("No service-specific content for this area");
   const words = locationWordCount(area, serviceSlug);
   if (words < 400) reasons.push(`Only ${words} words of area content (need ≥ 400)`);
-  if (!area.photos.some((p) => p.fromArea)) reasons.push("No photograph taken in this area");
-  if (
-    !area.reviews.some(
-      (r) => r.fromArea && (!r.serviceSlug || r.serviceSlug === serviceSlug || true)
-    )
-  )
-    reasons.push("No customer review from this area");
+  if (!area.photos?.some((p) => p.fromArea)) reasons.push("No photograph taken in this area");
+  if (!area.reviews?.some((r) => r.fromArea)) reasons.push("No customer review from this area");
   if (!sc?.pricingNote?.trim()) reasons.push("No area-specific pricing/service note");
   return { ok: reasons.length === 0, reasons };
 }
@@ -245,7 +242,7 @@ export function publishedLocationPages(): { area: Area; serviceSlug: string }[] 
   const out: { area: Area; serviceSlug: string }[] = [];
   for (const area of areas) {
     if (!area.active) continue;
-    for (const sc of area.serviceContent) {
+    for (const sc of area.serviceContent ?? []) {
       if (canPublishLocationPage(area, sc.serviceSlug).ok) {
         out.push({ area, serviceSlug: sc.serviceSlug });
       }

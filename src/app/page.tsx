@@ -48,7 +48,7 @@ const steps = [
 ];
 
 export default function HomePage() {
-  const homeReviews = areas.flatMap((a) => a.reviews).slice(0, 3);
+  const homeReviews = areas.flatMap((a) => a.reviews ?? []).slice(0, 3);
 
   return (
     <>
