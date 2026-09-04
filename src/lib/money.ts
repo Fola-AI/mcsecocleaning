@@ -13,8 +13,16 @@
  * pounds only at the display boundary.
  */
 
-/** Global switch — flip via env once HMRC registration completes (§10.1). */
-export const VAT_REGISTERED = process.env.VAT_REGISTERED === "true";
+/**
+ * Global switch — flip via env once HMRC registration completes (§10.1).
+ * Read at call time so it is correct in serverless and testable.
+ */
+export function isVatRegistered(): boolean {
+  return process.env.VAT_REGISTERED === "true";
+}
+
+/** Convenience constant for display code (evaluated at module load). */
+export const VAT_REGISTERED = isVatRegistered();
 
 /** Standard rate for cleaning services. Stored per-record so history is stable. */
 export const STANDARD_VAT_RATE = 0.2;
@@ -36,7 +44,7 @@ export interface MoneyBreakdown {
  */
 export function fromGross(grossPence: number): MoneyBreakdown {
   const gross = Math.round(grossPence);
-  if (!VAT_REGISTERED) {
+  if (!isVatRegistered()) {
     return { net: gross, vatRate: 0, vatAmount: 0, gross };
   }
   const net = Math.round(gross / (1 + STANDARD_VAT_RATE));
@@ -49,7 +57,7 @@ export function fromGross(grossPence: number): MoneyBreakdown {
  */
 export function fromNet(netPence: number): MoneyBreakdown {
   const net = Math.round(netPence);
-  if (!VAT_REGISTERED) {
+  if (!isVatRegistered()) {
     return { net, vatRate: 0, vatAmount: 0, gross: net };
   }
   const vatAmount = Math.round(net * STANDARD_VAT_RATE);
