@@ -38,6 +38,7 @@ interface State {
   slotStartISO: string;
   access: { entryMethod: string; parking: string; pets: string; productPreference: string; instructions: string };
   contact: { name: string; email: string; phone: string; addressLine1: string };
+  discountCode: string;
   ccrConsent: boolean;
   marketingConsent: boolean;
 }
@@ -75,6 +76,7 @@ export function BookingWizard({
     slotStartISO: "",
     access: { entryMethod: "client_present", parking: "", pets: "", productPreference: "standard", instructions: "" },
     contact: { name: "", email: "", phone: "", addressLine1: "" },
+    discountCode: "",
     ccrConsent: false,
     marketingConsent: false,
   });
@@ -124,6 +126,7 @@ export function BookingWizard({
         slotStartISO: state.slotStartISO || undefined,
         access: state.access,
         contact: state.contact,
+        discountCode: state.discountCode || undefined,
         ccrConsent: state.ccrConsent as true,
         marketingConsent: state.marketingConsent,
       });
@@ -420,6 +423,17 @@ function StepDetails({ state, set, quote, result }: StepProps & { quote: ReturnT
       <Input label="Email" type="email" value={c.email} onChange={(v) => upd({ email: v })} required error={err("contact.email")} />
       <Input label="Phone" type="tel" value={c.phone} onChange={(v) => upd({ phone: v })} />
       <Input label="Address line 1" value={c.addressLine1} onChange={(v) => upd({ addressLine1: v })} />
+
+      <div>
+        <label className="block text-sm font-semibold">Promo code (optional)</label>
+        <input
+          value={state.discountCode}
+          onChange={(e) => set("discountCode", e.target.value.toUpperCase())}
+          placeholder="e.g. FIRST30"
+          className="mt-1 w-full max-w-xs rounded-lg border border-line bg-surface px-3 py-2.5 uppercase"
+        />
+        <p className="mt-1 text-xs text-ink-soft">Applied and confirmed when you book.</p>
+      </div>
 
       <label className="flex items-start gap-2 rounded-lg border border-brand/40 bg-brand-tint/40 p-3 text-sm">
         <input type="checkbox" className="mt-1" checked={state.ccrConsent} onChange={(e) => set("ccrConsent", e.target.checked)} />

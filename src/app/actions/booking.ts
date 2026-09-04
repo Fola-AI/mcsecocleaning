@@ -13,6 +13,8 @@ import { formatPence } from "@/lib/money";
 import { computeSlots, slotsByDate } from "@/lib/capacity";
 import { defaultRoster, availabilityConfig } from "@/config/availability";
 import { ROOM_KEYS } from "@/config/pricing";
+import { resolveAndApply } from "@/lib/discounts";
+import { fromGross, fromNet, isVatRegistered, type MoneyBreakdown } from "@/lib/money";
 
 /**
  * Booking wizard back-end (§6.1, §6.5, §10.2). Prices are ALWAYS recomputed
@@ -88,6 +90,7 @@ const bookingSchema = z.object({
   }),
   ccrConsent: z.literal(true, { message: "You must accept the start-before-14-days statement to book." }),
   marketingConsent: z.boolean().default(false),
+  discountCode: z.string().trim().max(40).optional().or(z.literal("")),
 });
 
 export type BookingInput = z.input<typeof bookingSchema>;
@@ -132,6 +135,23 @@ export async function createBooking(input: BookingInput): Promise<BookingResult>
     regionKey: "london",
   });
 
+  // Discount code (§6.14) — resolved and applied server-side to the charge-now amount.
+  let discountAmount = 0;
+  let discountCode: string | undefined;
+  if (data.discountCode) {
+    const outcome = await resolveAndApply(data.discountCode, {
+      serviceSlug: data.serviceSlug,
+      amountGross: quote.chargeNow.gross,
+      frequency: data.frequency,
+    });
+    if (outcome.ok) {
+      discountAmount = outcome.discountAmount;
+      discountCode = outcome.code;
+    }
+  }
+  const chargeGross = quote.chargeNow.gross - discountAmount;
+  const charge: MoneyBreakdown = isVatRegistered() ? fromGross(chargeGross) : fromNet(chargeGross);
+
   // CCR consent record (§10.2).
   const hdrs = await headers();
   const ip = (hdrs.get("x-forwarded-for")?.split(",")[0] ?? hdrs.get("x-real-ip") ?? "unknown").trim();
@@ -143,7 +163,7 @@ export async function createBooking(input: BookingInput): Promise<BookingResult>
   // Persist when a DB is configured.
   if (hasDatabase) {
     try {
-      jobId = await persistBooking({ data, quote, ccr, reference });
+      jobId = await persistBooking({ data, quote, ccr, reference, charge, discountAmount, discountCode });
     } catch (e) {
       console.error("[booking] persistence failed; continuing with notifications", e);
     }
@@ -157,7 +177,7 @@ export async function createBooking(input: BookingInput): Promise<BookingResult>
     if (stripeConfigured()) {
       requiresPayment = true;
       const res = await authoriseBookingPayment({
-        amountPence: quote.chargeNow.gross,
+        amountPence: charge.gross,
         jobId,
         customerEmail: data.contact.email,
         description: `${service.name} booking ${reference}`,
@@ -169,8 +189,8 @@ export async function createBooking(input: BookingInput): Promise<BookingResult>
   }
 
   // Pre-contract information in a durable medium (§10.2).
-  await sendPreContractEmail({ data, service: service.name, quote, reference });
-  await notifyTeam({ data, service: service.name, quote, reference, area: area.areaName });
+  await sendPreContractEmail({ data, service: service.name, quote, reference, charge, discountAmount, discountCode });
+  await notifyTeam({ data, service: service.name, charge, reference, area: area.areaName, quote });
 
   return {
     status: "success",
@@ -190,11 +210,17 @@ async function persistBooking({
   quote,
   ccr,
   reference,
+  charge,
+  discountAmount,
+  discountCode,
 }: {
   data: z.infer<typeof bookingSchema>;
   quote: ReturnType<typeof computeQuote>;
   ccr: { givenAt: string; ip: string; wordingVersion: string };
   reference: string;
+  charge: MoneyBreakdown;
+  discountAmount: number;
+  discountCode?: string;
 }): Promise<string> {
   const service = serviceBySlug(data.serviceSlug)!;
   const st = await db.serviceType.findUnique({ where: { slug: data.serviceSlug } });
@@ -241,10 +267,10 @@ async function persistBooking({
       frequency: data.frequency,
       addons: data.addOnSlugs,
       pricingVersion: quote.pricingVersion,
-      net: quote.chargeNow.net,
-      vatRate: quote.chargeNow.vatRate,
-      vatAmount: quote.chargeNow.vatAmount,
-      gross: quote.chargeNow.gross,
+      net: charge.net,
+      vatRate: charge.vatRate,
+      vatAmount: charge.vatAmount,
+      gross: charge.gross,
       estimatedDurationMinutes: quote.durationMinutes,
       expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
     },
@@ -265,11 +291,13 @@ async function persistBooking({
       scheduledStart,
       scheduledEnd,
       estimatedDurationMinutes: quote.durationMinutes,
-      net: quote.chargeNow.net,
-      vatRate: quote.chargeNow.vatRate,
-      vatAmount: quote.chargeNow.vatAmount,
-      gross: quote.chargeNow.gross,
+      net: charge.net,
+      vatRate: charge.vatRate,
+      vatAmount: charge.vatAmount,
+      gross: charge.gross,
       addons: data.addOnSlugs,
+      discountCode: discountCode ?? null,
+      discountAmount,
       ccrConsent: ccr,
       paymentStatus: "pending",
       source: "web",
@@ -289,15 +317,25 @@ async function sendPreContractEmail({
   service,
   quote,
   reference,
+  charge,
+  discountAmount,
+  discountCode,
 }: {
   data: z.infer<typeof bookingSchema>;
   service: string;
   quote: ReturnType<typeof computeQuote>;
   reference: string;
+  charge: MoneyBreakdown;
+  discountAmount: number;
+  discountCode?: string;
 }) {
   const priceLine = quote.isRecurring
-    ? `First visit ${formatPence(quote.firstVisitGross)}, then ${formatPence(quote.perVisitGross)} per visit (inc. VAT where applicable)`
-    : `${formatPence(quote.oneOffGross)} (inc. VAT where applicable)`;
+    ? `First visit ${formatPence(charge.gross)}, then ${formatPence(quote.perVisitGross)} per visit (inc. VAT where applicable)`
+    : `${formatPence(charge.gross)} (inc. VAT where applicable)`;
+  const discountLine =
+    discountAmount > 0
+      ? `<li><strong>Discount applied:</strong> ${discountCode} (−${formatPence(discountAmount)})</li>`
+      : "";
 
   await sendEmail({
     to: data.contact.email,
@@ -309,6 +347,7 @@ async function sendPreContractEmail({
       <ul>
         <li><strong>Service:</strong> ${service}</li>
         <li><strong>Total price:</strong> ${priceLine}</li>
+        ${discountLine}
         <li><strong>Estimated duration:</strong> ${quote.durationMinutes} minutes</li>
         <li><strong>Cancellation:</strong> see ${site.url}/cancellation-policy — a late-cancellation or no-access fee may apply, disclosed before payment.</li>
         <li><strong>Complaints & guarantee:</strong> our re-clean guarantee applies (${site.url}/guarantee); contact ${site.contact.email}.</li>
@@ -321,15 +360,17 @@ async function sendPreContractEmail({
 async function notifyTeam({
   data,
   service,
-  quote,
+  charge,
   reference,
   area,
+  quote,
 }: {
   data: z.infer<typeof bookingSchema>;
   service: string;
-  quote: ReturnType<typeof computeQuote>;
+  charge: MoneyBreakdown;
   reference: string;
   area?: string;
+  quote: ReturnType<typeof computeQuote>;
 }) {
   const inbox = process.env.LEADS_INBOX || site.contact.email;
   await sendEmail({
@@ -342,7 +383,7 @@ async function notifyTeam({
         <li>${service} · ${data.frequency}</li>
         <li>${data.contact.name} · ${data.contact.email} · ${data.contact.phone || "—"}</li>
         <li>${data.postcode.toUpperCase()} ${area ? `(${area})` : ""}</li>
-        <li>Charge now: ${formatPence(quote.chargeNow.gross)} · duration ${quote.durationMinutes}m</li>
+        <li>Charge now: ${formatPence(charge.gross)} · duration ${quote.durationMinutes}m</li>
         <li>Slot: ${data.slotStartISO ?? "not selected"}</li>
       </ul>
     `,

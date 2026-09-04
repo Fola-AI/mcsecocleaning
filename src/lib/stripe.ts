@@ -42,3 +42,34 @@ export async function authoriseBookingPayment(params: {
   });
   return { clientSecret: intent.client_secret, paymentIntentId: intent.id };
 }
+
+/**
+ * Create a shareable Checkout URL (a "payment link") for an admin-created
+ * booking (§6.15). Uses inline price_data so no pre-made Price is needed.
+ */
+export async function createCheckoutUrl(params: {
+  amountPence: number;
+  description: string;
+  customerEmail?: string;
+}): Promise<string | null> {
+  const stripe = getStripe();
+  if (!stripe) return null;
+  const origin = process.env.NEXT_PUBLIC_SITE_URL || "https://www.mcsecocleaning.co.uk";
+  const session = await stripe.checkout.sessions.create({
+    mode: "payment",
+    customer_email: params.customerEmail,
+    line_items: [
+      {
+        quantity: 1,
+        price_data: {
+          currency: "gbp",
+          unit_amount: params.amountPence,
+          product_data: { name: params.description },
+        },
+      },
+    ],
+    success_url: `${origin}/book?paid=1`,
+    cancel_url: `${origin}/book?cancelled=1`,
+  });
+  return session.url;
+}

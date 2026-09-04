@@ -41,13 +41,15 @@ Tracks progress against the PRD's phased plan (§13). Updated as phases land.
 | CCR 14-day consent — versioned wording, stored with timestamp + IP | ✅ |
 | Pre-contract information email (durable medium, §10.2) | ✅ |
 | Recurrence engine (RRULE) + **daily subscription→Job materialisation**, decoupled from billing, blackout-aware, first-clean surcharge | ✅ (logic tested; DB write path guarded) |
-| Stripe authorise-at-booking (manual capture) | 🔄 server path built; needs keys + Stripe Elements payment UI + webhook handler |
-| Discount codes | ⏳ |
-| Admin-created bookings + CSV import | ⏳ |
-| Customer dashboard (reschedule/cancel/pause/skip, saved methods) | ⏳ |
-| Webhook idempotency handler (table exists) | ⏳ |
+| Discount codes — percent/fixed, service/frequency/expiry/usage rules; wired into booking | ✅ tested |
+| Admin-created bookings (phone/WhatsApp/referral) — payment link / invoice / cash | ✅ |
+| CSV client import — tolerant parser, header aliases, per-row errors | ✅ tested |
+| Admin area gate — interim access code, deny-by-default, middleware + server guard (verified) | ✅ interim (Auth.js RBAC replaces) |
+| Stripe authorise-at-booking (manual capture) + admin payment link | 🔄 server path built; needs keys + Stripe Elements UI + webhook handler |
+| Customer dashboard (reschedule/cancel/pause/skip, saved methods) | ⏳ needs Auth.js + DB |
+| Webhook idempotency handler (table exists) | ⏳ needs Stripe keys |
 
-Tests: `npm test` — 27 passing (quote, recurrence across BST/GMT + bank holiday, capacity, VAT).
+Tests: `npm test` — 39 passing (quote, recurrence across BST/GMT + bank holiday, capacity, VAT, discounts, CSV).
 
 ## Phase 3–8 ⏳ not started
 Operations & crew, trust & growth, media & resolution, launch hardening, then
