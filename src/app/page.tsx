@@ -158,15 +158,18 @@ export default function HomePage() {
         </div>
       </Section>
 
-      {/* Reviews */}
-      <Section>
-        <Reviews reviews={homeReviews} title="Rated by London households" />
-        <div className="mt-6">
-          <Link href="/reviews" className="font-semibold text-brand-strong underline">
-            Read more reviews →
-          </Link>
-        </div>
-      </Section>
+      {/* Reviews — renders only on real reviews. No placeholder or sample data
+          (§12.4, DMCC §10.1). The full social-proof strip lands in Task 2. */}
+      {homeReviews.length > 0 && (
+        <Section>
+          <Reviews reviews={homeReviews} title="Rated by real customers" />
+          <div className="mt-6">
+            <Link href="/reviews" className="font-semibold text-brand-strong underline">
+              Read more reviews →
+            </Link>
+          </div>
+        </Section>
+      )}
 
       {/* FAQ */}
       <Section muted>

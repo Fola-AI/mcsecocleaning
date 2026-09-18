@@ -48,6 +48,19 @@ domain. Booking confirmations landing in spam is a business-ending failure (§9.
 3. Verify the `scheduler-heartbeat` cron runs and logs (Phase 1 acceptance). Fire
    a `test/heartbeat` event to check the pipeline on demand.
 
+## 🚨 Launch gate — remove the global noindex (do NOT skip)
+The whole site currently ships **noindex** (meta robots + `robots.txt` Disallow: /)
+because `NEXT_PUBLIC_ALLOW_INDEXING` is unset — correct for the test deploy, and
+**business-ending if it ships to the real domain unchanged.** A cleaning business
+that search engines cannot see has no acquisition funnel.
+
+At public launch, on the production domain only:
+- [ ] Set `NEXT_PUBLIC_ALLOW_INDEXING="true"`
+- [ ] Set `NEXT_PUBLIC_SITE_URL` to the real domain (fixes canonicals + sitemap host)
+- [ ] Redeploy, then confirm `robots.txt` allows `/` and the homepage meta reads
+      `index, follow` (curl both). Only after the NAP placeholders in
+      `src/config/site.ts` are real.
+
 ## 7. Post-deploy SEO
 - Submit `sitemap.xml` in Google Search Console; verify the property.
 - Confirm `robots.txt`, `llms.txt`, canonical tags and JSON-LD render.

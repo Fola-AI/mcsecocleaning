@@ -14,17 +14,22 @@
  *  - COVERAGE-ONLY (name + postcode districts): powers the booking area-check and
  *    "areas we cover" listing. No location page publishes until it has real
  *    content + a real photo + a real review (the gate below).
- *  - FULL (also has overview/serviceContent/photos/reviews): can publish
- *    location pages once the gate passes.
+ *  - FULL (also has overview/serviceContent/photos): can publish location pages
+ *    once the gate passes — which now REQUIRES a real review from a real job.
  *
- * Launch boroughs (confirmed): Kensington & Chelsea, Southwark, Croydon, Newham,
- * Fulham, Islington, Wandsworth, Richmond upon Thames.
+ * ⚠️ REVIEWS ARE NEVER HAND-AUTHORED HERE. Under the DMCC 2024 (§10.1), inventing
+ * a review is a banned practice with direct CMA fines. `reviews` on an area is
+ * for real, disclosed reviews only (imported from completed jobs). It stays
+ * EMPTY until such a review exists — which is exactly why the content gate holds
+ * the page unpublished. Do not add placeholder reviews to make a page go live.
  *
- * TODO(content §16.1): Islington below is a HAND-WRITTEN EXAMPLE (its photo and
- * reviews are placeholders). Replace with real local photos and real customer
- * reviews before indexing, and add full content for the other boroughs as real
- * coverage + evidence lands. Postcode lists are indicative — refine to actual
- * coverage.
+ * §4 LAUNCH CLUSTER (v2.1, South London): SE11 Kennington, SE1 Elephant & Castle,
+ * SW2/SW9 Brixton, SW4 Clapham, SW11 Battersea, SW18 Wandsworth, SE15 Peckham,
+ * plus BR1 Bromley as a SEPARATE patch. Clapham (SW4) below is the worked example.
+ *
+ * TODO(§4 realignment): the coverage boroughs below (Kensington & Chelsea, Croydon,
+ * Newham, Fulham, Richmond) predate v2.1 and are NOT in the §4 cluster. Flagged for
+ * a decision — do not treat them as the confirmed launch footprint.
  */
 
 export interface AreaReview {
@@ -132,69 +137,54 @@ export const areas: Area[] = [
     region: "london",
     active: true,
   },
+  // ── §4 launch-cluster worked example. Content is genuine and gate-ready, but
+  //    this page stays UNPUBLISHED until a real photo and a real review from a
+  //    completed SW4 job exist — do not add placeholder reviews to force it live. ──
   {
-    slug: "islington",
-    name: "Islington",
+    slug: "clapham",
+    name: "Clapham",
     kind: "borough",
-    postcodeDistricts: ["N1", "N5", "N7"],
+    postcodeDistricts: ["SW4"],
     region: "london",
     active: true,
     overview: [
-      "Islington is Georgian and early-Victorian at its core — the townhouses around Barnsbury and Canonbury, the squares off Upper Street — with a dense layer of converted flats and a band of new developments toward Angel and the canal. Cleaning a four-storey N1 townhouse and a one-bed conversion off Essex Road are very different jobs, so we price on rooms and condition, not postcode averages.",
-      "The area has a high concentration of professional renters and short tenancies near Angel and Highbury &amp; Islington, which keeps end of tenancy demand strong year-round rather than only over the summer. Many homes have original features worth protecting, which fits our non-toxic, low-residue approach.",
-      "Islington's density and layout shape how we work here. A lot of the housing is walk-up flats above Upper Street's shops and restaurants, or upper-floor conversions with no lift, so we plan the right time and crew for carrying kit up several flights rather than rushing it. The professional-renter belt around Angel, City Road and the canal turns over quickly and often books cleans at short notice between tenancies, while the family homes of Barnsbury and Canonbury lean towards steady fortnightly domestic visits with a preferred cleaner. Estate agents along Upper Street are a regular source of move-out work, and we're used to coordinating key collection and tight check-out windows with them.",
+      "Clapham's housing is dominated by Victorian and Edwardian terraces, most long since split into flats, alongside the larger houses fringing Clapham Common. That mix shapes how we clean here: a converted two-bed on Abbeville Road has different bathroom and kitchen counts to a whole house off Clapham Common North Side, and we price on the actual rooms rather than a headline bedroom number.",
+      "It is a young, professional and family area with a high turnover of tenancies around the Common and the Old Town, which keeps demand for end of tenancy work steady through the summer. Period features — original floorboards, cornicing, sash windows — reward the gentler, non-toxic products we use as standard rather than harsh chemicals that dull old surfaces.",
+      "The two ends of Clapham behave quite differently for us. Around Abbeville Village and the Old Town, homes are mostly owner-occupied period conversions where regular fortnightly cleaning dominates and clients value keeping the same cleaner. Nearer Clapham North and the SW9 edge toward Brixton there are far more shared houses and young-professional flatshares, which drives a steadier stream of one-off deep cleans and end of tenancy work as people move between rooms and flats. We staff for both patterns, and we know a Saturday turnaround off the High Street and a weekday maintenance visit near the Common are genuinely different logistics.",
     ],
     propertyStock:
-      "Georgian and Victorian townhouses and conversions around Barnsbury, Canonbury and Highbury, with newer apartment schemes near Angel, City Road and the Regent's Canal.",
+      "Predominantly Victorian and Edwardian conversions and terraces, with mansion blocks near the Common and a growing number of new-build apartments toward Clapham Junction and the Battersea fringe.",
     parking:
-      "N1, N5 and N7 are heavily controlled, and several routes near Upper Street and Holloway Road are red routes with no stopping. We check restrictions per property, note the nearest workable options against your address, and plan around them so parking never becomes an unexpected cost.",
-    landmarks: ["Upper Street", "Angel", "Barnsbury", "Canonbury Square", "Highbury Fields", "Regent's Canal"],
-    photos: [
-      {
-        src: "/images/areas/islington/team-canonbury.jpg", // TODO(photo): real local shot
-        alt: "mcsecocleaning crew outside a Georgian townhouse in Islington",
-        fromArea: true,
-      },
-    ],
-    reviews: [
-      {
-        author: "Priya S., N1",
-        rating: 5,
-        body: "Deep clean of our Barnsbury flat before we moved our regular cleaning to fortnightly. Spotless, and lovely not to have the house reeking of bleach afterwards.",
-        serviceSlug: "deep-cleaning",
-        fromArea: true,
-      },
-      {
-        author: "James O., N5",
-        rating: 5,
-        body: "End of tenancy near Highbury Fields — agent signed off with zero deductions. The photo record clearly helped.",
-        serviceSlug: "end-of-tenancy-cleaning",
-        fromArea: true,
-      },
-    ],
+      "Most of SW4 sits within Lambeth's controlled parking zones, generally operating Monday to Friday. We plan visits and any suspended-bay or visitor-permit needs around the local CPZ so crews arrive on time without parking fines feeding into your price.",
+    landmarks: ["Clapham Common", "Abbeville Village", "Clapham Old Town", "Venn Street", "Clapham High Street"],
+    // Gated: needs a real SW4 photograph (fromArea) before the page can publish.
+    photos: [],
+    // Gated: needs a real, disclosed review from a completed SW4 job (§10.1 DMCC).
+    // Never hand-author a review here.
+    reviews: [],
     serviceContent: [
       {
         serviceSlug: "domestic-cleaning",
         intro:
-          "Regular domestic cleaning for Islington's townhouses and conversions, from a one-bed off Essex Road to a family house in Barnsbury. We keep the same cleaner on your home and use eco-friendly, low-residue products that suit original floors and period joinery.",
+          "Regular domestic cleaning across Clapham's conversions and terraces, with the same cleaner kept on your home wherever we can. Non-toxic, pet- and allergy-safe products suit the many young families around the Common and the period surfaces common across SW4.",
         pricingNote:
-          "Islington domestic visits start from £48 per maintenance visit with a frequency discount for regular bookings; multi-storey townhouses are quoted on their full room count, and the longer first clean is shown separately.",
+          "Clapham domestic visits are priced on your actual rooms and condition, with a frequency discount for weekly or fortnightly bookings and a longer first clean shown separately in your quote.",
         notes: [
-          "Multi-floor townhouses scheduled with enough time so stairs and landings aren't rushed",
-          "Fragrance-free and pet-safe product sets stored against your property",
-          "Walk-up flats above Upper Street planned with the right crew and time to carry kit up several flights",
+          "Sash-window sills and original floors cleaned with gentle products that don't dull period surfaces",
+          "Fortnightly is the most popular frequency locally and carries the best per-visit rate",
+          "Saturday and early-evening slots held for households near the Common who are out at work all week",
         ],
       },
       {
         serviceSlug: "end-of-tenancy-cleaning",
         intro:
-          "End of tenancy cleaning across N1, N5 and N7's active rental market near Angel and Highbury, aligned to inventory check-out standards and fully photographed. Because Islington tenancies turn over year-round, we hold slots outside the summer peak too.",
+          "End of tenancy cleaning for Clapham's busy lettings market around the Common and the Old Town, cleaned to the inventory-clerk checklist and photographed throughout so your deposit is protected. Turnaround slots through the June to September peak book up fast here.",
         pricingNote:
-          "Islington end of tenancy cleans start from £150 and are priced on rooms and condition; larger Georgian townhouses and add-ons such as carpet cleaning are itemised with their own price and duration.",
+          "Clapham end of tenancy cleans are priced on bedrooms, bathrooms and condition from the published fixed grid; carpet cleaning and oven interiors are common add-ons in older lets and are shown with their own price and time.",
         notes: [
-          "72-hour re-clean guarantee for anything the check-out flags",
-          "We work with Upper Street and Angel letting agents on key collection and access windows",
-          "Short-notice cleans between tenancies handled around the fast rental turnover near Angel, City Road and the canal basin",
+          "72-hour re-clean guarantee covers anything a check-out flags",
+          "We coordinate with local letting agents on the Old Town and Venn Street for key handovers",
+          "Same-day and next-day turnarounds available in the summer moving peak, subject to capacity",
         ],
       },
     ],
