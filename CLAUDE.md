@@ -3,7 +3,7 @@
 # mcsecocleaning — build guide for Claude
 
 Full-stack platform for a UK eco-friendly cleaning company. The build spec is
-[`docs/PRD_v2.md`](docs/PRD_v2.md); it is authoritative. Build phases sequentially
+[`docs/mcsecocleaning_PRD_v2.1.md`](docs/mcsecocleaning_PRD_v2.1.md); it is authoritative. Build phases sequentially
 (§13). Current state and remaining work: [`docs/BUILD-STATUS.md`](docs/BUILD-STATUS.md).
 
 ## Non-negotiables (from the PRD — do not regress)

@@ -1,6 +1,6 @@
 # mcsecocleaning
 
-A UK eco-friendly cleaning company platform: a search-optimised marketing site, an online booking & payments system, an operations/crew system, and a customer portal. Built to the spec in [`docs/PRD_v2.md`](docs/PRD_v2.md).
+A UK eco-friendly cleaning company platform: a search-optimised marketing site, an online booking & payments system, an operations/crew system, and a customer portal. Built to the spec in [`docs/mcsecocleaning_PRD_v2.1.md`](docs/mcsecocleaning_PRD_v2.1.md).
 
 **Status: Phase 1 (Foundation & Marketing Site) — built, shippable.** See [`docs/BUILD-STATUS.md`](docs/BUILD-STATUS.md) for the phase-by-phase state and the business inputs still required before launch.
 
