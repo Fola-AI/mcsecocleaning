@@ -24,6 +24,7 @@ function fullArea(overrides: Partial<Area> = {}): Area {
     postcodeDistricts: ["SW4"],
     region: "london",
     active: true,
+    patchGroup: "core",
     overview: [FOUR_HUNDRED_WORDS],
     propertyStock: "stock",
     parking: "parking",

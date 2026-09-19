@@ -638,12 +638,23 @@ model CrewUnavailability {
 
 // ───────────────────────── SEO / Content (§5) ─────────────────────────
 
+// Operating patch (§4, §7.5, [v2.1]). Constrained to three known values so a
+// typo cannot silently create a fourth patch the travel logic won't recognise.
+enum PatchGroup {
+  core
+  bromley
+  phase_two_west
+}
+
 model ServiceArea {
   id               String   @id @default(cuid())
   postcodeDistrict String   @unique
   areaName         String
   slug             String
   active           Boolean  @default(true)
+  // NOT NULL, no default — every row is classified explicitly (seed / migration
+  // backfill), so no blanket default can misclassify Bromley into 'core' (§4/§7.5).
+  patchGroup       PatchGroup
   travelNotes      String?
   locationPages    LocationPage[]
 }

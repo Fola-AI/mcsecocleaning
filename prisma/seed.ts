@@ -77,12 +77,13 @@ async function main() {
     for (const district of area.postcodeDistricts) {
       const sa = await db.serviceArea.upsert({
         where: { postcodeDistrict: district.toUpperCase() },
-        update: { areaName: area.name, slug: area.slug, active: area.active },
+        update: { areaName: area.name, slug: area.slug, active: area.active, patchGroup: area.patchGroup },
         create: {
           postcodeDistrict: district.toUpperCase(),
           areaName: area.name,
           slug: area.slug,
           active: area.active,
+          patchGroup: area.patchGroup,
         },
       });
 

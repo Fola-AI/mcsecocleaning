@@ -23,13 +23,13 @@
  * EMPTY until such a review exists — which is exactly why the content gate holds
  * the page unpublished. Do not add placeholder reviews to make a page go live.
  *
- * §4 LAUNCH CLUSTER (v2.1, South London): SE11 Kennington, SE1 Elephant & Castle,
- * SW2/SW9 Brixton, SW4 Clapham, SW11 Battersea, SW18 Wandsworth, SE15 Peckham,
- * plus BR1 Bromley as a SEPARATE patch. Clapham (SW4) below is the worked example.
- *
- * TODO(§4 realignment): the coverage boroughs below (Kensington & Chelsea, Croydon,
- * Newham, Fulham, Richmond) predate v2.1 and are NOT in the §4 cluster. Flagged for
- * a decision — do not treat them as the confirmed launch footprint.
+ * §4 FOOTPRINT (v2.1). Active coverage is the South London core cluster —
+ * SE11 Kennington, SE1 Elephant & Castle, SW2/SW9 Brixton, SW4 Clapham,
+ * SW11 Battersea, SW18 Wandsworth, SE15 Peckham (patchGroup "core") — plus BR1
+ * Bromley as a SEPARATE patch ("bromley"). Fulham and Kensington & Chelsea are
+ * §4 Phase 2 (West London): kept here but INACTIVE ("phase_two_west"), so they
+ * are not served or advertised. Croydon, Newham and Richmond were removed — not
+ * in the §4 plan. Clapham (SW4) is the worked content example.
  */
 
 export interface AreaReview {
@@ -76,66 +76,72 @@ export interface Area {
   reviews?: AreaReview[];
   serviceContent?: AreaServiceContent[];
   active: boolean;
+  /**
+   * Operating patch (§4). "core" = the contiguous South London launch cluster;
+   * "bromley" = the BR1 patch, which MUST have its own crew and round and never
+   * shares a crew with the core cluster (the §7.5 travel model won't absorb it);
+   * "phase_two_west" = West London, kept in config but INACTIVE until expansion.
+   */
+  patchGroup: "core" | "bromley" | "phase_two_west";
 }
 
 export const areas: Area[] = [
-  // ── Coverage boroughs (postcode coverage; location pages publish once real
-  //    content + a local photo + a local review exist for each). ──
+  // ── §4 core cluster (South London). Contiguous, one crew round. Coverage-only
+  //    for now — each location page publishes once it has real content + a local
+  //    photo + a local review. Clapham (below) is the worked content example. ──
   {
-    slug: "kensington-and-chelsea",
-    name: "Kensington & Chelsea",
-    kind: "borough",
-    postcodeDistricts: ["SW3", "SW5", "SW7", "SW10", "W8", "W10", "W11"],
+    slug: "kennington",
+    name: "Kennington",
+    kind: "postcode-district",
+    postcodeDistricts: ["SE11"],
     region: "london",
     active: true,
+    patchGroup: "core",
   },
   {
-    slug: "southwark",
-    name: "Southwark",
-    kind: "borough",
-    postcodeDistricts: ["SE1", "SE5", "SE15", "SE16", "SE17", "SE22"],
+    slug: "elephant-and-castle",
+    name: "Elephant & Castle",
+    kind: "postcode-district",
+    postcodeDistricts: ["SE1"],
     region: "london",
     active: true,
+    patchGroup: "core",
   },
   {
-    slug: "croydon",
-    name: "Croydon",
-    kind: "borough",
-    postcodeDistricts: ["CR0", "CR2", "CR7", "SE25"],
+    slug: "brixton",
+    name: "Brixton",
+    kind: "postcode-district",
+    postcodeDistricts: ["SW2", "SW9"],
     region: "london",
     active: true,
+    patchGroup: "core",
   },
   {
-    slug: "newham",
-    name: "Newham",
-    kind: "borough",
-    postcodeDistricts: ["E6", "E7", "E13", "E15", "E16", "E20"],
+    slug: "battersea",
+    name: "Battersea",
+    kind: "postcode-district",
+    postcodeDistricts: ["SW11"],
     region: "london",
     active: true,
-  },
-  {
-    slug: "fulham",
-    name: "Fulham",
-    kind: "borough",
-    postcodeDistricts: ["SW6", "W14"],
-    region: "london",
-    active: true,
+    patchGroup: "core",
   },
   {
     slug: "wandsworth",
     name: "Wandsworth",
-    kind: "borough",
-    postcodeDistricts: ["SW11", "SW12", "SW15", "SW17", "SW18"],
+    kind: "postcode-district",
+    postcodeDistricts: ["SW18"],
     region: "london",
     active: true,
+    patchGroup: "core",
   },
   {
-    slug: "richmond-upon-thames",
-    name: "Richmond upon Thames",
-    kind: "borough",
-    postcodeDistricts: ["TW1", "TW9", "TW10", "SW13", "SW14"],
+    slug: "peckham",
+    name: "Peckham",
+    kind: "postcode-district",
+    postcodeDistricts: ["SE15"],
     region: "london",
     active: true,
+    patchGroup: "core",
   },
   // ── §4 launch-cluster worked example. Content is genuine and gate-ready, but
   //    this page stays UNPUBLISHED until a real photo and a real review from a
@@ -143,10 +149,11 @@ export const areas: Area[] = [
   {
     slug: "clapham",
     name: "Clapham",
-    kind: "borough",
+    kind: "postcode-district",
     postcodeDistricts: ["SW4"],
     region: "london",
     active: true,
+    patchGroup: "core",
     overview: [
       "Clapham's housing is overwhelmingly Victorian and Edwardian terraces, most long since converted into flats, with grander Georgian and early-Victorian houses around the Old Town and Clapham Common North Side. Many of these terraces have been extended into the side return, so a two-bed off Abbeville Road can carry a wide galley kitchen and a shower room squeezed into a loft conversion while the flat next door has neither. Room composition, not bedroom count, is what actually drives the time on the job, which is why we price on the kitchens, bathrooms and reception rooms we will actually clean.",
       "The area splits between settled owner-occupiers and a high-churn rental market. Around Abbeville Village, The Chase and the streets off the Common, fortnightly domestic cleaning for dual-income households and young families dominates, and keeping the same cleaner matters more than anything else. Nearer Clapham North, Clapham High Street and the SW9 edge toward Brixton, professional flatshares turn over fast, which keeps one-off deep cleans and end of tenancy work steady year-round rather than only over the summer. Period features — stripped floorboards, cornicing and original sash windows — reward the gentler, non-toxic products we use as standard rather than the harsh chemicals that dull old surfaces, and the young families here are exactly the households that ask for fragrance-free and pet-safe product sets.",
@@ -188,6 +195,38 @@ export const areas: Area[] = [
         ],
       },
     ],
+  },
+  // ── §4 Phase 1B: Bromley. Served, but a SEPARATE patch with its own crew and
+  //    round — never share a crew with the core cluster (§4, §7.5). ──
+  {
+    slug: "bromley",
+    name: "Bromley",
+    kind: "postcode-district",
+    postcodeDistricts: ["BR1"],
+    region: "london",
+    active: true,
+    patchGroup: "bromley",
+  },
+  // ── §4 Phase 2: West London. Kept in config but INACTIVE — not served, not
+  //    advertised, and not offered by the booking area-check, until expansion.
+  //    Croydon, Newham and Richmond (not in the §4 plan) were removed entirely. ──
+  {
+    slug: "fulham",
+    name: "Fulham",
+    kind: "postcode-district",
+    postcodeDistricts: ["SW6", "W14"],
+    region: "london",
+    active: false,
+    patchGroup: "phase_two_west",
+  },
+  {
+    slug: "kensington-and-chelsea",
+    name: "Kensington & Chelsea",
+    kind: "borough",
+    postcodeDistricts: ["SW3", "SW5", "SW7", "SW10", "W8", "W10", "W11"],
+    region: "london",
+    active: false,
+    patchGroup: "phase_two_west",
   },
 ];
 
