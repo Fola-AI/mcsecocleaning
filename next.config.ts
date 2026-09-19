@@ -1,4 +1,10 @@
 import type { NextConfig } from "next";
+import { assertIndexingConfigFromEnv } from "./src/lib/seo/indexing-guard";
+
+// Fail the build if a production deploy to a real custom domain would ship with
+// indexing switched off (§6 launch safety). A checklist does not survive a late
+// deploy; this does. The *.vercel.app test deploy is unaffected.
+assertIndexingConfigFromEnv();
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,

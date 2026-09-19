@@ -148,14 +148,14 @@ export const areas: Area[] = [
     region: "london",
     active: true,
     overview: [
-      "Clapham's housing is dominated by Victorian and Edwardian terraces, most long since split into flats, alongside the larger houses fringing Clapham Common. That mix shapes how we clean here: a converted two-bed on Abbeville Road has different bathroom and kitchen counts to a whole house off Clapham Common North Side, and we price on the actual rooms rather than a headline bedroom number.",
-      "It is a young, professional and family area with a high turnover of tenancies around the Common and the Old Town, which keeps demand for end of tenancy work steady through the summer. Period features — original floorboards, cornicing, sash windows — reward the gentler, non-toxic products we use as standard rather than harsh chemicals that dull old surfaces.",
-      "The two ends of Clapham behave quite differently for us. Around Abbeville Village and the Old Town, homes are mostly owner-occupied period conversions where regular fortnightly cleaning dominates and clients value keeping the same cleaner. Nearer Clapham North and the SW9 edge toward Brixton there are far more shared houses and young-professional flatshares, which drives a steadier stream of one-off deep cleans and end of tenancy work as people move between rooms and flats. We staff for both patterns, and we know a Saturday turnaround off the High Street and a weekday maintenance visit near the Common are genuinely different logistics.",
+      "Clapham's housing is overwhelmingly Victorian and Edwardian terraces, most long since converted into flats, with grander Georgian and early-Victorian houses around the Old Town and Clapham Common North Side. Many of these terraces have been extended into the side return, so a two-bed off Abbeville Road can carry a wide galley kitchen and a shower room squeezed into a loft conversion while the flat next door has neither. Room composition, not bedroom count, is what actually drives the time on the job, which is why we price on the kitchens, bathrooms and reception rooms we will actually clean.",
+      "The area splits between settled owner-occupiers and a high-churn rental market. Around Abbeville Village, The Chase and the streets off the Common, fortnightly domestic cleaning for dual-income households and young families dominates, and keeping the same cleaner matters more than anything else. Nearer Clapham North, Clapham High Street and the SW9 edge toward Brixton, professional flatshares turn over fast, which keeps one-off deep cleans and end of tenancy work steady year-round rather than only over the summer. Period features — stripped floorboards, cornicing and original sash windows — reward the gentler, non-toxic products we use as standard rather than the harsh chemicals that dull old surfaces, and the young families here are exactly the households that ask for fragrance-free and pet-safe product sets.",
+      "Access in SW4 has its own rhythm. Basement and garden flats often have their own entrance and a key safe rather than a concierge; top-floor conversions mean stairs and no lift; and the Saturday move-out rush around Venn Street and the High Street is a different logistical problem from a quiet weekday maintenance visit near the Common. We plan the crew and the time for each rather than treating them the same.",
     ],
     propertyStock:
-      "Predominantly Victorian and Edwardian conversions and terraces, with mansion blocks near the Common and a growing number of new-build apartments toward Clapham Junction and the Battersea fringe.",
+      "Predominantly Victorian and Edwardian terraced conversions, many with side-return kitchen extensions and loft conversions, alongside Georgian houses around the Old Town, purpose-built mansion blocks near the Common, pockets of ex-local-authority housing toward Clapham North, and newer apartment schemes on the Clapham Junction and Battersea fringe.",
     parking:
-      "Most of SW4 sits within Lambeth's controlled parking zones, generally operating Monday to Friday. We plan visits and any suspended-bay or visitor-permit needs around the local CPZ so crews arrive on time without parking fines feeding into your price.",
+      "SW4 sits within Lambeth's controlled parking zones, which operate on different days and hours street by street and use visitor permits or scratchcards rather than free bays. Several routes on Clapham High Street and around the Common carry loading and red-route restrictions. We check the specific zone against your address, note the nearest workable option, and build any permit into the plan so a parking fine never lands on your bill.",
     landmarks: ["Clapham Common", "Abbeville Village", "Clapham Old Town", "Venn Street", "Clapham High Street"],
     // Gated: needs a real SW4 photograph (fromArea) before the page can publish.
     photos: [],
@@ -166,24 +166,24 @@ export const areas: Area[] = [
       {
         serviceSlug: "domestic-cleaning",
         intro:
-          "Regular domestic cleaning across Clapham's conversions and terraces, with the same cleaner kept on your home wherever we can. Non-toxic, pet- and allergy-safe products suit the many young families around the Common and the period surfaces common across SW4.",
+          "Regular domestic cleaning across Clapham's terraced conversions and family houses, with the same cleaner kept on your home wherever we can — the single biggest factor in a home that stays clean. Non-toxic, pet- and allergy-safe products suit the young families around the Common and the original floors and joinery common across SW4.",
         pricingNote:
-          "Clapham domestic visits are priced on your actual rooms and condition, with a frequency discount for weekly or fortnightly bookings and a longer first clean shown separately in your quote.",
+          "Clapham domestic visits are priced on the actual rooms and condition of your home rather than a bedroom count, with a frequency discount for weekly or fortnightly bookings shown as an explicit saving and the longer first clean itemised separately in your quote.",
         notes: [
-          "Sash-window sills and original floors cleaned with gentle products that don't dull period surfaces",
+          "Sash-window sills, skirting and original floors cleaned with gentle products that don't dull period surfaces",
           "Fortnightly is the most popular frequency locally and carries the best per-visit rate",
-          "Saturday and early-evening slots held for households near the Common who are out at work all week",
+          "Saturday and early-evening slots held for dual-income households near the Common who are out at work all week",
         ],
       },
       {
         serviceSlug: "end-of-tenancy-cleaning",
         intro:
-          "End of tenancy cleaning for Clapham's busy lettings market around the Common and the Old Town, cleaned to the inventory-clerk checklist and photographed throughout so your deposit is protected. Turnaround slots through the June to September peak book up fast here.",
+          "End of tenancy cleaning for Clapham's fast-moving lettings market around the Common, the Old Town and the Clapham North border, cleaned to the inventory-clerk checklist and photographed throughout so your deposit is protected. Turnaround slots through the June to September student and tenancy peak book up fast here, so book the date as soon as your check-out is set.",
         pricingNote:
-          "Clapham end of tenancy cleans are priced on bedrooms, bathrooms and condition from the published fixed grid; carpet cleaning and oven interiors are common add-ons in older lets and are shown with their own price and time.",
+          "Clapham end of tenancy cleans are priced on bedrooms, bathrooms and condition from the published fixed grid, with carpet cleaning, oven interiors and other add-ons itemised individually — each with its own price and time so nothing is a surprise at the door.",
         notes: [
-          "72-hour re-clean guarantee covers anything a check-out flags",
-          "We coordinate with local letting agents on the Old Town and Venn Street for key handovers",
+          "72-hour re-clean guarantee covers anything the check-out inventory flags",
+          "We coordinate with local letting agents around the Old Town and Venn Street on key collection and tight check-out windows",
           "Same-day and next-day turnarounds available in the summer moving peak, subject to capacity",
         ],
       },
