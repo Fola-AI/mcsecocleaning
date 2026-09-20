@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { services, serviceBySlug } from "@/config/services";
 import { getRateCard } from "@/lib/pricing/rate-card";
+import { fromPriceFor } from "@/lib/pricing/from-price";
 import { areas, canPublishLocationPage } from "@/config/areas";
 import { formatPounds } from "@/lib/money";
 import { buildMetadata } from "@/lib/seo/metadata";
@@ -49,9 +50,10 @@ export default async function ServiceHubPage({
   const service = serviceBySlug(slug);
   if (!service) notFound();
 
+  const from = fromPriceFor(service.slug);
   const price =
-    service.fromPricePence != null
-      ? `From ${formatPounds(service.fromPricePence)}${service.fromUnit ? ` ${service.fromUnit}` : ""}`
+    from.pence != null
+      ? `From ${formatPounds(from.pence)}${from.unit ? ` ${from.unit}` : ""}`
       : "Priced after a quick survey";
 
   const serviceAddOns = getRateCard().addOns.filter((a) => a.appliesTo.includes(service.slug));

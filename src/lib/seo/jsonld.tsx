@@ -10,6 +10,7 @@
  */
 import { site, formatAddress } from "@/config/site";
 import type { Service } from "@/config/services";
+import { fromPriceFor } from "@/lib/pricing/from-price";
 
 /** Renders a JSON-LD script tag. Safe in server components. */
 export function JsonLd({ data }: { data: Record<string, unknown> | Record<string, unknown>[] }) {
@@ -94,16 +95,16 @@ export function serviceLd(service: Service, opts?: { areaName?: string; url?: st
     areaServed: opts?.areaName
       ? { "@type": "Place", name: opts.areaName }
       : { "@type": "AdministrativeArea", name: "Greater London" },
-    ...(service.fromPricePence
+    ...(fromPriceFor(service.slug).pence
       ? {
           offers: {
             "@type": "Offer",
             priceCurrency: "GBP",
-            price: (service.fromPricePence / 100).toFixed(2),
+            price: (fromPriceFor(service.slug).pence! / 100).toFixed(2),
             priceSpecification: {
               "@type": "PriceSpecification",
               priceCurrency: "GBP",
-              price: (service.fromPricePence / 100).toFixed(2),
+              price: (fromPriceFor(service.slug).pence! / 100).toFixed(2),
               valueAddedTaxIncluded: true,
             },
           },

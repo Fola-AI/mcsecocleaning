@@ -8,6 +8,7 @@
 import { PrismaClient, PricingModel } from "@prisma/client";
 import { services } from "../src/config/services";
 import { getRateCard } from "../src/lib/pricing/rate-card";
+import { fromPriceFor } from "../src/lib/pricing/from-price";
 import { areas, canPublishLocationPage, locationWordCount } from "../src/config/areas";
 import { serviceTemplates } from "../src/config/checklists";
 
@@ -21,7 +22,7 @@ async function main() {
       update: {
         name: s.name,
         pricingModel: s.pricingModel as PricingModel,
-        minimumValue: s.fromPricePence ?? 0,
+        minimumValue: fromPriceFor(s.slug).pence ?? 0,
         remedyWindowHours: s.remedyWindowHours,
         active: true,
       },
@@ -31,7 +32,7 @@ async function main() {
         pricingModel: s.pricingModel as PricingModel,
         baseRates: {},
         durationRates: {},
-        minimumValue: s.fromPricePence ?? 0,
+        minimumValue: fromPriceFor(s.slug).pence ?? 0,
         remedyWindowHours: s.remedyWindowHours,
         active: true,
       },

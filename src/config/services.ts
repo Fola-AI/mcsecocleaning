@@ -6,14 +6,13 @@
  * UK terminology is mandatory (§5.5): "domestic", "end of tenancy",
  * "communal area", "after builders" — never the American equivalents.
  *
- * TODO(pricing): "from" figures are placeholders pending the cost-per-crew-hour
- * model (§16.2). They are VAT-inclusive display values; when VAT registers the
- * money layer keeps the breakdown correct (§10.1).
+ * "from" prices are NOT stored here — they are derived from the rate card by
+ * src/lib/pricing/from-price.ts (the single source), so this config carries no
+ * price. pricingModel is kept only to describe HOW a service is priced.
  */
 
 export type SelfServe = "self-serve" | "rfq";
 export type PricingModel = "room" | "hourly" | "quoted";
-export type FromUnit = "per visit" | "per hour" | "per job" | null;
 
 export interface ServiceFaq {
   q: string;
@@ -33,9 +32,6 @@ export interface Service {
   /** Whether this books online or routes to the commercial RFQ flow (§6.6). */
   channel: SelfServe;
   pricingModel: PricingModel;
-  /** "from" price in pence for published pricing (§4.3). Null when quoted. */
-  fromPricePence: number | null;
-  fromUnit: FromUnit;
   /** Recurring available? (drives frequency-discount messaging, §4.2). */
   recurring: boolean;
   /** Remedy/guarantee window in hours (§6.11). */
@@ -61,8 +57,6 @@ export const services: Service[] = [
       "Weekly, fortnightly, monthly or one-off home cleaning using non-toxic, pet- and allergy-safe products. Book online with a fixed price — no phone call, no waiting for a quote.",
     channel: "self-serve",
     pricingModel: "room",
-    fromPricePence: 4800, // £48 placeholder per maintenance visit
-    fromUnit: "per visit",
     recurring: true,
     remedyWindowHours: 48,
     whoFor:
@@ -103,8 +97,6 @@ export const services: Service[] = [
       "A thorough, checklist-driven end of tenancy clean aligned to what inventory clerks assess — inside cupboards, appliance interiors, limescale and skirting boards — with before/after photos and a 72-hour re-clean guarantee.",
     channel: "self-serve",
     pricingModel: "room",
-    fromPricePence: 15000, // £150 placeholder; minimum job value ~£120 (§4.2)
-    fromUnit: "per job",
     recurring: false,
     remedyWindowHours: 72,
     whoFor:
@@ -145,8 +137,6 @@ export const services: Service[] = [
       "A one-off, detailed clean that reaches the areas a regular visit doesn't — build-up, limescale, appliance exteriors, skirting and edges. Often the ideal first step before switching to a regular clean.",
     channel: "self-serve",
     pricingModel: "room",
-    fromPricePence: 12000, // £120 placeholder
-    fromUnit: "per job",
     recurring: false,
     remedyWindowHours: 48,
     whoFor:
@@ -183,8 +173,6 @@ export const services: Service[] = [
       "Specialist cleaning after building, renovation or refurbishment work — fine dust removal, paint and adhesive residue, and a full finish clean. Quoted after we understand the scope.",
     channel: "self-serve",
     pricingModel: "quoted",
-    fromPricePence: null,
-    fromUnit: null,
     recurring: false,
     remedyWindowHours: 48,
     whoFor:
@@ -217,8 +205,6 @@ export const services: Service[] = [
       "Recurring office and commercial cleaning on a contract tailored to your site, hours and standards — with documented green cleaning practice that helps meet ESG and tender requirements.",
     channel: "rfq",
     pricingModel: "quoted",
-    fromPricePence: null,
-    fromUnit: null,
     recurring: true,
     remedyWindowHours: 48,
     whoFor:
@@ -255,8 +241,6 @@ export const services: Service[] = [
       "Recurring cleaning of communal areas in residential blocks — entrances, stairwells, corridors, lifts and bin stores — for managing agents and RTM companies, billed to the managing entity.",
     channel: "rfq",
     pricingModel: "quoted",
-    fromPricePence: null,
-    fromUnit: null,
     recurring: true,
     remedyWindowHours: 48,
     whoFor:

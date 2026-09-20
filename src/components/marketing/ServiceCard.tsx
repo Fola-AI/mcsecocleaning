@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Service } from "@/config/services";
 import { formatPounds } from "@/lib/money";
+import { fromPriceFor } from "@/lib/pricing/from-price";
 
 const accentBar: Record<Service["accent"], string> = {
   leaf: "bg-leaf",
@@ -12,9 +13,10 @@ const accentBar: Record<Service["accent"], string> = {
 };
 
 export function ServiceCard({ service }: { service: Service }) {
+  const from = fromPriceFor(service.slug);
   const price =
-    service.fromPricePence != null
-      ? `From ${formatPounds(service.fromPricePence)}${service.fromUnit ? ` ${service.fromUnit}` : ""}`
+    from.pence != null
+      ? `From ${formatPounds(from.pence)}${from.unit ? ` ${from.unit}` : ""}`
       : "Quoted after survey";
 
   return (

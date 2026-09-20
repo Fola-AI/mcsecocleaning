@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { orderedServices } from "@/config/services";
 import { getRateCard } from "@/lib/pricing/rate-card";
+import { fromPriceFor } from "@/lib/pricing/from-price";
 import { formatPounds } from "@/lib/money";
 import { VAT_REGISTERED } from "@/lib/money";
 import { buildMetadata } from "@/lib/seo/metadata";
@@ -39,7 +40,9 @@ export default function PricesPage() {
               </tr>
             </thead>
             <tbody>
-              {orderedServices.map((s) => (
+              {orderedServices.map((s) => {
+                const from = fromPriceFor(s.slug);
+                return (
                 <tr key={s.slug} className="border-b border-line">
                   <td className="py-4 pr-4">
                     <Link href={`/${s.slug}`} className="font-semibold text-brand-strong hover:underline">
@@ -48,8 +51,8 @@ export default function PricesPage() {
                     <span className="block text-sm text-ink-soft">{s.tagline}</span>
                   </td>
                   <td className="py-4 pr-4 font-semibold">
-                    {s.fromPricePence != null
-                      ? `${formatPounds(s.fromPricePence)}${s.fromUnit ? ` ${s.fromUnit}` : ""}`
+                    {from.pence != null
+                      ? `From ${formatPounds(from.pence)}${from.unit ? ` ${from.unit}` : ""}`
                       : "Quoted"}
                   </td>
                   <td className="py-4 text-sm text-ink-soft">
@@ -58,7 +61,8 @@ export default function PricesPage() {
                     {s.pricingModel === "hourly" && "Hourly rate × minimum hours"}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
