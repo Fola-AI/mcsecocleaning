@@ -65,6 +65,27 @@ export interface Slot {
 
 const MIN = 60 * 1000;
 
+/**
+ * Planning crew size used to turn a job's labour estimate into an elapsed slot
+ * length at BOOKING time, before a specific crew is assigned. Real crew size
+ * comes from JobAssignment; this is the assumption the wizard books against.
+ * TODO(ops): make configurable per service / roster during integration.
+ */
+export const PLANNING_CREW_SIZE = 2;
+
+/**
+ * Convert a job's TOTAL LABOUR (crew-minutes, from the rate card) into the
+ * ELAPSED slot length that `computeSlots` consumes. A 2-crew job at 180
+ * crew-minutes occupies a 90-minute slot, not 180. Rounds UP so a slot is never
+ * under-booked. This is the single point where the crew-minutes unit meets the
+ * scheduler — capacity and payroll must both treat the rate-card number as
+ * labour (see rate-card.ts header).
+ */
+export function elapsedSlotMinutes(crewMinutes: number, crewSize: number = PLANNING_CREW_SIZE): number {
+  const size = Math.max(1, Math.floor(crewSize));
+  return Math.ceil(crewMinutes / size);
+}
+
 /** Subtract a set of busy intervals from a base interval → free intervals. */
 export function subtractIntervals(base: Interval, busy: Interval[]): Interval[] {
   const sorted = busy

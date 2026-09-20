@@ -320,6 +320,10 @@ model Job {
   status                   JobStatus @default(draft)
   scheduledStart           DateTime?
   scheduledEnd             DateTime?
+  // Both are crew-minutes = TOTAL LABOUR (crew-size independent), matching the
+  // rate card. actualDurationMinutes MUST be summed across the whole crew's
+  // TimeEntry rows — NOT elapsed on-site time — or the §5 actual-vs-estimated
+  // loop compares 2-person elapsed against a labour estimate and reads ~50% under.
   estimatedDurationMinutes Int
   actualDurationMinutes    Int?
   net                      Int

@@ -4,6 +4,7 @@ import {
   computeSlots,
   distinctStartTimes,
   subtractIntervals,
+  elapsedSlotMinutes,
   type CrewAvailability,
 } from "@/lib/capacity";
 
@@ -13,6 +14,41 @@ const crewA: CrewAvailability = { crewId: "A", workingHours: monToFri };
 const from = new Date("2026-06-01T00:00:00Z");
 const to = new Date("2026-06-01T23:00:00Z");
 const earlyNow = new Date("2026-05-01T00:00:00Z"); // lead time won't bite
+
+test("elapsedSlotMinutes converts crew-minutes (labour) to an elapsed slot", () => {
+  assert.equal(elapsedSlotMinutes(180, 1), 180); // one cleaner
+  assert.equal(elapsedSlotMinutes(180, 2), 90); // two cleaners — half the elapsed time
+  assert.equal(elapsedSlotMinutes(180, 3), 60);
+  assert.equal(elapsedSlotMinutes(185, 2), 93); // rounds up, never under-books
+});
+
+test("a 2-crew job at 180 crew-minutes consumes a 90-minute slot, not 180", () => {
+  // The rate card gives 180 crew-minutes (labour). With a 2-person crew the job
+  // occupies 90 elapsed minutes. Booking 180 would waste half a crew's day.
+  const CREW_MINUTES = 180;
+  const rightSlot = elapsedSlotMinutes(CREW_MINUTES, 2); // 90
+  const q = {
+    from,
+    to,
+    crews: [crewA],
+    slotGranularityMinutes: 30,
+    leadTimeHours: 0,
+    now: earlyNow,
+  };
+
+  const correct = computeSlots({ ...q, durationMinutes: rightSlot });
+  // Every 90-minute slot ends exactly 90 minutes after it starts.
+  for (const s of correct) {
+    assert.equal((s.end.getTime() - s.start.getTime()) / 60000, 90);
+  }
+  // 08:00–18:00 fits more 90-minute slots than it would 180-minute (raw) slots,
+  // so treating crew-minutes as the slot length loses staffable capacity.
+  const wrong = computeSlots({ ...q, durationMinutes: CREW_MINUTES }); // 180 = the bug
+  assert.ok(
+    distinctStartTimes(correct).length > distinctStartTimes(wrong).length,
+    "using crew-minutes as the elapsed slot length under-books capacity"
+  );
+});
 
 test("subtractIntervals removes busy windows", () => {
   const base = { start: new Date("2026-06-01T08:00:00Z"), end: new Date("2026-06-01T18:00:00Z") };
