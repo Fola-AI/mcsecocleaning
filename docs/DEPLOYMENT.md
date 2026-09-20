@@ -38,6 +38,24 @@ npm run db:seed      # service types, areas, gated location pages
 ```
 Enable managed backups + PITR and **test a restore** before launch (§9.2).
 
+### 4a. Manual migrations — run BEFORE the deploy that needs them, never after
+`prisma db push` (§4) creates a **fresh** schema fully, so on a new database the
+files in `prisma/manual-migrations/` are not needed. They exist to evolve a
+database that **already holds rows**, and the build does **not** run them
+(`build` = `prisma generate && next build`). Rule: **apply the SQL first, then
+deploy** — never the reverse, regardless of current DB state. Deploying code that
+writes a value the DB doesn't have yet is caught by app-level try/catch, so it
+doesn't crash — it **silently fails to persist** and only emails the team, which
+is quiet data loss.
+
+- **`2026-09-19-service-area-patch-group.sql`** — `ServiceArea.patchGroup`.
+- **`2026-09-20-lead-converted-quote-and-domestic-sales.sql`** — `Lead.convertedQuoteId`
+  + `LeadType.domestic_sales`. **MUST run against prod's DB before (or with) the
+  first deploy where `hasDatabase` is true.** Until a DB is connected the code is
+  inert (lead writes are skipped), but the gap opens the moment a DB is attached
+  if the enum value isn't there first. Run `ALTER TYPE … ADD VALUE` **standalone**
+  (not inside a transaction).
+
 ## 5. Email deliverability (do before sending anything real)
 Configure **SPF, DKIM and DMARC** for the sending domain in Resend and warm the
 domain. Booking confirmations landing in spam is a business-ending failure (§9.2).
