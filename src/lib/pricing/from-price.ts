@@ -2,12 +2,13 @@
  * "From £X" display prices (§12.1, §12.3) — derived, never authored.
  *
  * Every marketing surface that shows a headline "from" price (the homepage
- * service cards, the /prices table, each /[service] hero, the JSON-LD Offer)
- * reads it from HERE, and this computes it by asking the quote engine for the
- * cheapest real booking of that service. So the headline figure is definitionally
- * the floor a customer would actually pay — the homepage and the prices page
- * cannot show different numbers, and neither can drift from the rate card, because
- * all of them resolve through one deterministic function over the single source.
+ * service cards, the homepage price accordion, the /prices table, each /[service]
+ * hero, the JSON-LD Offer, and the seed's minimumValue) reads it from HERE, and
+ * this SEARCHES the quote engine for the cheapest real booking of that service. So
+ * the headline figure is the floor a customer would actually pay — the homepage
+ * and the prices page cannot show different numbers, and neither can drift from
+ * the rate card, because all of them resolve through one deterministic function
+ * over the single source.
  *
  * The floor is SEARCHED, not chosen. Price is monotonic non-decreasing in rooms
  * and add-ons (each only ever adds crew-minutes / pounds), so the minimum sits at

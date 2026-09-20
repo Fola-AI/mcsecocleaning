@@ -2,14 +2,16 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { site } from "@/config/site";
 import { orderedServices } from "@/config/services";
-import { areas } from "@/config/areas";
+import { areas, publishedLocationPages } from "@/config/areas";
 import { QuoteWidget } from "@/components/marketing/QuoteWidget";
 import { TrustBar } from "@/components/ui/TrustBar";
 import { Section, SectionHeading } from "@/components/marketing/Section";
 import { ServiceCard } from "@/components/marketing/ServiceCard";
+import { PriceAccordion } from "@/components/marketing/PriceAccordion";
 import { Reviews } from "@/components/marketing/Reviews";
 import { Faq } from "@/components/marketing/Faq";
 import { CtaBanner } from "@/components/marketing/CtaBanner";
+import { JsonLd, faqLd } from "@/lib/seo/jsonld";
 import { buildMetadata } from "@/lib/seo/metadata";
 
 export const metadata: Metadata = buildMetadata({
@@ -17,6 +19,9 @@ export const metadata: Metadata = buildMetadata({
   description: site.description,
   path: "/",
 });
+
+// Trust badges inline (§12.1.4).
+const TRUST_BADGES = ["Fully insured", "DBS-checked", "Eco products", "Re-clean guarantee"];
 
 const differentiators = [
   {
@@ -42,20 +47,56 @@ const differentiators = [
 ];
 
 const steps = [
-  { n: 1, title: "Get your price", body: "Enter your postcode and rooms for an instant, fixed, VAT-inclusive price." },
-  { n: 2, title: "Pick a slot", body: "Choose a date and time we can actually staff — no phantom availability." },
-  { n: 3, title: "We clean & prove it", body: "An insured, DBS-checked crew cleans to a checklist and sends before/after photos." },
+  { n: 1, title: "Book or get a quote", body: "Instant fixed price for a standard job, or ask for a tailored quote on a larger one." },
+  { n: 2, title: "We arrive equipped", body: "An insured, DBS-checked crew arrives with non-toxic products and everything the job needs." },
+  { n: 3, title: "Inspection-ready", body: "We clean to a checklist and send before/after photos — proof the job was done right." },
+];
+
+const homeFaqs = [
+  {
+    q: "How quickly can you clean my home?",
+    a: "For domestic and deep cleans we can often attend within a few days; end of tenancy slots in peak season (June–September) book up faster, so book early. Enter your postcode for live availability.",
+  },
+  {
+    q: "Are your prices really fixed?",
+    a: "Yes. You get a fixed, VAT-inclusive price online based on your actual rooms. The only changes are ones you ask for — extra rooms or add-ons found on the day — and we agree those with you first.",
+  },
+  {
+    q: "Are you insured and vetted?",
+    a: `Yes — ${site.trust.publicLiabilityCover} public liability cover and DBS-checked crews. We treat your home and your keys with the seriousness they deserve.`,
+  },
+  {
+    q: "Do you cover my area?",
+    a: "We're launching in selected London areas and expanding. Enter your postcode on any page — if we're not there yet, join the waitlist and we'll tell you when we are.",
+  },
 ];
 
 export default function HomePage() {
   const homeReviews = areas.flatMap((a) => a.reviews ?? []).slice(0, 3);
 
+  // Coverage (§12.1.10): active districts, linked to a published location page
+  // where the §6 gate allows one, otherwise to the coverage hub (never a
+  // doorway page that isn't published).
+  const publishedByArea = new Map(publishedLocationPages().map((p) => [p.area.slug, p.serviceSlug]));
+  const coverage = areas
+    .filter((a) => a.active)
+    .map((a) => ({
+      name: a.name,
+      href: publishedByArea.has(a.slug) ? `/${publishedByArea.get(a.slug)}/${a.slug}` : "/areas-we-cover",
+    }));
+
   return (
     <>
+      <JsonLd data={[faqLd(homeFaqs)]} />
+
       {/* Hero */}
       <section className="relative overflow-hidden">
         <div className="container-page grid items-center gap-10 py-12 md:py-16 lg:grid-cols-2">
           <div>
+            {/* §12.1.1 social-proof strip (rating + count) lands here once ≥10 real,
+                verified reviews exist — render <SocialProofStrip reviews={…} />.
+                Until then (§12.4) the trust badges below fill the slot; we do NOT
+                ship an aggregate on invented or trivially small numbers. */}
             <p className="eyebrow">Eco cleaning · London &amp; nearby</p>
             <h1 className="mt-3 text-4xl font-bold leading-tight md:text-5xl">
               A cleaner home, a lighter footprint —{" "}
@@ -65,13 +106,28 @@ export default function HomePage() {
               Domestic, end of tenancy, deep and commercial cleaning with non-toxic products,
               before/after photos of every job, and a re-clean guarantee. No phone call needed.
             </p>
-            <ul className="mt-5 flex flex-wrap gap-x-6 gap-y-2 text-sm font-medium text-brand-ink">
-              <li>✓ Fixed prices, no surprises</li>
-              <li>✓ Insured &amp; DBS-checked</li>
-              <li>✓ 72-hour re-clean guarantee</li>
+
+            {/* Dual CTA (§12.1.3, §12.2), resolved against §12's "quote widget above
+                the fold": the QuoteWidget (right) IS the instant path, so the hero
+                carries only the second intent — "Get a quote" for the tailored
+                route — rather than a redundant button to the same /book. Both paths
+                land in the same Lead/Quote records; the instant path escalates
+                inside the engine. The closing CTA repeats both as buttons. */}
+            <div className="mt-6">
+              <Link href="/contact" className="btn btn-outline">Get a tailored quote</Link>
+              <span className="ml-3 text-sm text-ink-soft">for larger or complex jobs</span>
+            </div>
+
+            {/* Trust badges inline (§12.1.4) — also the §12.4 filler for the
+                social-proof slot until real numbers earn their place. */}
+            <ul className="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-sm font-medium text-brand-ink">
+              {TRUST_BADGES.map((b) => (
+                <li key={b}>✓ {b}</li>
+              ))}
             </ul>
           </div>
-          {/* Above-the-fold quote widget (§8) */}
+
+          {/* Above-the-fold quote widget (§12) — the instant "book" mechanism. */}
           <div className="lg:justify-self-end">
             <QuoteWidget />
           </div>
@@ -80,7 +136,7 @@ export default function HomePage() {
 
       <TrustBar />
 
-      {/* Services */}
+      {/* Services (§12.1.5) */}
       <Section>
         <SectionHeading
           eyebrow="What we clean"
@@ -94,7 +150,35 @@ export default function HomePage() {
         </div>
       </Section>
 
-      {/* Differentiators */}
+      {/* How it works (§12.1.6) */}
+      <Section muted>
+        <SectionHeading eyebrow="How it works" title="Booked in three simple steps" />
+        <ol className="mt-8 grid gap-6 md:grid-cols-3">
+          {steps.map((s) => (
+            <li key={s.n} className="card p-6">
+              <span className="grid h-10 w-10 place-items-center rounded-full bg-brand text-lg font-bold text-white">
+                {s.n}
+              </span>
+              <h3 className="mt-4 text-lg font-bold">{s.title}</h3>
+              <p className="mt-2 text-sm text-ink-soft">{s.body}</p>
+            </li>
+          ))}
+        </ol>
+      </Section>
+
+      {/* Price accordion (§12.1.7) — reads the single price source, links to the full list */}
+      <Section>
+        <SectionHeading
+          eyebrow="Transparent pricing"
+          title="Real prices, before you book"
+          intro="Every service shows a fixed 'from' price on the same rate card the booking uses — no call, no surprise on the day."
+        />
+        <div className="mt-8 max-w-2xl">
+          <PriceAccordion />
+        </div>
+      </Section>
+
+      {/* Why choose us (§12.1.8) */}
       <Section muted>
         <SectionHeading
           eyebrow="Why mcsecocleaning"
@@ -114,24 +198,8 @@ export default function HomePage() {
         </div>
       </Section>
 
-      {/* How it works */}
+      {/* Eco teaser — brand-critical positioning, kept alongside the §12.1 spine. */}
       <Section>
-        <SectionHeading eyebrow="How it works" title="Booked in three simple steps" />
-        <ol className="mt-8 grid gap-6 md:grid-cols-3">
-          {steps.map((s) => (
-            <li key={s.n} className="card p-6">
-              <span className="grid h-10 w-10 place-items-center rounded-full bg-brand text-lg font-bold text-white">
-                {s.n}
-              </span>
-              <h3 className="mt-4 text-lg font-bold">{s.title}</h3>
-              <p className="mt-2 text-sm text-ink-soft">{s.body}</p>
-            </li>
-          ))}
-        </ol>
-      </Section>
-
-      {/* Eco teaser */}
-      <Section muted>
         <div className="grid items-center gap-8 lg:grid-cols-2">
           <div>
             <SectionHeading
@@ -158,10 +226,10 @@ export default function HomePage() {
         </div>
       </Section>
 
-      {/* Reviews — renders only on real reviews. No placeholder or sample data
-          (§12.4, DMCC §10.1). The full social-proof strip lands in Task 2. */}
+      {/* Reviews (§12.1.9) — renders only on real reviews. No placeholder or
+          sample data (§12.4, DMCC §10.1); we style against the empty state. */}
       {homeReviews.length > 0 && (
-        <Section>
+        <Section muted>
           <Reviews reviews={homeReviews} title="Rated by real customers" />
           <div className="mt-6">
             <Link href="/reviews" className="font-semibold text-brand-strong underline">
@@ -171,31 +239,41 @@ export default function HomePage() {
         </Section>
       )}
 
-      {/* FAQ */}
+      {/* Coverage (§12.1.10) */}
+      {coverage.length > 0 && (
+        <Section>
+          <SectionHeading
+            eyebrow="Where we clean"
+            title="Areas we cover"
+            intro="Launching across selected London districts and expanding. Not listed yet? Enter your postcode to join the waitlist."
+          />
+          <ul className="mt-6 flex flex-wrap gap-2">
+            {coverage.map((c) => (
+              <li key={c.name}>
+                <Link href={c.href} className="inline-block rounded-full border border-line px-4 py-2 text-sm font-medium hover:border-brand">
+                  {c.name}
+                </Link>
+              </li>
+            ))}
+          </ul>
+          <Link href="/areas-we-cover" className="mt-5 inline-block font-semibold text-brand-strong underline">
+            See all areas &amp; check your postcode →
+          </Link>
+        </Section>
+      )}
+
+      {/* FAQ (§12.1.11) — marked up as FAQPage via the JsonLd above. */}
       <Section muted>
-        <Faq
-          faqs={[
-            {
-              q: "How quickly can you clean my home?",
-              a: "For domestic and deep cleans we can often attend within a few days; end of tenancy slots in peak season (June–September) book up faster, so book early. Enter your postcode for live availability.",
-            },
-            {
-              q: "Are your prices really fixed?",
-              a: "Yes. You get a fixed, VAT-inclusive price online based on your actual rooms. The only changes are ones you ask for — extra rooms or add-ons found on the day — and we agree those with you first.",
-            },
-            {
-              q: "Are you insured and vetted?",
-              a: `Yes — ${site.trust.publicLiabilityCover} public liability cover and DBS-checked crews. We treat your home and your keys with the seriousness they deserve.`,
-            },
-            {
-              q: "Do you cover my area?",
-              a: "We're launching in selected London areas and expanding. Enter your postcode on any page — if we're not there yet, join the waitlist and we'll tell you when we are.",
-            },
-          ]}
-        />
+        <Faq faqs={homeFaqs} />
       </Section>
 
-      <CtaBanner />
+      {/* Closing CTA (§12.1.12) — repeats both dual-CTA paths. */}
+      <CtaBanner
+        primaryHref="/book"
+        primaryLabel="Book instantly"
+        secondaryHref="/contact"
+        secondaryLabel="Get a quote"
+      />
     </>
   );
 }

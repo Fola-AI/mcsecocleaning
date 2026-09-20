@@ -6,11 +6,18 @@ export function CtaBanner({
   subtitle = "Get a fixed online price in under two minutes — or call and we'll book you in.",
   primaryHref = "/book",
   primaryLabel = "Get a price",
+  // When set, a second button is shown alongside the primary — used for the
+  // homepage closing CTA that repeats both dual-CTA paths (§12.1.12). Both paths
+  // land in the same Lead/Quote records; the instant path escalates in the engine.
+  secondaryHref,
+  secondaryLabel,
 }: {
   title?: string;
   subtitle?: string;
   primaryHref?: string;
   primaryLabel?: string;
+  secondaryHref?: string;
+  secondaryLabel?: string;
 }) {
   return (
     <section className="py-14 md:py-20">
@@ -22,9 +29,15 @@ export function CtaBanner({
             <Link href={primaryHref} className="btn bg-white text-brand-strong hover:bg-white/90">
               {primaryLabel}
             </Link>
-            <a href={`tel:${site.contact.phone}`} className="btn btn-outline border-white/70 text-white">
-              📞 {site.contact.phoneDisplay}
-            </a>
+            {secondaryHref && secondaryLabel ? (
+              <Link href={secondaryHref} className="btn btn-outline border-white/70 text-white">
+                {secondaryLabel}
+              </Link>
+            ) : (
+              <a href={`tel:${site.contact.phone}`} className="btn btn-outline border-white/70 text-white">
+                📞 {site.contact.phoneDisplay}
+              </a>
+            )}
           </div>
         </div>
       </div>
