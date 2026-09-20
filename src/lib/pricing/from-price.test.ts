@@ -50,20 +50,42 @@ test("survey-only services carry no headline number", () => {
 });
 
 test("the 'from' price equals the engine's actual cheapest quote (no drip, no drift)", () => {
-  // Domestic: cheapest = a minimal weekly visit.
+  // Each surface figure equals the engine's actual per-visit/per-job charge for
+  // the cheapest booking — perVisitGross, the number a customer is really charged.
   const dom = computeQuote({ serviceSlug: "domestic-cleaning", propertyType: "flat", rooms: {}, frequency: "weekly" });
   assert.equal(dom.escalate, false);
   if (!dom.escalate) assert.equal(fromPriceFor("domestic-cleaning").pence, dom.perVisitGross);
 
-  // EOT: cheapest = the studio.
   const eot = computeQuote({ serviceSlug: "end-of-tenancy-cleaning", propertyType: "flat", rooms: {} });
   assert.equal(eot.escalate, false);
-  if (!eot.escalate) assert.equal(fromPriceFor("end-of-tenancy-cleaning").pence, eot.oneOffGross);
+  if (!eot.escalate) assert.equal(fromPriceFor("end-of-tenancy-cleaning").pence, eot.perVisitGross);
 
-  // Deep: cheapest = the 4h floor.
   const deep = computeQuote({ serviceSlug: "deep-cleaning", propertyType: "flat", rooms: {} });
   assert.equal(deep.escalate, false);
   if (!deep.escalate) assert.equal(fromPriceFor("deep-cleaning").pence, deep.perVisitGross);
+});
+
+test("fromPriceFor searches the true floor — no bookable config is cheaper", () => {
+  // The guard against a hand-picked point: if any real booking comes in below the
+  // published 'from' figure, the headline is a lie and this fails. Brute-forces a
+  // broad slice of the input space (property × frequency × rooms × add-ons).
+  for (const slug of ["domestic-cleaning", "end-of-tenancy-cleaning", "deep-cleaning"]) {
+    const floor = fromPriceFor(slug).pence as number;
+    for (const propertyType of ["flat", "house"] as const) {
+      for (const frequency of ["one_off", "weekly", "fortnightly", "monthly"] as const) {
+        for (const bedrooms of [0, 1, 2, 3, 4]) {
+          for (const bathrooms of [1, 2, 3]) {
+            for (const addOnSlugs of [[], ["oven-single"]]) {
+              const q = computeQuote({ serviceSlug: slug, propertyType, rooms: { bedrooms, bathrooms }, condition: "standard", frequency, addOnSlugs });
+              if (q.escalate) continue;
+              const headline = q.perVisitGross; // the actual per-visit/per-job charge
+              assert.ok(headline >= floor, `${slug}: ${propertyType}/${frequency}/${bedrooms}b/${bathrooms}ba priced ${headline}p, below the published floor ${floor}p`);
+            }
+          }
+        }
+      }
+    }
+  }
 });
 
 test("every configured service resolves cleanly through the single source", () => {

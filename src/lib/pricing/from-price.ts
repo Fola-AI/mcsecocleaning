@@ -9,15 +9,17 @@
  * cannot show different numbers, and neither can drift from the rate card, because
  * all of them resolve through one deterministic function over the single source.
  *
- * The floor = the smallest job (no rooms beyond the implicit minimum) at the best
- * available frequency:
- *   · EOT  → the cheapest grid cell (the studio flat).
- *   · domestic → the weekly minimum-hours floor (its lowest recurring entry).
- *   · deep → the deep minimum-hours floor.
- *   · survey-only services → no number (they escalate).
+ * The floor is SEARCHED, not chosen. Price is monotonic non-decreasing in rooms
+ * and add-ons (each only ever adds crew-minutes / pounds), so the minimum sits at
+ * zero rooms and zero add-ons — those are pinned because they provably can't lower
+ * the price, not because they happen to be cheap. The dimensions that CAN move the
+ * headline down — frequency and property type — are enumerated exhaustively, and
+ * we return the lowest quote the engine will actually give. If a rate-card change
+ * ever makes a different frequency the cheapest, the headline follows it; nothing
+ * is hand-picked, so the parity gate can't pass against a stale chosen point.
  */
-import { computeQuote } from "@/lib/quote";
-import { getRateCard } from "@/lib/pricing/rate-card";
+import { computeQuote, type Frequency } from "@/lib/quote";
+import { getRateCard, type PropertyType } from "@/lib/pricing/rate-card";
 import { services } from "@/config/services";
 
 export interface FromPrice {
@@ -27,14 +29,28 @@ export interface FromPrice {
   unit: string | null;
 }
 
+const ALL_FREQUENCIES: Frequency[] = ["one_off", "weekly", "fortnightly", "monthly"];
+const ALL_PROPERTY_TYPES: PropertyType[] = ["flat", "house"];
+
 export function fromPriceFor(serviceSlug: string): FromPrice {
-  // Minimal job (rooms {} → the implicit studio / floor) at the best frequency.
-  // Weekly is the cheapest recurring entry for domestic; EOT and deep ignore it.
-  const q = computeQuote({ serviceSlug, propertyType: "flat", rooms: {}, frequency: "weekly" });
-  if (q.escalate) return { pence: null, unit: null };
-  if (q.pricingModel === "eot_grid") return { pence: q.oneOffGross, unit: "per job" };
-  // Hourly: a recurring visit shows "per visit"; a one-off service (deep) "per job".
-  return { pence: q.perVisitGross, unit: q.isRecurring ? "per visit" : "per job" };
+  let best: FromPrice | null = null;
+  // Rooms {} and no add-ons are the provable minimum (monotonicity, see header);
+  // frequency × property type is the space that can actually lower the floor.
+  for (const propertyType of ALL_PROPERTY_TYPES) {
+    for (const frequency of ALL_FREQUENCIES) {
+      const q = computeQuote({ serviceSlug, propertyType, rooms: {}, frequency });
+      if (q.escalate) continue;
+      // perVisitGross is the actual per-visit/per-job charge in every case (for a
+      // one-off it equals the one-off charge; for recurring it's the ongoing visit
+      // we advertise). NOT oneOffGross — that's a same-job-at-the-one-off-RATE
+      // reference used only for the frequency-saving calc, and it understates a
+      // deep clean, which is charged at the deep rate, not the regular one-off rate.
+      const pence = q.perVisitGross;
+      const unit = q.pricingModel === "eot_grid" ? "per job" : q.isRecurring ? "per visit" : "per job";
+      if (best === null || pence < (best.pence as number)) best = { pence, unit };
+    }
+  }
+  return best ?? { pence: null, unit: null };
 }
 
 /**
