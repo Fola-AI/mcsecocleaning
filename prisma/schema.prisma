@@ -130,6 +130,7 @@ enum LeadType {
   commercial
   communal
   waitlist
+  domestic_sales // tailored domestic quote (e.g. an escalated 5-bed/soiled EOT) — NOT commercial (#3)
 }
 
 enum ReviewPlatform {
@@ -591,11 +592,17 @@ model Lead {
   status           String   @default("new")
   assignedTo       String?
   source           String?
+  // Set when a tailored/RFQ/waitlist lead converts into an instant Quote (#2).
+  // One-way, nullable, on the SMALLER table only: a Quote never back-references a
+  // Lead (most Quotes have none), so there is no leadId on Quote. Plain scalar FK
+  // (no Prisma relation) to avoid forcing a back-relation field on Quote.
+  convertedQuoteId String?
   proposals        Proposal[]
   createdAt        DateTime @default(now())
 
   @@index([type])
   @@index([status])
+  @@index([convertedQuoteId])
 }
 
 model Proposal {

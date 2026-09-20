@@ -1,10 +1,11 @@
 "use server";
 
 import { z } from "zod";
-import { Prisma } from "@prisma/client";
+import { Prisma, type LeadType } from "@prisma/client";
 import { db, hasDatabase } from "@/lib/db";
 import { sendEmail } from "@/lib/email";
 import { site } from "@/config/site";
+import { serviceBySlug } from "@/config/services";
 import { checkServiceArea } from "@/lib/serviceArea";
 
 /**
@@ -38,10 +39,14 @@ export type LeadState =
   | { status: "success"; message: string }
   | { status: "error"; message: string; fieldErrors?: Record<string, string> };
 
-function classifyType(enquiry?: string): "waitlist" | "commercial" | "communal" {
+function classifyType(enquiry?: string): LeadType {
   if (enquiry === "waitlist") return "waitlist";
   if (enquiry === "communal-area-cleaning") return "communal";
-  return "commercial";
+  // A self-serve service slug reaching /contact is an escalated DOMESTIC job
+  // (e.g. a 5-bed/soiled EOT, or after-builders) — a sales lead, not commercial.
+  const svc = enquiry ? serviceBySlug(enquiry) : undefined;
+  if (svc?.channel === "self-serve") return "domestic_sales";
+  return "commercial"; // office-cleaning (rfq) + general enquiries
 }
 
 export async function submitLead(
