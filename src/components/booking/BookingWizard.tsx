@@ -49,6 +49,18 @@ const emptyRooms = Object.fromEntries(ROOM_KEYS.map((k) => [k, 0])) as Record<Ro
 // customer ticks here are exactly what the quote engine charges — no parallel list.
 const CARD_ADD_ONS = getRateCard().addOns;
 
+// Interior windows are a single choice, not three. The customer ticks "Interior
+// windows" once; the tier is derived from property size so a quote can never carry
+// two tiers or the wrong one (same trust hole as a £0 add-on). Studio/1-bed →
+// small, 2–3 → medium, 4+ → large.
+const WINDOW_TIERS = ["interior-windows-small", "interior-windows-medium", "interior-windows-large"];
+const isWindowTier = (slug: string) => WINDOW_TIERS.includes(slug);
+function windowTierFor(bedrooms: number): string {
+  if (bedrooms >= 4) return "interior-windows-large";
+  if (bedrooms >= 2) return "interior-windows-medium";
+  return "interior-windows-small";
+}
+
 const STEP_TITLES = [
   "Your area",
   "Service",
@@ -89,6 +101,15 @@ export function BookingWizard({
 
   const set = <K extends keyof State>(key: K, value: State[K]) => setState((s) => ({ ...s, [key]: value }));
 
+  // Interior-window tier is derived from size; normalise the selection so the
+  // priced list never carries a stale or duplicate tier.
+  const windowTier = windowTierFor(state.rooms.bedrooms);
+  const windowsSelected = state.addOnSlugs.some(isWindowTier);
+  const effectiveAddOnSlugs = useMemo(
+    () => [...state.addOnSlugs.filter((s) => !isWindowTier(s)), ...(windowsSelected ? [windowTier] : [])],
+    [state.addOnSlugs, windowsSelected, windowTier]
+  );
+
   const quote = useMemo(
     () =>
       computeQuote({
@@ -97,15 +118,18 @@ export function BookingWizard({
         rooms: state.rooms,
         condition: state.condition,
         frequency: state.frequency,
-        addOnSlugs: state.addOnSlugs,
+        addOnSlugs: effectiveAddOnSlugs,
       }),
-    [state.serviceSlug, state.propertyType, state.rooms, state.condition, state.frequency, state.addOnSlugs]
+    [state.serviceSlug, state.propertyType, state.rooms, state.condition, state.frequency, effectiveAddOnSlugs]
   );
   // 5+ bed / heavily-soiled EOT has no instant price — route to a tailored quote.
   const priced = quote.escalate ? null : quote;
 
   const areaCheck = state.postcode ? checkServiceArea(state.postcode) : null;
-  const applicableAddOns = CARD_ADD_ONS.filter((a) => a.appliesTo.includes(state.serviceSlug));
+  // Only the size-matching window tier is offered; the other two are hidden.
+  const applicableAddOns = CARD_ADD_ONS.filter(
+    (a) => a.appliesTo.includes(state.serviceSlug) && (!isWindowTier(a.slug) || a.slug === windowTier)
+  );
 
   if (result?.status === "success") return <Confirmation result={result} />;
 
@@ -128,7 +152,7 @@ export function BookingWizard({
         condition: state.condition,
         propertyType: state.propertyType,
         frequency: state.frequency,
-        addOnSlugs: state.addOnSlugs,
+        addOnSlugs: effectiveAddOnSlugs,
         slotStartISO: state.slotStartISO || undefined,
         access: state.access,
         contact: state.contact,
@@ -160,7 +184,7 @@ export function BookingWizard({
           {step === 0 && <StepArea state={state} set={set} areaCheck={areaCheck} />}
           {step === 1 && <StepService state={state} set={set} />}
           {step === 2 && <StepProperty state={state} set={set} />}
-          {step === 3 && priced && <StepFrequency state={state} set={set} quote={priced} />}
+          {step === 3 && priced && <StepFrequency state={state} set={set} quote={priced} addOnSlugs={effectiveAddOnSlugs} />}
           {step === 4 && <StepAddOns state={state} set={set} addOns={applicableAddOns} />}
           {step === 5 && <StepSlot state={state} set={set} durationMinutes={priced ? priced.elapsedMinutes : 120} />}
           {step === 6 && <StepAccess state={state} set={set} />}
@@ -305,11 +329,11 @@ function StepProperty({ state, set }: StepProps) {
   );
 }
 
-function StepFrequency({ state, set, quote }: StepProps & { quote: QuotePriced }) {
+function StepFrequency({ state, set, quote, addOnSlugs }: StepProps & { quote: QuotePriced; addOnSlugs: string[] }) {
   return (
     <div className="space-y-2">
       {FREQUENCIES.map((f) => {
-        const q = computeQuote({ serviceSlug: state.serviceSlug, propertyType: state.propertyType, rooms: state.rooms, condition: state.condition, frequency: f.value, addOnSlugs: state.addOnSlugs });
+        const q = computeQuote({ serviceSlug: state.serviceSlug, propertyType: state.propertyType, rooms: state.rooms, condition: state.condition, frequency: f.value, addOnSlugs });
         // Frequency never changes escalation (that keys off beds/condition/service), so
         // if the wizard reached this step every frequency prices — guard keeps TS honest.
         if (q.escalate) return null;
@@ -345,15 +369,26 @@ function StepFrequency({ state, set, quote }: StepProps & { quote: QuotePriced }
 }
 
 function StepAddOns({ state, set, addOns }: StepProps & { addOns: AddOn[] }) {
-  const toggle = (slug: string) =>
-    set("addOnSlugs", state.addOnSlugs.includes(slug) ? state.addOnSlugs.filter((s) => s !== slug) : [...state.addOnSlugs, slug]);
+  // Window tiers are one mutually-exclusive choice: ticking "Interior windows"
+  // stores the size-matched tier, and only that tier is ever shown, so the two
+  // can never both be on.
+  const isChecked = (slug: string) =>
+    isWindowTier(slug) ? state.addOnSlugs.some(isWindowTier) : state.addOnSlugs.includes(slug);
+  const toggle = (slug: string) => {
+    if (isWindowTier(slug)) {
+      const base = state.addOnSlugs.filter((s) => !isWindowTier(s));
+      set("addOnSlugs", state.addOnSlugs.some(isWindowTier) ? base : [...base, slug]);
+    } else {
+      set("addOnSlugs", state.addOnSlugs.includes(slug) ? state.addOnSlugs.filter((s) => s !== slug) : [...state.addOnSlugs, slug]);
+    }
+  };
   if (addOns.length === 0) return <p className="text-ink-soft">No add-ons for this service.</p>;
   return (
     <div className="space-y-2">
       {addOns.map((a) => (
-        <label key={a.slug} className={`card flex cursor-pointer items-center justify-between p-4 ${state.addOnSlugs.includes(a.slug) ? "ring-2 ring-brand" : ""}`}>
+        <label key={a.slug} className={`card flex cursor-pointer items-center justify-between p-4 ${isChecked(a.slug) ? "ring-2 ring-brand" : ""}`}>
           <span className="flex items-center gap-3">
-            <input type="checkbox" checked={state.addOnSlugs.includes(a.slug)} onChange={() => toggle(a.slug)} />
+            <input type="checkbox" checked={isChecked(a.slug)} onChange={() => toggle(a.slug)} />
             <span>
               <span className="font-semibold">{a.name}</span>
               <span className="block text-xs text-ink-soft">+{a.crewMinutes} min labour</span>
