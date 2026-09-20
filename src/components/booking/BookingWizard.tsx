@@ -2,9 +2,9 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
-import { selfServeServices, addOns as allAddOns } from "@/config/services";
-import { ROOM_KEYS, type RoomKey } from "@/config/pricing";
-import { computeQuote, type Frequency, type Condition } from "@/lib/quote";
+import { selfServeServices } from "@/config/services";
+import { getRateCard, ROOM_KEYS, type RoomKey, type PropertyType, type AddOn } from "@/lib/pricing/rate-card";
+import { computeQuote, type Frequency, type Condition, type QuotePriced } from "@/lib/quote";
 import { formatPence, formatPounds } from "@/lib/money";
 import { checkServiceArea } from "@/lib/serviceArea";
 import { getSlots, createBooking, type BookingResult } from "@/app/actions/booking";
@@ -32,7 +32,7 @@ interface State {
   serviceSlug: string;
   rooms: Record<RoomKey, number>;
   condition: Condition;
-  propertyType: string;
+  propertyType: PropertyType;
   frequency: Frequency;
   addOnSlugs: string[];
   slotStartISO: string;
@@ -44,6 +44,10 @@ interface State {
 }
 
 const emptyRooms = Object.fromEntries(ROOM_KEYS.map((k) => [k, 0])) as Record<RoomKey, number>;
+
+// Add-ons come from the rate card (the single source), so the price and labour a
+// customer ticks here are exactly what the quote engine charges — no parallel list.
+const CARD_ADD_ONS = getRateCard().addOns;
 
 const STEP_TITLES = [
   "Your area",
@@ -89,24 +93,26 @@ export function BookingWizard({
     () =>
       computeQuote({
         serviceSlug: state.serviceSlug,
+        propertyType: state.propertyType,
         rooms: state.rooms,
         condition: state.condition,
         frequency: state.frequency,
         addOnSlugs: state.addOnSlugs,
-        regionKey: "london",
       }),
-    [state.serviceSlug, state.rooms, state.condition, state.frequency, state.addOnSlugs]
+    [state.serviceSlug, state.propertyType, state.rooms, state.condition, state.frequency, state.addOnSlugs]
   );
+  // 5+ bed / heavily-soiled EOT has no instant price — route to a tailored quote.
+  const priced = quote.escalate ? null : quote;
 
   const areaCheck = state.postcode ? checkServiceArea(state.postcode) : null;
-  const applicableAddOns = allAddOns.filter((a) => a.appliesTo.includes(state.serviceSlug));
+  const applicableAddOns = CARD_ADD_ONS.filter((a) => a.appliesTo.includes(state.serviceSlug));
 
   if (result?.status === "success") return <Confirmation result={result} />;
 
   const canNext = (): boolean => {
     switch (step) {
       case 0: return Boolean(areaCheck?.inArea);
-      case 2: return ROOM_KEYS.some((k) => state.rooms[k] > 0);
+      case 2: return ROOM_KEYS.some((k) => state.rooms[k] > 0) && !quote.escalate;
       case 5: return Boolean(state.slotStartISO);
       case 7: return Boolean(state.contact.name && state.contact.email && state.ccrConsent);
       default: return true;
@@ -154,12 +160,22 @@ export function BookingWizard({
           {step === 0 && <StepArea state={state} set={set} areaCheck={areaCheck} />}
           {step === 1 && <StepService state={state} set={set} />}
           {step === 2 && <StepProperty state={state} set={set} />}
-          {step === 3 && <StepFrequency state={state} set={set} quote={quote} />}
+          {step === 3 && priced && <StepFrequency state={state} set={set} quote={priced} />}
           {step === 4 && <StepAddOns state={state} set={set} addOns={applicableAddOns} />}
-          {step === 5 && <StepSlot state={state} set={set} durationMinutes={quote.durationMinutes} />}
+          {step === 5 && <StepSlot state={state} set={set} durationMinutes={priced ? priced.elapsedMinutes : 120} />}
           {step === 6 && <StepAccess state={state} set={set} />}
-          {step === 7 && <StepDetails state={state} set={set} quote={quote} result={result} />}
+          {step === 7 && priced && <StepDetails state={state} set={set} quote={priced} result={result} />}
         </div>
+
+        {quote.escalate && step >= 2 && (
+          <div className="mt-5 rounded-lg border border-brand/40 bg-brand-tint/40 p-4 text-sm">
+            <p className="font-semibold">This one needs a tailored quote</p>
+            <p className="mt-1 text-ink-soft">{quote.reason}</p>
+            <Link href={`/contact?service=${state.serviceSlug}`} className="btn btn-primary mt-3">
+              Get a tailored quote
+            </Link>
+          </div>
+        )}
 
         <div className="mt-8 flex items-center justify-between">
           <button
@@ -258,6 +274,20 @@ function StepProperty({ state, set }: StepProps) {
         ))}
       </div>
       <div>
+        <label className="block text-sm font-semibold">Property type</label>
+        <div className="mt-2 flex gap-2">
+          {([["flat", "Flat / apartment"], ["house", "House"]] as const).map(([value, label]) => (
+            <button
+              key={value}
+              onClick={() => set("propertyType", value)}
+              className={`rounded-full border px-4 py-2 text-sm ${state.propertyType === value ? "border-brand bg-brand-tint text-brand-ink" : "border-line"}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div>
         <label className="block text-sm font-semibold">Property condition</label>
         <div className="mt-2 flex gap-2">
           {(["standard", "heavily_soiled"] as Condition[]).map((c) => (
@@ -275,11 +305,14 @@ function StepProperty({ state, set }: StepProps) {
   );
 }
 
-function StepFrequency({ state, set, quote }: StepProps & { quote: ReturnType<typeof computeQuote> }) {
+function StepFrequency({ state, set, quote }: StepProps & { quote: QuotePriced }) {
   return (
     <div className="space-y-2">
       {FREQUENCIES.map((f) => {
-        const q = computeQuote({ serviceSlug: state.serviceSlug, rooms: state.rooms, condition: state.condition, frequency: f.value, addOnSlugs: state.addOnSlugs });
+        const q = computeQuote({ serviceSlug: state.serviceSlug, propertyType: state.propertyType, rooms: state.rooms, condition: state.condition, frequency: f.value, addOnSlugs: state.addOnSlugs });
+        // Frequency never changes escalation (that keys off beds/condition/service), so
+        // if the wizard reached this step every frequency prices — guard keeps TS honest.
+        if (q.escalate) return null;
         const selected = state.frequency === f.value;
         return (
           <button
@@ -311,7 +344,7 @@ function StepFrequency({ state, set, quote }: StepProps & { quote: ReturnType<ty
   );
 }
 
-function StepAddOns({ state, set, addOns }: StepProps & { addOns: typeof allAddOns }) {
+function StepAddOns({ state, set, addOns }: StepProps & { addOns: AddOn[] }) {
   const toggle = (slug: string) =>
     set("addOnSlugs", state.addOnSlugs.includes(slug) ? state.addOnSlugs.filter((s) => s !== slug) : [...state.addOnSlugs, slug]);
   if (addOns.length === 0) return <p className="text-ink-soft">No add-ons for this service.</p>;
@@ -323,12 +356,10 @@ function StepAddOns({ state, set, addOns }: StepProps & { addOns: typeof allAddO
             <input type="checkbox" checked={state.addOnSlugs.includes(a.slug)} onChange={() => toggle(a.slug)} />
             <span>
               <span className="font-semibold">{a.name}</span>
-              <span className="block text-xs text-ink-soft">+{a.durationMinutes} min</span>
+              <span className="block text-xs text-ink-soft">+{a.crewMinutes} min labour</span>
             </span>
           </span>
-          <span className="font-semibold text-brand-strong">
-            {a.fromPricePence != null ? `+${formatPounds(a.fromPricePence)}` : "Quoted"}
-          </span>
+          <span className="font-semibold text-brand-strong">+{formatPounds(a.pricePence)}</span>
         </label>
       ))}
     </div>
@@ -413,7 +444,7 @@ function StepAccess({ state, set }: StepProps) {
   );
 }
 
-function StepDetails({ state, set, quote, result }: StepProps & { quote: ReturnType<typeof computeQuote>; result: BookingResult | null }) {
+function StepDetails({ state, set, quote, result }: StepProps & { quote: QuotePriced; result: BookingResult | null }) {
   const c = state.contact;
   const upd = (patch: Partial<State["contact"]>) => set("contact", { ...c, ...patch });
   const err = (k: string) => (result?.status === "error" ? result.fieldErrors?.[k] : undefined);
@@ -455,6 +486,20 @@ function StepDetails({ state, set, quote, result }: StepProps & { quote: ReturnT
 // ---------------- Shared UI ----------------
 
 function PriceSummary({ state, quote }: { state: State; quote: ReturnType<typeof computeQuote> }) {
+  const serviceName = selfServeServices.find((s) => s.slug === state.serviceSlug)?.shortName;
+  if (quote.escalate) {
+    return (
+      <aside className="lg:sticky lg:top-24 h-fit card p-5">
+        <p className="eyebrow">Your price</p>
+        <p className="mt-1 text-2xl font-bold">Tailored quote</p>
+        <p className="mt-2 text-sm text-ink-soft">{quote.reason}</p>
+        <dl className="mt-4 space-y-1 text-sm text-ink-soft">
+          <div className="flex justify-between"><dt>Service</dt><dd className="text-ink">{serviceName}</dd></div>
+        </dl>
+        <p className="mt-4 text-xs text-ink-soft">We&apos;ll confirm a fixed price before any work — no obligation.</p>
+      </aside>
+    );
+  }
   return (
     <aside className="lg:sticky lg:top-24 h-fit card p-5">
       <p className="eyebrow">Your price</p>
@@ -466,10 +511,10 @@ function PriceSummary({ state, quote }: { state: State; quote: ReturnType<typeof
         <p className="text-sm text-ink-soft">First visit {formatPence(quote.firstVisitGross)}</p>
       )}
       <dl className="mt-4 space-y-1 text-sm text-ink-soft">
-        <div className="flex justify-between"><dt>Service</dt><dd className="text-ink">{selfServeServices.find((s) => s.slug === state.serviceSlug)?.shortName}</dd></div>
+        <div className="flex justify-between"><dt>Service</dt><dd className="text-ink">{serviceName}</dd></div>
         <div className="flex justify-between"><dt>Frequency</dt><dd className="text-ink capitalize">{state.frequency.replace("_", "-")}</dd></div>
-        <div className="flex justify-between"><dt>Est. duration</dt><dd className="text-ink">{quote.durationMinutes} min</dd></div>
-        {quote.minimumApplied && <p className="text-xs">Minimum job value applied.</p>}
+        <div className="flex justify-between"><dt>Est. duration</dt><dd className="text-ink">{quote.elapsedMinutes} min on site</dd></div>
+        {quote.minimumHoursApplied && <p className="text-xs">Minimum visit length applied.</p>}
       </dl>
       <p className="mt-4 text-xs text-ink-soft">Prices VAT-inclusive. No card needed to see your price.</p>
     </aside>

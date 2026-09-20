@@ -65,6 +65,25 @@ export type PropertyType = "flat" | "house";
 export type Bedrooms = 0 | 1 | 2 | 3 | 4 | 5;
 export type Bathrooms = 1 | 2 | 3;
 
+/** Room inputs that drive a domestic/deep DURATION estimate (§5). */
+export type RoomKey =
+  | "kitchens"
+  | "bathrooms"
+  | "receptions"
+  | "bedrooms"
+  | "hallways"
+  | "studies"
+  | "conservatories";
+export const ROOM_KEYS: RoomKey[] = [
+  "kitchens",
+  "bathrooms",
+  "receptions",
+  "bedrooms",
+  "hallways",
+  "studies",
+  "conservatories",
+];
+
 export interface EotCell {
   /** Consumer price, VAT-inclusive, in pence. */
   grossPence: number;
@@ -72,7 +91,7 @@ export interface EotCell {
   crewMinutes: number;
 }
 
-export type HourlyServiceKey = "regular_weekly" | "regular_fortnightly" | "one_off" | "deep";
+export type HourlyServiceKey = "regular_weekly" | "regular_fortnightly" | "regular_monthly" | "one_off" | "deep";
 export interface HourlyRate {
   ratePerHourPence: number;
   minimumHours: number;
@@ -90,12 +109,43 @@ export interface AddOn {
   pricePence: number;
   /** Added labour per unit, in crew-minutes (crew-size independent). */
   crewMinutes: number;
+  /** Which self-serve services offer this add-on. Applicability lives HERE — the
+   * card is the single source, so the wizard and the service pages read it rather
+   * than each keeping their own list. Restoration extras (carpet extraction,
+   * upholstery) are EOT/deep only; appliances, windows and balcony apply to all
+   * three domestic surfaces. Escalating services never render add-ons. */
+  appliesTo: string[];
+}
+
+const ALL_DOMESTIC = ["domestic-cleaning", "end-of-tenancy-cleaning", "deep-cleaning"];
+const DEEP_EOT = ["end-of-tenancy-cleaning", "deep-cleaning"];
+
+/**
+ * Domestic/deep DURATION model (item (B), approved). Rooms → crew-minutes →
+ * hours; price = hourly rate × max(hours, minimumHours). Domestic keeps its own
+ * (lower) price band by design — the £58–£70 EOT band is EOT-only (§2, §5). The
+ * hourly RATES (£22/£23) are placeholders held pending the cost-per-crew-hour
+ * model (§16 Phase 0); do not raise them before it lands — recurring is the
+ * price-sensitive product and the frequency discount is the pull, not a high
+ * headline rate.
+ */
+export interface DomesticDurationModel {
+  /** Crew-minutes per room for a REGULAR clean in standard condition. */
+  roomCrewMinutes: Record<RoomKey, number>;
+  /** Service-level duration multiplier (regular 1.0, deep 1.5). */
+  serviceMultiplier: Record<"regular" | "deep", number>;
+  /** Condition duration multiplier (standard 1.0, heavily_soiled 1.35). */
+  conditionMultiplier: Record<"standard" | "heavily_soiled", number>;
+  /** First-clean surcharge for the FIRST visit of a new subscription only
+   * (never one-off, never EOT). Multiplies both price and crew-minutes. */
+  firstCleanSurchargeMultiplier: number;
 }
 
 export interface RateCard {
   version: string;
   eotGrid: Record<PropertyType, Record<Bedrooms, Record<Bathrooms, EotCell>>>;
   hourly: Record<HourlyServiceKey, HourlyRate>;
+  domestic: DomesticDurationModel;
   addOns: AddOn[];
   /** EOT is instantly bookable up to this bedroom count in standard condition;
    * above it, or heavily soiled, routes to a human quote (§7.2 as amended). */
@@ -146,8 +196,31 @@ const EOT_GRID: Record<PropertyType, Record<Bedrooms, Record<Bathrooms, EotCell>
 const HOURLY: Record<HourlyServiceKey, HourlyRate> = {
   regular_weekly: { ratePerHourPence: 2200, minimumHours: 2 },
   regular_fortnightly: { ratePerHourPence: 2300, minimumHours: 2.5 },
+  // Monthly is a genuine recurring product (light-touch upkeep) but its discount
+  // is deliberately SMALLER than fortnightly's — a 4-weekly cadence saves us less
+  // routing/setup than a 2-weekly one. £24.50/hr = 5.8% off one-off (vs 11.5%
+  // fortnightly / 15.4% weekly); minimum 3h, matching the one-off floor because a
+  // monthly visit clears a month's accumulation. PLACEHOLDER like the others,
+  // pending the cost-per-crew-hour model.
+  regular_monthly: { ratePerHourPence: 2450, minimumHours: 3 },
   one_off: { ratePerHourPence: 2600, minimumHours: 3 },
   deep: { ratePerHourPence: 3000, minimumHours: 4 },
+};
+
+// ── Domestic/deep duration model (approved) ──────────────────────────────────
+const DOMESTIC: DomesticDurationModel = {
+  roomCrewMinutes: {
+    kitchens: 35,
+    bathrooms: 30,
+    receptions: 20,
+    bedrooms: 18,
+    hallways: 10,
+    studies: 15,
+    conservatories: 18,
+  },
+  serviceMultiplier: { regular: 1.0, deep: 1.5 },
+  conditionMultiplier: { standard: 1.0, heavily_soiled: 1.35 },
+  firstCleanSurchargeMultiplier: 1.6,
 };
 
 // ── Add-on menu (§5 benchmark granularity, London figures) ───────────────────
@@ -155,30 +228,30 @@ const HOURLY: Record<HourlyServiceKey, HourlyRate> = {
 
 const ADD_ONS: AddOn[] = [
   // Carpets & rugs — extraction incl. pre-spray; per-unit marginal (setup amortised)
-  { slug: "carpet-room", name: "Carpet cleaning (per room)", category: "carpets", unit: "per_room", pricePence: 3500, crewMinutes: 30 },
-  { slug: "carpet-rug", name: "Rug cleaning (per rug)", category: "carpets", unit: "per_rug", pricePence: 3000, crewMinutes: 20 },
-  { slug: "carpet-hallway", name: "Hallway carpet", category: "carpets", unit: "each", pricePence: 2000, crewMinutes: 20 },
-  { slug: "carpet-stairs-flight", name: "Stairs carpet (per flight)", category: "carpets", unit: "per_flight", pricePence: 3000, crewMinutes: 35 },
+  { slug: "carpet-room", name: "Carpet cleaning (per room)", category: "carpets", unit: "per_room", pricePence: 3500, crewMinutes: 30, appliesTo: DEEP_EOT },
+  { slug: "carpet-rug", name: "Rug cleaning (per rug)", category: "carpets", unit: "per_rug", pricePence: 3000, crewMinutes: 20, appliesTo: DEEP_EOT },
+  { slug: "carpet-hallway", name: "Hallway carpet", category: "carpets", unit: "each", pricePence: 2000, crewMinutes: 20, appliesTo: DEEP_EOT },
+  { slug: "carpet-stairs-flight", name: "Stairs carpet (per flight)", category: "carpets", unit: "per_flight", pricePence: 3000, crewMinutes: 35, appliesTo: DEEP_EOT },
   // Upholstery
-  { slug: "upholstery-1-seat", name: "Armchair / 1-seat", category: "upholstery", unit: "each", pricePence: 4000, crewMinutes: 30 },
-  { slug: "upholstery-2-seat", name: "Sofa, 2-seat", category: "upholstery", unit: "each", pricePence: 6500, crewMinutes: 45 },
-  { slug: "upholstery-3-seat", name: "Sofa, 3-seat", category: "upholstery", unit: "each", pricePence: 7500, crewMinutes: 55 },
-  { slug: "upholstery-l-shape", name: "Corner / L-shape sofa", category: "upholstery", unit: "each", pricePence: 12000, crewMinutes: 80 },
-  { slug: "upholstery-mattress", name: "Mattress", category: "upholstery", unit: "each", pricePence: 3000, crewMinutes: 30 },
-  { slug: "upholstery-curtains", name: "Curtains (per pair)", category: "upholstery", unit: "per_pair", pricePence: 4000, crewMinutes: 25 },
+  { slug: "upholstery-1-seat", name: "Armchair / 1-seat", category: "upholstery", unit: "each", pricePence: 4000, crewMinutes: 30, appliesTo: DEEP_EOT },
+  { slug: "upholstery-2-seat", name: "Sofa, 2-seat", category: "upholstery", unit: "each", pricePence: 6500, crewMinutes: 45, appliesTo: DEEP_EOT },
+  { slug: "upholstery-3-seat", name: "Sofa, 3-seat", category: "upholstery", unit: "each", pricePence: 7500, crewMinutes: 55, appliesTo: DEEP_EOT },
+  { slug: "upholstery-l-shape", name: "Corner / L-shape sofa", category: "upholstery", unit: "each", pricePence: 12000, crewMinutes: 80, appliesTo: DEEP_EOT },
+  { slug: "upholstery-mattress", name: "Mattress", category: "upholstery", unit: "each", pricePence: 3000, crewMinutes: 30, appliesTo: DEEP_EOT },
+  { slug: "upholstery-curtains", name: "Curtains (per pair)", category: "upholstery", unit: "per_pair", pricePence: 4000, crewMinutes: 25, appliesTo: DEEP_EOT },
   // Appliances — oven figures per §5 London example (£55–£85)
-  { slug: "oven-single", name: "Single oven interior", category: "appliances", unit: "each", pricePence: 5500, crewMinutes: 75 },
-  { slug: "oven-double", name: "Double oven interior", category: "appliances", unit: "each", pricePence: 7500, crewMinutes: 105 },
-  { slug: "oven-range", name: "Range cooker interior", category: "appliances", unit: "each", pricePence: 9500, crewMinutes: 135 },
-  { slug: "fridge-freezer", name: "Fridge / freezer interior", category: "appliances", unit: "each", pricePence: 4500, crewMinutes: 40 }, // assumes defrosted; defrost passive
-  { slug: "washing-machine", name: "Washing machine", category: "appliances", unit: "each", pricePence: 3500, crewMinutes: 30 },
-  { slug: "dishwasher", name: "Dishwasher", category: "appliances", unit: "each", pricePence: 3500, crewMinutes: 25 },
+  { slug: "oven-single", name: "Single oven interior", category: "appliances", unit: "each", pricePence: 5500, crewMinutes: 75, appliesTo: ALL_DOMESTIC },
+  { slug: "oven-double", name: "Double oven interior", category: "appliances", unit: "each", pricePence: 7500, crewMinutes: 105, appliesTo: ALL_DOMESTIC },
+  { slug: "oven-range", name: "Range cooker interior", category: "appliances", unit: "each", pricePence: 9500, crewMinutes: 135, appliesTo: ALL_DOMESTIC },
+  { slug: "fridge-freezer", name: "Fridge / freezer interior", category: "appliances", unit: "each", pricePence: 4500, crewMinutes: 40, appliesTo: ALL_DOMESTIC }, // assumes defrosted; defrost passive
+  { slug: "washing-machine", name: "Washing machine", category: "appliances", unit: "each", pricePence: 3500, crewMinutes: 30, appliesTo: ALL_DOMESTIC },
+  { slug: "dishwasher", name: "Dishwasher", category: "appliances", unit: "each", pricePence: 3500, crewMinutes: 25, appliesTo: ALL_DOMESTIC },
   // Interior windows — PROPERTY TIERS (item 5): no counting by the customer.
   // The wizard selects the tier from property size; crew flags outliers.
-  { slug: "interior-windows-small", name: "Interior windows — small (studio / 1-bed)", category: "other", unit: "each", pricePence: 3000, crewMinutes: 30 },
-  { slug: "interior-windows-medium", name: "Interior windows — medium (2–3 bed)", category: "other", unit: "each", pricePence: 4500, crewMinutes: 50 },
-  { slug: "interior-windows-large", name: "Interior windows — large (4+ bed / house)", category: "other", unit: "each", pricePence: 6500, crewMinutes: 75 },
-  { slug: "balcony", name: "Balcony", category: "other", unit: "each", pricePence: 2500, crewMinutes: 30 }, // ~ size-dependent
+  { slug: "interior-windows-small", name: "Interior windows — small (studio / 1-bed)", category: "other", unit: "each", pricePence: 3000, crewMinutes: 30, appliesTo: ALL_DOMESTIC },
+  { slug: "interior-windows-medium", name: "Interior windows — medium (2–3 bed)", category: "other", unit: "each", pricePence: 4500, crewMinutes: 50, appliesTo: ALL_DOMESTIC },
+  { slug: "interior-windows-large", name: "Interior windows — large (4+ bed / house)", category: "other", unit: "each", pricePence: 6500, crewMinutes: 75, appliesTo: ALL_DOMESTIC },
+  { slug: "balcony", name: "Balcony", category: "other", unit: "each", pricePence: 2500, crewMinutes: 30, appliesTo: ALL_DOMESTIC }, // ~ size-dependent
   // NOTE (item 5): pressure washing is NOT a self-serve add-on. It is a bespoke
   // exterior job quoted on request via the RFQ flow (§7.6) — measuring m² at
   // booking creates doorstep disputes and it does not fit the instant-price path.
@@ -188,6 +261,7 @@ const CURRENT: RateCard = {
   version: RATE_CARD_VERSION,
   eotGrid: EOT_GRID,
   hourly: HOURLY,
+  domestic: DOMESTIC,
   addOns: ADD_ONS,
   eotInstantBookableMaxBedrooms: 4,
 };

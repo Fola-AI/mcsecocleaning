@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { orderedServices, addOns } from "@/config/services";
+import { orderedServices } from "@/config/services";
+import { getRateCard } from "@/lib/pricing/rate-card";
 import { formatPounds } from "@/lib/money";
 import { VAT_REGISTERED } from "@/lib/money";
 import { buildMetadata } from "@/lib/seo/metadata";
@@ -70,13 +71,12 @@ export default function PricesPage() {
       <Section muted>
         <SectionHeading eyebrow="Optional extras" title="Add-on prices" intro="Add any of these at booking. Each shows its own price and the time it adds." />
         <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {addOns.map((a) => (
+          {getRateCard().addOns.map((a) => (
             <div key={a.slug} className="card flex items-center justify-between p-4">
               <span className="font-semibold">{a.name}</span>
               <span className="text-sm font-semibold text-brand-strong">
-                {a.fromPricePence != null
-                  ? `From ${formatPounds(a.fromPricePence)}${a.unit && a.unit !== "each" ? ` ${a.unit}` : ""}`
-                  : "Quoted"}
+                From {formatPounds(a.pricePence)}
+                {a.unit !== "each" ? ` ${a.unit.replace(/_/g, " ")}` : ""}
               </span>
             </div>
           ))}

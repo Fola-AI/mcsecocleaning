@@ -112,12 +112,19 @@ test("hourly rates and their intrinsic floors are locked", () => {
   const h = getRateCard().hourly;
   assert.deepEqual(h.regular_weekly, { ratePerHourPence: 2200, minimumHours: 2 });
   assert.deepEqual(h.regular_fortnightly, { ratePerHourPence: 2300, minimumHours: 2.5 });
+  assert.deepEqual(h.regular_monthly, { ratePerHourPence: 2450, minimumHours: 3 });
   assert.deepEqual(h.one_off, { ratePerHourPence: 2600, minimumHours: 3 });
   assert.deepEqual(h.deep, { ratePerHourPence: 3000, minimumHours: 4 });
+  // Monthly's discount is smaller than fortnightly's and larger than nothing —
+  // the frequency ladder must be strictly monotonic in rate.
+  assert.ok(h.regular_weekly.ratePerHourPence < h.regular_fortnightly.ratePerHourPence);
+  assert.ok(h.regular_fortnightly.ratePerHourPence < h.regular_monthly.ratePerHourPence);
+  assert.ok(h.regular_monthly.ratePerHourPence < h.one_off.ratePerHourPence);
   // Intrinsic floor = minimumHours × rate (no global minimumJobValue exists).
   const floor = (k: keyof typeof h) => h[k].ratePerHourPence * h[k].minimumHours;
   assert.equal(floor("regular_weekly"), 4400); // £44 — a global £120 floor would wrongly block this
   assert.equal(floor("regular_fortnightly"), 5750);
+  assert.equal(floor("regular_monthly"), 7350);
   assert.equal(floor("one_off"), 7800);
   assert.equal(floor("deep"), 12000);
   // EOT's floor is the grid itself — the cheapest cell, the £170 studio.

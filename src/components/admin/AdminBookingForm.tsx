@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { selfServeServices } from "@/config/services";
-import { ROOM_KEYS, type RoomKey } from "@/config/pricing";
+import { ROOM_KEYS, type RoomKey } from "@/lib/pricing/rate-card";
 import { computeQuote } from "@/lib/quote";
 import { formatPence } from "@/lib/money";
 import { adminCreateBooking, type AdminBookingResult } from "@/app/actions/admin";
@@ -28,7 +28,7 @@ export function AdminBookingForm() {
   const [pending, start] = useTransition();
 
   const quote = useMemo(
-    () => computeQuote({ serviceSlug: f.serviceSlug, rooms: f.rooms, condition: f.condition, frequency: f.frequency, regionKey: "london" }),
+    () => computeQuote({ serviceSlug: f.serviceSlug, rooms: f.rooms, condition: f.condition, frequency: f.frequency }),
     [f.serviceSlug, f.rooms, f.condition, f.frequency]
   );
 
@@ -138,9 +138,15 @@ export function AdminBookingForm() {
 
       <aside className="card h-fit p-5">
         <p className="eyebrow">Estimate</p>
-        <p className="mt-1 text-2xl font-bold">{formatPence(quote.chargeNow.gross)}</p>
-        <p className="text-sm text-ink-soft">{quote.isRecurring ? "first visit" : "one-off"} · {quote.durationMinutes} min</p>
-        {quote.isRecurring && <p className="mt-1 text-sm text-ink-soft">then {formatPence(quote.perVisitGross)}/visit</p>}
+        {quote.escalate ? (
+          <p className="mt-1 text-sm text-ink-soft">Needs a manual quote — {quote.reason}</p>
+        ) : (
+          <>
+            <p className="mt-1 text-2xl font-bold">{formatPence(quote.chargeNow.gross)}</p>
+            <p className="text-sm text-ink-soft">{quote.isRecurring ? "first visit" : "one-off"} · {quote.elapsedMinutes} min on site</p>
+            {quote.isRecurring && <p className="mt-1 text-sm text-ink-soft">then {formatPence(quote.perVisitGross)}/visit</p>}
+          </>
+        )}
       </aside>
 
       <style>{`.input{width:100%;border:1px solid var(--color-line);background:var(--color-surface);border-radius:.5rem;padding:.55rem .6rem;font-size:.95rem}`}</style>

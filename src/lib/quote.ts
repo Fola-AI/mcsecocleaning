@@ -1,180 +1,246 @@
 /**
- * Quote engine (§4.2, §6.1). Outputs BOTH a price and an estimated duration from
- * one calculation — duration feeds the capacity system (§6.3).
+ * Quote engine (§5, §7.2). A DETERMINISTIC rules engine over the rate card —
+ * never a model call. Same inputs → same price, always. Two shapes, both "rooms
+ * in, price and crew-minutes out":
+ *   · EOT  → fixed grid (flat|house × bed × bath); 5+ bed / heavily-soiled escalate.
+ *   · Domestic/deep → room-estimated hours × max(hours, minimumHours) (item B).
  *
- * Room-based pricing (not bedroom-count or sq ft). Applies service-level and
- * condition multipliers, add-ons (price + duration), a first-clean surcharge for
- * a new subscription's first visit, a frequency discount for recurring
- * commitment (always surfaced), a regional multiplier, and a minimum job value.
+ * Duration is crew-minutes = TOTAL LABOUR (crew-size independent). Capacity gets
+ * an ELAPSED slot via elapsedSlotMinutes(); it is never handed raw crew-minutes.
+ * Prices pass through the money layer (vat_display_mode, default absorb).
  */
-import { pricingConfig, PRICING_VERSION, type RoomKey, ROOM_KEYS } from "@/config/pricing";
-import { addOns as addOnConfig } from "@/config/services";
-import { fromGross, fromNet, type MoneyBreakdown } from "@/lib/money";
+import {
+  getRateCard,
+  eotCell,
+  eotRequiresEscalation,
+  addOnBySlug,
+  RATE_CARD_VERSION,
+  ROOM_KEYS,
+  type PropertyType,
+  type RoomKey,
+  type HourlyServiceKey,
+  type HourlyRate,
+} from "@/lib/pricing/rate-card";
+import { priceFromRateCard, type MoneyBreakdown } from "@/lib/money";
+import { elapsedSlotMinutes } from "@/lib/capacity";
 
 export type Frequency = "one_off" | "weekly" | "fortnightly" | "monthly";
 export type Condition = "standard" | "heavily_soiled";
 
 export interface QuoteInput {
   serviceSlug: string;
+  propertyType?: PropertyType; // default "flat"
   rooms: Partial<Record<RoomKey, number>>;
   condition?: Condition;
   frequency?: Frequency;
   addOnSlugs?: string[];
-  regionKey?: string;
-  /** Force hourly mode where the service supports it (§4.2). */
-  mode?: "room" | "hourly";
-  hours?: number;
+  /** Planning crew size for the elapsed slot (default: capacity's PLANNING_CREW_SIZE). */
+  crewSize?: number;
 }
 
 export interface QuoteLineItem {
   label: string;
   amountGross: number; // pence
-  minutes: number;
+  crewMinutes: number;
 }
 
-export interface QuoteResult {
+export interface QuoteEscalated {
+  escalate: true;
+  reason: string;
   serviceSlug: string;
   pricingVersion: string;
+}
+
+export interface QuotePriced {
+  escalate: false;
+  serviceSlug: string;
+  pricingVersion: string;
+  pricingModel: "eot_grid" | "hourly";
   frequency: Frequency;
   isRecurring: boolean;
   lineItems: QuoteLineItem[];
 
-  /** One-off equivalent price (a single visit at this service level). */
+  /** One-off equivalent price (pence, VAT-inclusive consumer figure). */
   oneOffGross: number;
-  /** Recurring maintenance per-visit price (after frequency discount). */
+  /** Recurring maintenance per-visit price (pence). */
   perVisitGross: number;
-  /** First visit of a new subscription (first-clean surcharge applied). */
+  /** First visit of a new subscription (first-clean surcharge). */
   firstVisitGross: number;
-  /** Saving per visit vs the one-off price (the conversion lever, §4.2). */
+  /** Saving per visit vs the one-off rate (the conversion lever, §5). */
   frequencySavingPerVisit: number;
 
-  /** Duration of a representative maintenance visit, incl. buffer (minutes). */
-  durationMinutes: number;
-  /** Duration of the first visit (surcharge), incl. buffer (minutes). */
-  firstVisitDurationMinutes: number;
+  /** Representative maintenance/one-off visit LABOUR (crew-minutes). */
+  crewMinutes: number;
+  /** First visit LABOUR (crew-minutes). */
+  firstVisitCrewMinutes: number;
+  /** Representative visit ELAPSED slot length (minutes) — feeds capacity. */
+  elapsedMinutes: number;
+  /** First visit ELAPSED slot length (minutes). */
+  firstVisitElapsedMinutes: number;
 
-  minimumApplied: boolean;
+  /** True when the hourly minimum-hours floor bound (excluded from the band test). */
+  minimumHoursApplied: boolean;
 
-  /**
-   * The amount charged for the FIRST transaction: one-off price for a one-off,
-   * or the first-visit price for a new subscription. Full net/vat/gross.
-   */
+  /** Full net/vat/gross for the first transaction (one-off, or first visit). */
   chargeNow: MoneyBreakdown;
 }
 
-function money(grossOrNet: number): MoneyBreakdown {
-  return pricingConfig.pricesAreVatInclusive ? fromGross(grossOrNet) : fromNet(grossOrNet);
+export type QuoteResult = QuoteEscalated | QuotePriced;
+
+const RECURRING: Frequency[] = ["weekly", "fortnightly", "monthly"];
+
+/** Domestic frequency → hourly rate key. Deep always uses the deep rate. */
+function hourlyKeyFor(serviceSlug: string, frequency: Frequency): HourlyServiceKey {
+  if (serviceSlug === "deep-cleaning") return "deep";
+  switch (frequency) {
+    case "weekly":
+      return "regular_weekly";
+    case "fortnightly":
+      return "regular_fortnightly";
+    case "monthly":
+      return "regular_monthly";
+    case "one_off":
+    default:
+      return "one_off";
+  }
 }
 
-function roundPence(n: number): number {
-  return Math.round(n);
+function sumAddOns(addOnSlugs: string[]): { gross: number; crew: number; lines: QuoteLineItem[] } {
+  let gross = 0;
+  let crew = 0;
+  const lines: QuoteLineItem[] = [];
+  for (const slug of addOnSlugs) {
+    const a = addOnBySlug(slug);
+    if (!a) continue;
+    gross += a.pricePence;
+    crew += a.crewMinutes;
+    lines.push({ label: a.name, amountGross: a.pricePence, crewMinutes: a.crewMinutes });
+  }
+  return { gross, crew, lines };
 }
 
-/** Clamp a computed duration to the configured minimum and add the job buffer. */
-function withDuration(minutes: number): number {
-  const base = Math.max(minutes, pricingConfig.minimumDurationMinutes);
-  return base + pricingConfig.jobBufferMinutes;
-}
+const round = (n: number) => Math.round(n);
 
 export function computeQuote(input: QuoteInput): QuoteResult {
   const {
     serviceSlug,
+    propertyType = "flat",
     rooms,
     condition = "standard",
     frequency = "one_off",
     addOnSlugs = [],
-    regionKey = "london",
-    mode,
-    hours,
+    crewSize,
   } = input;
+  const card = getRateCard();
+  const pricingVersion = RATE_CARD_VERSION;
+  const esc = (reason: string): QuoteEscalated => ({ escalate: true, reason, serviceSlug, pricingVersion });
 
-  const serviceMultiplier = pricingConfig.serviceLevel[serviceSlug] ?? 1.0;
-  const conditionMultiplier = pricingConfig.condition[condition] ?? 1.0;
-  const regionMultiplier =
-    pricingConfig.regionalMultiplier[regionKey] ?? pricingConfig.regionalMultiplier.default;
+  // Services that are never self-serve instant-priced (§5, §7.6).
+  if (["after-builders-cleaning", "office-cleaning", "communal-area-cleaning"].includes(serviceSlug)) {
+    return esc("This service is quoted after a survey.");
+  }
 
-  const lineItems: QuoteLineItem[] = [];
+  const addons = sumAddOns(addOnSlugs);
 
-  // ---- Base (rooms or hourly) ----
-  let baseRoomsGross = 0;
-  let baseMinutes = 0;
-
-  const hourly = pricingConfig.hourly[serviceSlug];
-  const useHourly = mode === "hourly" && hourly?.enabled;
-
-  if (useHourly && hourly) {
-    const h = Math.max(hours ?? hourly.minimumHours, hourly.minimumHours);
-    baseRoomsGross = roundPence(hourly.ratePerHour * h);
-    baseMinutes = Math.round(h * 60);
-    lineItems.push({ label: `${h} hours @ hourly rate`, amountGross: baseRoomsGross, minutes: baseMinutes });
-  } else {
-    for (const key of ROOM_KEYS as RoomKey[]) {
-      const count = rooms[key] ?? 0;
-      if (count <= 0) continue;
-      const rate = pricingConfig.rooms[key];
-      const priceRaw = rate.price * count * serviceMultiplier * conditionMultiplier * regionMultiplier;
-      const minutesRaw = rate.minutes * count * serviceMultiplier * conditionMultiplier;
-      const price = roundPence(priceRaw);
-      const minutes = Math.round(minutesRaw);
-      baseRoomsGross += price;
-      baseMinutes += minutes;
-      lineItems.push({ label: `${count} × ${key}`, amountGross: price, minutes });
+  // ── EOT: fixed grid ──
+  if (serviceSlug === "end-of-tenancy-cleaning") {
+    const beds = Number(rooms.bedrooms ?? 0);
+    const baths = Number(rooms.bathrooms ?? 1);
+    if (eotRequiresEscalation(beds, condition)) {
+      return esc(condition === "heavily_soiled" ? "Heavily soiled — needs a tailored quote." : "5+ bedrooms — needs a tailored quote.");
     }
+    const cell = eotCell(propertyType, beds, baths);
+    const gross = cell.grossPence + addons.gross;
+    const crew = cell.crewMinutes + addons.crew;
+    const elapsed = elapsedSlotMinutes(crew, crewSize);
+    return {
+      escalate: false,
+      serviceSlug,
+      pricingVersion,
+      pricingModel: "eot_grid",
+      frequency: "one_off",
+      isRecurring: false,
+      lineItems: [{ label: `End of tenancy — ${beds || "studio"} bed / ${baths} bath`, amountGross: cell.grossPence, crewMinutes: cell.crewMinutes }, ...addons.lines],
+      oneOffGross: gross,
+      perVisitGross: gross,
+      firstVisitGross: gross,
+      frequencySavingPerVisit: 0,
+      crewMinutes: crew,
+      firstVisitCrewMinutes: crew,
+      elapsedMinutes: elapsed,
+      firstVisitElapsedMinutes: elapsed,
+      minimumHoursApplied: false,
+      chargeNow: priceFromRateCard(gross),
+    };
   }
 
-  // ---- Add-ons ----
-  let addOnsGross = 0;
-  let addOnMinutes = 0;
-  for (const slug of addOnSlugs) {
-    const a = addOnConfig.find((x) => x.slug === slug && x.appliesTo.includes(serviceSlug));
-    if (!a || a.fromPricePence == null) continue;
-    const price = roundPence(a.fromPricePence * regionMultiplier);
-    addOnsGross += price;
-    addOnMinutes += a.durationMinutes;
-    lineItems.push({ label: a.name, amountGross: price, minutes: a.durationMinutes });
+  // ── Domestic / deep: room-estimated hours × max(hours, minimumHours) ──
+  const level: "regular" | "deep" = serviceSlug === "deep-cleaning" ? "deep" : "regular";
+  const baseCrew = round(
+    ROOM_KEYS.reduce((sum, k) => sum + card.domestic.roomCrewMinutes[k] * Number(rooms[k] ?? 0), 0) *
+      card.domestic.serviceMultiplier[level] *
+      card.domestic.conditionMultiplier[condition]
+  );
+
+  const key = hourlyKeyFor(serviceSlug, frequency);
+  const rate = card.hourly[key];
+
+  // The minimum-hours floor binds on TOTAL labour (base clean + add-on labour),
+  // not the base alone. Add-on crew-minutes are real labour, so they absorb the
+  // gap to the floor instead of being billed on top of it — a 90-min clean with a
+  // 75-min oven (165 crew-min) clears the 2h floor and is NOT topped up. Only the
+  // base clean is charged at the hourly rate; add-ons carry their own fixed price.
+  const hourlyBase = (baseCrewMin: number, addonCrewMin: number, r: HourlyRate) => {
+    const floorHours = Math.max(0, r.minimumHours - addonCrewMin / 60);
+    return round(r.ratePerHourPence * Math.max(baseCrewMin / 60, floorHours));
+  };
+  // Flagged iff total labour is below the floor — the SAME basis the price uses,
+  // so floored quotes are excluded from the domestic band test consistently.
+  const flooredOnTotal = (baseCrewMin: number, addonCrewMin: number, r: HourlyRate) =>
+    (baseCrewMin + addonCrewMin) / 60 < r.minimumHours;
+
+  const maintGross = hourlyBase(baseCrew, addons.crew, rate) + addons.gross;
+  const maintCrew = baseCrew + addons.crew;
+  const minimumHoursApplied = flooredOnTotal(baseCrew, addons.crew, rate);
+
+  // Frequency saving = same job at the one-off rate minus this rate (§5).
+  const oneOffRate = card.hourly.one_off;
+  const oneOffEquivGross = hourlyBase(baseCrew, addons.crew, oneOffRate) + addons.gross;
+
+  const isRecurring = level === "regular" && RECURRING.includes(frequency);
+  const firstMult = card.domestic.firstCleanSurchargeMultiplier;
+
+  let firstCrew = baseCrew;
+  let firstGross = maintGross;
+  if (isRecurring) {
+    firstCrew = round(baseCrew * firstMult);
+    firstGross = hourlyBase(firstCrew, addons.crew, rate) + addons.gross;
   }
+  const firstVisitCrew = firstCrew + (isRecurring ? addons.crew : 0);
+  const firstVisitCrewTotal = isRecurring ? firstVisitCrew : maintCrew;
 
-  // ---- Base one-off (before minimum) ----
-  let oneOffGross = baseRoomsGross + addOnsGross;
-  const oneOffMinutes = baseMinutes + addOnMinutes;
-
-  // ---- Minimum job value ----
-  const minimum =
-    pricingConfig.minimumValue[serviceSlug] ?? pricingConfig.minimumValue.default;
-  let minimumApplied = false;
-  if (oneOffGross < minimum) {
-    oneOffGross = minimum;
-    minimumApplied = true;
-  }
-
-  // ---- Frequency discount (recurring) ----
-  const isRecurring = frequency !== "one_off";
-  const discount = pricingConfig.frequencyDiscount[frequency] ?? 0;
-  const perVisitGross = isRecurring ? roundPence(oneOffGross * (1 - discount)) : oneOffGross;
-  const frequencySavingPerVisit = oneOffGross - perVisitGross;
-
-  // ---- First-clean surcharge (first visit of a new subscription) ----
-  const firstMult = pricingConfig.firstCleanSurchargeMultiplier;
-  const firstVisitGross = isRecurring ? roundPence(perVisitGross * firstMult) : oneOffGross;
-  const firstVisitMinutes = isRecurring
-    ? Math.round(oneOffMinutes * firstMult)
-    : oneOffMinutes;
-
-  const chargeNowAmount = isRecurring ? firstVisitGross : oneOffGross;
+  const chargeNowGross = isRecurring ? firstGross : maintGross;
 
   return {
+    escalate: false,
     serviceSlug,
-    pricingVersion: PRICING_VERSION,
+    pricingVersion,
+    pricingModel: "hourly",
     frequency,
     isRecurring,
-    lineItems,
-    oneOffGross,
-    perVisitGross,
-    firstVisitGross,
-    frequencySavingPerVisit,
-    durationMinutes: withDuration(oneOffMinutes),
-    firstVisitDurationMinutes: withDuration(firstVisitMinutes),
-    minimumApplied,
-    chargeNow: money(chargeNowAmount),
+    lineItems: [
+      { label: `${level === "deep" ? "Deep clean" : "Clean"} — ${(baseCrew / 60).toFixed(1)}h @ ${(rate.ratePerHourPence / 100).toFixed(0)}/hr`, amountGross: hourlyBase(baseCrew, addons.crew, rate), crewMinutes: baseCrew },
+      ...addons.lines,
+    ],
+    oneOffGross: oneOffEquivGross,
+    perVisitGross: maintGross,
+    firstVisitGross: firstGross,
+    frequencySavingPerVisit: isRecurring ? Math.max(0, oneOffEquivGross - maintGross) : 0,
+    crewMinutes: maintCrew,
+    firstVisitCrewMinutes: firstVisitCrewTotal,
+    elapsedMinutes: elapsedSlotMinutes(maintCrew, crewSize),
+    firstVisitElapsedMinutes: elapsedSlotMinutes(firstVisitCrewTotal, crewSize),
+    minimumHoursApplied,
+    chargeNow: priceFromRateCard(chargeNowGross),
   };
 }

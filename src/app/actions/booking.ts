@@ -4,7 +4,7 @@ import { z } from "zod";
 import { headers } from "next/headers";
 import { db, hasDatabase } from "@/lib/db";
 import { sendEmail } from "@/lib/email";
-import { computeQuote, type Frequency } from "@/lib/quote";
+import { computeQuote, type Frequency, type QuotePriced } from "@/lib/quote";
 import { serviceBySlug } from "@/config/services";
 import { site, formatAddress } from "@/config/site";
 import { CCR_CONSENT } from "@/config/legal";
@@ -12,7 +12,7 @@ import { checkServiceArea } from "@/lib/serviceArea";
 import { formatPence } from "@/lib/money";
 import { computeSlots, slotsByDate } from "@/lib/capacity";
 import { defaultRoster, availabilityConfig } from "@/config/availability";
-import { ROOM_KEYS } from "@/config/pricing";
+import { ROOM_KEYS } from "@/lib/pricing/rate-card";
 import { resolveAndApply } from "@/lib/discounts";
 import { fromGross, fromNet, isVatRegistered, type MoneyBreakdown } from "@/lib/money";
 
@@ -69,7 +69,7 @@ const bookingSchema = z.object({
   postcode: z.string().trim().min(2).max(12),
   rooms: z.record(z.string(), z.number().int().min(0).max(20)),
   condition: z.enum(["standard", "heavily_soiled"]).default("standard"),
-  propertyType: z.string().max(60).optional(),
+  propertyType: z.enum(["flat", "house"]).default("flat"),
   frequency: z.enum(["one_off", "weekly", "fortnightly", "monthly"]).default("one_off"),
   addOnSlugs: z.array(z.string()).default([]),
   slotStartISO: z.string().datetime().optional(),
@@ -128,12 +128,16 @@ export async function createBooking(input: BookingInput): Promise<BookingResult>
 
   const quote = computeQuote({
     serviceSlug: data.serviceSlug,
+    propertyType: data.propertyType,
     rooms,
     condition: data.condition,
     frequency: data.frequency as Frequency,
     addOnSlugs: data.addOnSlugs,
-    regionKey: "london",
   });
+  if (quote.escalate) {
+    // 5+ bed / heavily-soiled EOT etc. have no instant price — route to a quote.
+    return { status: "error", message: `${quote.reason} Please request a quote and we'll come straight back.` };
+  }
 
   // Discount code (§6.14) — resolved and applied server-side to the charge-now amount.
   let discountAmount = 0;
@@ -215,7 +219,7 @@ async function persistBooking({
   discountCode,
 }: {
   data: z.infer<typeof bookingSchema>;
-  quote: ReturnType<typeof computeQuote>;
+  quote: QuotePriced;
   ccr: { givenAt: string; ip: string; wordingVersion: string };
   reference: string;
   charge: MoneyBreakdown;
@@ -271,14 +275,14 @@ async function persistBooking({
       vatRate: charge.vatRate,
       vatAmount: charge.vatAmount,
       gross: charge.gross,
-      estimatedDurationMinutes: quote.durationMinutes,
+      estimatedDurationMinutes: quote.crewMinutes,
       expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
     },
   });
 
   const scheduledStart = data.slotStartISO ? new Date(data.slotStartISO) : null;
   const scheduledEnd = scheduledStart
-    ? new Date(scheduledStart.getTime() + quote.durationMinutes * 60 * 1000)
+    ? new Date(scheduledStart.getTime() + quote.elapsedMinutes * 60 * 1000)
     : null;
 
   const job = await db.job.create({
@@ -290,7 +294,7 @@ async function persistBooking({
       status: "booked",
       scheduledStart,
       scheduledEnd,
-      estimatedDurationMinutes: quote.durationMinutes,
+      estimatedDurationMinutes: quote.crewMinutes,
       net: charge.net,
       vatRate: charge.vatRate,
       vatAmount: charge.vatAmount,
@@ -323,7 +327,7 @@ async function sendPreContractEmail({
 }: {
   data: z.infer<typeof bookingSchema>;
   service: string;
-  quote: ReturnType<typeof computeQuote>;
+  quote: QuotePriced;
   reference: string;
   charge: MoneyBreakdown;
   discountAmount: number;
@@ -348,7 +352,7 @@ async function sendPreContractEmail({
         <li><strong>Service:</strong> ${service}</li>
         <li><strong>Total price:</strong> ${priceLine}</li>
         ${discountLine}
-        <li><strong>Estimated duration:</strong> ${quote.durationMinutes} minutes</li>
+        <li><strong>Estimated duration:</strong> ${quote.elapsedMinutes} minutes on site</li>
         <li><strong>Cancellation:</strong> see ${site.url}/cancellation-policy — a late-cancellation or no-access fee may apply, disclosed before payment.</li>
         <li><strong>Complaints & guarantee:</strong> our re-clean guarantee applies (${site.url}/guarantee); contact ${site.contact.email}.</li>
       </ul>
@@ -370,7 +374,7 @@ async function notifyTeam({
   charge: MoneyBreakdown;
   reference: string;
   area?: string;
-  quote: ReturnType<typeof computeQuote>;
+  quote: QuotePriced;
 }) {
   const inbox = process.env.LEADS_INBOX || site.contact.email;
   await sendEmail({
@@ -383,7 +387,7 @@ async function notifyTeam({
         <li>${service} · ${data.frequency}</li>
         <li>${data.contact.name} · ${data.contact.email} · ${data.contact.phone || "—"}</li>
         <li>${data.postcode.toUpperCase()} ${area ? `(${area})` : ""}</li>
-        <li>Charge now: ${formatPence(charge.gross)} · duration ${quote.durationMinutes}m</li>
+        <li>Charge now: ${formatPence(charge.gross)} · on-site ${quote.elapsedMinutes}m</li>
         <li>Slot: ${data.slotStartISO ?? "not selected"}</li>
       </ul>
     `,

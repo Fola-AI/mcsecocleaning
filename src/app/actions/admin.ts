@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { db, hasDatabase } from "@/lib/db";
 import { computeQuote, type Frequency } from "@/lib/quote";
 import { serviceBySlug } from "@/config/services";
-import { ROOM_KEYS, type RoomKey } from "@/config/pricing";
+import { ROOM_KEYS, type RoomKey } from "@/lib/pricing/rate-card";
 import { parseClientCsv } from "@/lib/csv";
 import { ADMIN_COOKIE, checkAdminCode, requireAdmin } from "@/lib/admin-auth";
 
@@ -77,8 +77,10 @@ export async function adminCreateBooking(input: z.input<typeof adminBookingSchem
     rooms,
     condition: data.condition,
     frequency: data.frequency as Frequency,
-    regionKey: "london",
   });
+  if (quote.escalate) {
+    return { status: "error", message: `${quote.reason} Create it manually once you've agreed a price.` };
+  }
 
   const reference = `MCS-A${Date.now().toString(36).toUpperCase()}`;
 
@@ -109,7 +111,7 @@ export async function adminCreateBooking(input: z.input<typeof adminBookingSchem
   });
 
   const scheduledStart = data.slotStartISO ? new Date(data.slotStartISO) : null;
-  const scheduledEnd = scheduledStart ? new Date(scheduledStart.getTime() + quote.durationMinutes * 60000) : null;
+  const scheduledEnd = scheduledStart ? new Date(scheduledStart.getTime() + quote.elapsedMinutes * 60000) : null;
 
   const job = await db.job.create({
     data: {
@@ -119,7 +121,7 @@ export async function adminCreateBooking(input: z.input<typeof adminBookingSchem
       status: "booked",
       scheduledStart,
       scheduledEnd,
-      estimatedDurationMinutes: quote.durationMinutes,
+      estimatedDurationMinutes: quote.crewMinutes,
       net: quote.chargeNow.net,
       vatRate: quote.chargeNow.vatRate,
       vatAmount: quote.chargeNow.vatAmount,

@@ -1,10 +1,10 @@
 import { inngest } from "./client";
 import { db, hasDatabase } from "@/lib/db";
 import { materialiseSchedule, type Blackout } from "@/lib/recurrence";
-import { computeQuote, type Frequency } from "@/lib/quote";
+import { computeQuote, type Frequency, type QuotePriced } from "@/lib/quote";
 import { fromGross, fromNet, isVatRegistered } from "@/lib/money";
 import { localDateString } from "@/lib/timezone";
-import { ROOM_KEYS, type RoomKey } from "@/config/pricing";
+import { ROOM_KEYS, type RoomKey } from "@/lib/pricing/rate-card";
 
 /**
  * Rolling subscription job materialisation (§6.2) — THE critical scheduled task.
@@ -59,15 +59,18 @@ export const materialiseSubscriptions = inngest.createFunction(
         serviceSlug: service.slug,
         rooms,
         frequency: mapFrequency(sub.recurrenceRule),
-        regionKey: "london",
       });
+      if (quote.escalate) {
+        console.warn(`[materialise] subscription ${sub.id} escalates (${quote.reason}) — skipping`);
+        continue;
+      }
 
       const anchor = localDateString(sub.createdAt);
       const occurrences = materialiseSchedule({
         rrule: sub.recurrenceRule,
         anchorDate: anchor,
         preferredTime: sub.preferredTime ?? "09:00",
-        durationMinutes: quote.durationMinutes,
+        durationMinutes: quote.elapsedMinutes,
         horizonWeeks: HORIZON_WEEKS,
         from: now,
         blackouts,
@@ -101,7 +104,7 @@ export const materialiseSubscriptions = inngest.createFunction(
             status: occ.isBlackout ? "on_hold" : "booked",
             scheduledStart: occ.scheduledStart,
             scheduledEnd: occ.scheduledEnd,
-            estimatedDurationMinutes: first ? quote.firstVisitDurationMinutes : quote.durationMinutes,
+            estimatedDurationMinutes: first ? quote.firstVisitCrewMinutes : quote.crewMinutes,
             net: m.net,
             vatRate: m.vatRate,
             vatAmount: m.vatAmount,
@@ -152,6 +155,6 @@ function mapFrequency(rrule: string): Frequency {
 }
 
 /** Money breakdown for a standard (non-first) recurring visit. */
-function subVisitMoney(quote: ReturnType<typeof computeQuote>) {
+function subVisitMoney(quote: QuotePriced) {
   return isVatRegistered() ? fromGross(quote.perVisitGross) : fromNet(quote.perVisitGross);
 }

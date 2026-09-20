@@ -282,25 +282,8 @@ export const services: Service[] = [
   },
 ];
 
-/** Add-ons available at booking (§4.2). Each carries price + duration. */
-export interface AddOn {
-  slug: string;
-  name: string;
-  /** VAT-inclusive display price in pence; null when per-unit priced at booking. */
-  fromPricePence: number | null;
-  unit: "each" | "per area" | "per appliance" | null;
-  durationMinutes: number;
-  appliesTo: string[]; // service slugs
-}
-
-export const addOns: AddOn[] = [
-  { slug: "interior-windows", name: "Interior windows", fromPricePence: 2000, unit: "each", durationMinutes: 30, appliesTo: ["domestic-cleaning", "end-of-tenancy-cleaning", "deep-cleaning"] },
-  { slug: "oven-interior", name: "Oven interior", fromPricePence: 3500, unit: "per appliance", durationMinutes: 45, appliesTo: ["domestic-cleaning", "end-of-tenancy-cleaning", "deep-cleaning"] },
-  { slug: "carpet-cleaning", name: "Carpet cleaning", fromPricePence: 2500, unit: "per area", durationMinutes: 30, appliesTo: ["end-of-tenancy-cleaning", "deep-cleaning"] },
-  { slug: "upholstery", name: "Upholstery cleaning", fromPricePence: 3000, unit: "per area", durationMinutes: 40, appliesTo: ["deep-cleaning", "end-of-tenancy-cleaning"] },
-  { slug: "fridge-freezer", name: "Fridge / freezer interior", fromPricePence: 2000, unit: "per appliance", durationMinutes: 25, appliesTo: ["domestic-cleaning", "end-of-tenancy-cleaning", "deep-cleaning"] },
-  { slug: "balcony", name: "Balcony", fromPricePence: 2000, unit: "each", durationMinutes: 25, appliesTo: ["domestic-cleaning", "deep-cleaning", "end-of-tenancy-cleaning"] },
-];
+// Add-ons now live in the rate card (src/lib/pricing/rate-card.ts) — the single
+// source for every price and its applicability. Read them via getRateCard().addOns.
 
 export const serviceBySlug = (slug: string): Service | undefined =>
   services.find((s) => s.slug === slug);

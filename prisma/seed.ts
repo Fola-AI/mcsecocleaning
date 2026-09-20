@@ -7,7 +7,7 @@
  */
 import { PrismaClient, PricingModel } from "@prisma/client";
 import { services } from "../src/config/services";
-import { addOns } from "../src/config/services";
+import { getRateCard } from "../src/lib/pricing/rate-card";
 import { areas, canPublishLocationPage, locationWordCount } from "../src/config/areas";
 import { serviceTemplates } from "../src/config/checklists";
 
@@ -38,16 +38,17 @@ async function main() {
     });
   }
 
-  // Add-ons
-  for (const a of addOns) {
+  // Add-ons — from the rate card (single source). `durationMinutes` stores the
+  // add-on's crew-minutes (total labour); `price` is the VAT-inclusive pence.
+  for (const a of getRateCard().addOns) {
     await db.addOn.upsert({
       where: { slug: a.slug },
-      update: { name: a.name, price: a.fromPricePence ?? 0, durationMinutes: a.durationMinutes, serviceTypeIds: a.appliesTo },
+      update: { name: a.name, price: a.pricePence, durationMinutes: a.crewMinutes, serviceTypeIds: a.appliesTo },
       create: {
         slug: a.slug,
         name: a.name,
-        price: a.fromPricePence ?? 0,
-        durationMinutes: a.durationMinutes,
+        price: a.pricePence,
+        durationMinutes: a.crewMinutes,
         serviceTypeIds: a.appliesTo,
       },
     });

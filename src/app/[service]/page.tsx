@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { services, serviceBySlug, addOns } from "@/config/services";
+import { services, serviceBySlug } from "@/config/services";
+import { getRateCard } from "@/lib/pricing/rate-card";
 import { areas, canPublishLocationPage } from "@/config/areas";
 import { formatPounds } from "@/lib/money";
 import { buildMetadata } from "@/lib/seo/metadata";
@@ -53,7 +54,7 @@ export default async function ServiceHubPage({
       ? `From ${formatPounds(service.fromPricePence)}${service.fromUnit ? ` ${service.fromUnit}` : ""}`
       : "Priced after a quick survey";
 
-  const serviceAddOns = addOns.filter((a) => a.appliesTo.includes(service.slug));
+  const serviceAddOns = getRateCard().addOns.filter((a) => a.appliesTo.includes(service.slug));
 
   // Areas with a published (gate-passing) page for this service.
   const coveredAreas = areas.filter(
@@ -142,9 +143,8 @@ export default async function ServiceHubPage({
               <div key={a.slug} className="card flex items-center justify-between p-4">
                 <span className="font-semibold">{a.name}</span>
                 <span className="text-sm font-semibold text-brand-strong">
-                  {a.fromPricePence != null
-                    ? `From ${formatPounds(a.fromPricePence)}${a.unit && a.unit !== "each" ? ` ${a.unit}` : ""}`
-                    : "Quoted"}
+                  From {formatPounds(a.pricePence)}
+                  {a.unit !== "each" ? ` ${a.unit.replace(/_/g, " ")}` : ""}
                 </span>
               </div>
             ))}

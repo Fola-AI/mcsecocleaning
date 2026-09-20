@@ -64,6 +64,32 @@ export function fromNet(netPence: number): MoneyBreakdown {
   return { net, vatRate: STANDARD_VAT_RATE, vatAmount, gross: net + vatAmount };
 }
 
+/**
+ * VAT display mode (decision C). Controls how a rate-card figure becomes the
+ * displayed consumer price once VAT-registered. Defaults to 'absorb'; flip via
+ * env with NO migration. Below the threshold both modes are identical.
+ *   · 'absorb' — the rate-card figure is the displayed price; VAT is taken out of
+ *     margin (headline price stable across registration).
+ *   · 'add'    — the rate-card figure is net; VAT is added on top (headline price
+ *     rises by VAT on registration).
+ */
+export type VatDisplayMode = "absorb" | "add";
+
+export function vatDisplayMode(): VatDisplayMode {
+  return process.env.VAT_DISPLAY_MODE === "add" ? "add" : "absorb";
+}
+
+/**
+ * Turn a rate-card base figure (pence) into a full net/vat/gross breakdown,
+ * honouring the VAT display mode. Use this for every published/quoted price.
+ */
+export function priceFromRateCard(
+  basePence: number,
+  mode: VatDisplayMode = vatDisplayMode()
+): MoneyBreakdown {
+  return mode === "add" ? fromNet(basePence) : fromGross(basePence);
+}
+
 const gbp = new Intl.NumberFormat("en-GB", {
   style: "currency",
   currency: "GBP",
