@@ -19,6 +19,7 @@ function SubmitButton({ label }: { label: string }) {
 export function LeadForm({
   enquiry = "general",
   defaultPostcode = "",
+  job,
   showPostcode = true,
   showMessage = true,
   submitLabel = "Send enquiry",
@@ -26,6 +27,8 @@ export function LeadForm({
 }: {
   enquiry?: string;
   defaultPostcode?: string;
+  /** Structured job (JSON string) carried from an escalated booking, stored on the Lead. */
+  job?: string;
   showPostcode?: boolean;
   showMessage?: boolean;
   submitLabel?: string;
@@ -45,6 +48,7 @@ export function LeadForm({
   return (
     <form action={formAction} className="card space-y-4 p-6" noValidate>
       <input type="hidden" name="enquiry" value={enquiry} />
+      {job && <input type="hidden" name="job" value={job} />}
       {/* Honeypot */}
       <div aria-hidden className="hidden">
         <label>

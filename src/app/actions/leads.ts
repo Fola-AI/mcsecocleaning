@@ -1,6 +1,7 @@
 "use server";
 
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { db, hasDatabase } from "@/lib/db";
 import { sendEmail } from "@/lib/email";
 import { site } from "@/config/site";
@@ -23,6 +24,9 @@ const leadSchema = z.object({
   message: z.string().trim().max(2000).optional().or(z.literal("")),
   // "waitlist" | "commercial" | a service slug | "general"
   enquiry: z.string().trim().max(60).optional().or(z.literal("")),
+  // Structured job (JSON) carried from an escalated booking, stored on the Lead so
+  // the customer never re-types what the engine already had (§7.2 handoff).
+  job: z.string().max(4000).optional().or(z.literal("")),
   // Honeypot — bots fill this; humans never see it.
   company: z.string().max(0).optional(),
   // PECR soft opt-in checkbox state (§10.3)
@@ -66,6 +70,17 @@ export async function submitLead(
   const leadType = classifyType(data.enquiry);
   const area = data.postcode ? checkServiceArea(data.postcode) : null;
 
+  // Structured job carried from an escalated booking (§7.2). Parsed defensively;
+  // a malformed value is dropped, never allowed to break lead capture.
+  let carriedJob: Prisma.InputJsonValue | null = null;
+  if (data.job) {
+    try {
+      carriedJob = JSON.parse(data.job) as Prisma.InputJsonValue;
+    } catch {
+      carriedJob = null;
+    }
+  }
+
   // 1) Persist to DB when available.
   if (hasDatabase) {
     try {
@@ -81,6 +96,8 @@ export async function submitLead(
             enquiry: data.enquiry || "general",
             inArea: area?.inArea ?? null,
             marketingConsent: data.marketingConsent === "on",
+            // Structured job from an escalated booking, when present (§7.2 handoff).
+            job: carriedJob,
           },
           source: "website",
         },
@@ -114,6 +131,7 @@ export async function submitLead(
         <li><strong>Marketing consent:</strong> ${data.marketingConsent === "on" ? "yes" : "no"}</li>
       </ul>
       <p><strong>Message:</strong><br/>${escapeHtml(data.message || "—")}</p>
+      ${carriedJob ? `<p><strong>Property details (from booking):</strong><br/><code>${escapeHtml(JSON.stringify(carriedJob))}</code></p>` : ""}
     `,
   });
 

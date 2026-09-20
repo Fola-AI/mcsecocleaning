@@ -14,21 +14,60 @@ export const metadata: Metadata = buildMetadata({
   path: "/contact",
 });
 
+/** Carried-over job from an escalated booking (§7.2 handoff, wired in the wizard). */
+interface CarriedJob {
+  propertyType?: string;
+  condition?: string;
+  frequency?: string;
+  rooms?: Record<string, number>;
+  addOnSlugs?: string[];
+  reason?: string;
+}
+
+function parseCarriedJob(raw?: string): CarriedJob | null {
+  if (!raw) return null;
+  try {
+    const j = JSON.parse(raw) as CarriedJob;
+    return j && typeof j === "object" ? j : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Human-readable one-liner so the customer sees what was carried over. */
+function summariseJob(serviceName: string | undefined, job: CarriedJob): string {
+  const parts: string[] = [];
+  if (serviceName) parts.push(serviceName);
+  if (job.propertyType) parts.push(job.propertyType);
+  const beds = job.rooms?.bedrooms;
+  const baths = job.rooms?.bathrooms;
+  if (typeof beds === "number") parts.push(beds === 0 ? "studio" : `${beds} bed`);
+  if (typeof baths === "number") parts.push(`${baths} bath`);
+  if (job.condition === "heavily_soiled") parts.push("heavily soiled");
+  return parts.join(" · ");
+}
+
 export default async function ContactPage({
   searchParams,
 }: {
-  searchParams: Promise<{ enquiry?: string }>;
+  searchParams: Promise<{ enquiry?: string; postcode?: string; job?: string }>;
 }) {
-  const { enquiry } = await searchParams;
+  const { enquiry, postcode, job: jobRaw } = await searchParams;
   const service = enquiry ? serviceBySlug(enquiry) : undefined;
   const isCommercial = service?.channel === "rfq";
+  const job = parseCarriedJob(jobRaw);
+  const jobSummary = job ? summariseJob(service?.name, job) : "";
 
   const heading = isCommercial
     ? `Request a quote for ${service!.name.toLowerCase()}`
-    : "Get in touch";
+    : job
+      ? `Get a tailored quote for your ${service ? service.name.toLowerCase() : "clean"}`
+      : "Get in touch";
   const intro = isCommercial
     ? "Tell us about your site and we'll arrange a survey, then send a proposal you can review and accept online."
-    : "Have a question, or want a quote for something the online booking doesn't cover? Send us a message.";
+    : job
+      ? "We've carried over the details from your booking — just add your contact details and we'll price it and come back to you."
+      : "Have a question, or want a quote for something the online booking doesn't cover? Send us a message.";
 
   return (
     <>
@@ -72,9 +111,16 @@ export default async function ContactPage({
           </div>
 
           <div>
+            {jobSummary && (
+              <p className="mb-4 rounded-lg border border-brand/40 bg-brand-tint/40 p-3 text-sm text-brand-ink">
+                <span className="font-semibold">Carried over from your booking:</span> {jobSummary}
+              </p>
+            )}
             <LeadForm
               enquiry={enquiry || "general"}
-              submitLabel={isCommercial ? "Request commercial quote" : "Send message"}
+              defaultPostcode={postcode || ""}
+              job={jobRaw}
+              submitLabel={isCommercial ? "Request commercial quote" : job ? "Get my tailored quote" : "Send message"}
             />
           </div>
         </div>

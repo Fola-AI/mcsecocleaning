@@ -195,7 +195,24 @@ export function BookingWizard({
           <div className="mt-5 rounded-lg border border-brand/40 bg-brand-tint/40 p-4 text-sm">
             <p className="font-semibold">This one needs a tailored quote</p>
             <p className="mt-1 text-ink-soft">{quote.reason}</p>
-            <Link href={`/contact?service=${state.serviceSlug}`} className="btn btn-primary mt-3">
+            {/* Carry the structured job the engine already had into the enquiry, so
+                the customer never re-types what they just entered (§7.1 friction —
+                and this is exactly the high-value 5-bed/soiled EOT that escalates). */}
+            <Link
+              href={`/contact?enquiry=${encodeURIComponent(state.serviceSlug)}${
+                state.postcode ? `&postcode=${encodeURIComponent(state.postcode)}` : ""
+              }&job=${encodeURIComponent(
+                JSON.stringify({
+                  propertyType: state.propertyType,
+                  condition: state.condition,
+                  frequency: state.frequency,
+                  rooms: state.rooms,
+                  addOnSlugs: effectiveAddOnSlugs,
+                  reason: quote.reason,
+                })
+              )}`}
+              className="btn btn-primary mt-3"
+            >
               Get a tailored quote
             </Link>
           </div>
