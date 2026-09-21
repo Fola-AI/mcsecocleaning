@@ -55,6 +55,9 @@ is quiet data loss.
   inert (lead writes are skipped), but the gap opens the moment a DB is attached
   if the enum value isn't there first. Run `ALTER TYPE … ADD VALUE` **standalone**
   (not inside a transaction).
+- **`2026-09-20-quote-manual-override.sql`** — `Quote.manualOverride` +
+  `overrideReason` + `overrideBy` (§9.7 override log). Additive; run before the
+  first DB-backed deploy that includes admin lead-conversion / manual pricing.
 
 ## 5. Email deliverability (do before sending anything real)
 Configure **SPF, DKIM and DMARC** for the sending domain in Resend and warm the

@@ -43,3 +43,14 @@ export async function isAdmin(): Promise<boolean> {
 export async function requireAdmin(): Promise<void> {
   if (!(await isAdmin())) redirect("/admin/login");
 }
+
+/**
+ * Server-side identity for audit fields (e.g. Quote.overrideBy, §9.7). Derived
+ * here, NEVER from anything the client submits — an audit field that trusts the
+ * request can lie. Under the interim shared-code gate there is no individual, so
+ * it returns a constant marker; it upgrades to the real session user id when
+ * Auth.js RBAC replaces this gate (this is the single point of change).
+ */
+export async function currentAdminActor(): Promise<string> {
+  return "shared-admin"; // interim: shared access code, not a named person (see TODO(auth))
+}

@@ -12,17 +12,35 @@ const ROOM_LABELS: Record<RoomKey, string> = {
   bedrooms: "Bedrooms", hallways: "Hallways", studies: "Studies", conservatories: "Conservatories",
 };
 
-export function AdminBookingForm() {
+export interface AdminBookingPrefill {
+  serviceSlug?: string;
+  postcode?: string;
+  rooms?: Partial<Record<RoomKey, number>>;
+  condition?: "standard" | "heavily_soiled";
+  name?: string;
+  email?: string;
+  phone?: string;
+  addressLine1?: string;
+  notes?: string;
+}
+
+export function AdminBookingForm({ prefill, leadId }: { prefill?: AdminBookingPrefill; leadId?: string } = {}) {
   const [f, setF] = useState({
-    serviceSlug: selfServeServices[0].slug,
-    postcode: "",
-    rooms: Object.fromEntries(ROOM_KEYS.map((k) => [k, k === "kitchens" || k === "bathrooms" || k === "bedrooms" ? 1 : 0])) as Record<RoomKey, number>,
-    condition: "standard" as "standard" | "heavily_soiled",
+    serviceSlug: prefill?.serviceSlug && selfServeServices.some((s) => s.slug === prefill.serviceSlug) ? prefill.serviceSlug : selfServeServices[0].slug,
+    postcode: prefill?.postcode ?? "",
+    rooms: {
+      ...(Object.fromEntries(ROOM_KEYS.map((k) => [k, k === "kitchens" || k === "bathrooms" || k === "bedrooms" ? 1 : 0])) as Record<RoomKey, number>),
+      ...prefill?.rooms,
+    },
+    condition: (prefill?.condition ?? "standard") as "standard" | "heavily_soiled",
     frequency: "one_off" as "one_off" | "weekly" | "fortnightly" | "monthly",
     slotStartISO: "",
-    paymentMethod: "payment_link" as "payment_link" | "invoice" | "cash",
-    source: "phone" as "phone" | "admin" | "partner",
-    name: "", email: "", phone: "", addressLine1: "", notes: "",
+    paymentMethod: "payment_link" as "payment_link" | "invoice",
+    source: (leadId ? "admin" : "phone") as "phone" | "admin" | "partner",
+    name: prefill?.name ?? "", email: prefill?.email ?? "", phone: prefill?.phone ?? "", addressLine1: prefill?.addressLine1 ?? "",
+    notes: prefill?.notes ?? "",
+    // Manual price override (§9.7) — pounds string, minutes string.
+    overridePrice: "", overrideReason: "", overrideDuration: "",
   });
   const [result, setResult] = useState<AdminBookingResult | null>(null);
   const [pending, start] = useTransition();
@@ -31,6 +49,17 @@ export function AdminBookingForm() {
     () => computeQuote({ serviceSlug: f.serviceSlug, rooms: f.rooms, condition: f.condition, frequency: f.frequency }),
     [f.serviceSlug, f.rooms, f.condition, f.frequency]
   );
+  const overridePence = f.overridePrice ? Math.round(Number(f.overridePrice) * 100) : undefined;
+  const isOverride = overridePence != null && overridePence > 0;
+  const overrideDurNum = f.overrideDuration ? Number(f.overrideDuration) : 0;
+  // An escalated job has no engine price, so a manual price + reason + duration is
+  // required. A manual price always needs a reason AND a non-zero on-site duration
+  // (a zero-length slot can't be scheduled).
+  const overrideRequired = quote.escalate;
+  const canSubmit =
+    Boolean(f.name && f.email && f.postcode) &&
+    (!overrideRequired || isOverride) &&
+    (!isOverride || (f.overrideReason.trim().length > 0 && overrideDurNum > 0));
 
   const submit = () => {
     start(async () => {
@@ -45,6 +74,10 @@ export function AdminBookingForm() {
         source: f.source,
         contact: { name: f.name, email: f.email, phone: f.phone, addressLine1: f.addressLine1 },
         notes: f.notes,
+        leadId: leadId ?? "",
+        overridePricePence: isOverride ? overridePence : undefined,
+        overrideReason: isOverride ? f.overrideReason : "",
+        overrideDurationMinutes: f.overrideDuration ? Number(f.overrideDuration) : undefined,
       });
       setResult(res);
     });
@@ -67,6 +100,11 @@ export function AdminBookingForm() {
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_16rem]">
       <div className="space-y-4">
+        {leadId && (
+          <p className="rounded-lg border border-brand/40 bg-brand-tint/40 p-3 text-sm text-brand-ink">
+            Converting a lead into a booking — this stamps the lead as converted and links it to the new quote.
+          </p>
+        )}
         <Row label="Service">
           <select className="input" value={f.serviceSlug} onChange={(e) => setF({ ...f, serviceSlug: e.target.value })}>
             {selfServeServices.map((s) => <option key={s.slug} value={s.slug}>{s.name}</option>)}
@@ -111,7 +149,6 @@ export function AdminBookingForm() {
             <select className="input" value={f.paymentMethod} onChange={(e) => setF({ ...f, paymentMethod: e.target.value as typeof f.paymentMethod })}>
               <option value="payment_link">Payment link</option>
               <option value="invoice">Invoice</option>
-              <option value="cash">Cash</option>
             </select>
           </Row>
           <Row label="Source">
@@ -130,16 +167,45 @@ export function AdminBookingForm() {
         </div>
         <Row label="Notes"><textarea className="input" rows={2} value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></Row>
 
+        {/* Manual price override (§9.7). Required when the job escalates (no engine
+            price); optional otherwise to override the engine price. Recorded on the
+            Quote as manualOverride + reason + who (server-side). */}
+        <fieldset className="rounded-lg border border-line p-3">
+          <legend className="px-1 text-sm font-semibold">
+            Manual price {overrideRequired ? <span className="text-error">(required — this job needs a bespoke quote)</span> : <span className="text-ink-soft">(optional override)</span>}
+          </legend>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <label className="text-sm">Price £ (inc. VAT)
+              <input type="number" min={0} step="0.01" className="input mt-1" value={f.overridePrice}
+                onChange={(e) => setF({ ...f, overridePrice: e.target.value })} />
+            </label>
+            <label className="text-sm">On-site minutes {isOverride && <span className="text-error">*</span>}
+              <input type="number" min={1} className="input mt-1" value={f.overrideDuration}
+                onChange={(e) => setF({ ...f, overrideDuration: e.target.value })} />
+            </label>
+            <label className="text-sm sm:col-span-3">Reason {isOverride && <span className="text-error">*</span>}
+              <input className="input mt-1" placeholder="Why the price was set by hand" value={f.overrideReason}
+                onChange={(e) => setF({ ...f, overrideReason: e.target.value })} />
+            </label>
+          </div>
+        </fieldset>
+
         {result?.status === "error" && <p className="text-sm text-error" role="alert">{result.message}</p>}
-        <button className="btn btn-primary" onClick={submit} disabled={pending || !f.name || !f.email || !f.postcode}>
+        <button className="btn btn-primary" onClick={submit} disabled={pending || !canSubmit}>
           {pending ? "Creating…" : "Create booking"}
         </button>
       </div>
 
       <aside className="card h-fit p-5">
-        <p className="eyebrow">Estimate</p>
-        {quote.escalate ? (
-          <p className="mt-1 text-sm text-ink-soft">Needs a manual quote — {quote.reason}</p>
+        <p className="eyebrow">{isOverride ? "Manual price" : "Estimate"}</p>
+        {isOverride ? (
+          <>
+            <p className="mt-1 text-2xl font-bold">{formatPence(overridePence!)}</p>
+            <p className="text-sm text-ink-soft">Bespoke, hand-set{f.overrideDuration ? ` · ${f.overrideDuration} min on site` : ""}</p>
+            {quote.escalate && <p className="mt-1 text-xs text-ink-soft">Engine escalated — no automatic price.</p>}
+          </>
+        ) : quote.escalate ? (
+          <p className="mt-1 text-sm text-ink-soft">Needs a manual price — {quote.reason}</p>
         ) : (
           <>
             <p className="mt-1 text-2xl font-bold">{formatPence(quote.chargeNow.gross)}</p>

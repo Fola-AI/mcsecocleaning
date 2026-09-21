@@ -39,10 +39,14 @@ export default async function AdminDashboard() {
         </div>
       )}
 
-      <div className="mt-8 grid gap-4 sm:grid-cols-2">
+      <div className="mt-8 grid gap-4 sm:grid-cols-3">
+        <Link href="/admin/leads" className="card p-6 hover:shadow-md">
+          <h2 className="text-lg font-bold">Leads</h2>
+          <p className="mt-1 text-sm text-ink-soft">Tailored-quote, commercial and waitlist enquiries — convert one into a booking.</p>
+        </Link>
         <Link href="/admin/bookings/new" className="card p-6 hover:shadow-md">
           <h2 className="text-lg font-bold">Create a booking</h2>
-          <p className="mt-1 text-sm text-ink-soft">Take a booking by phone, WhatsApp or referral — payment link, invoice or cash.</p>
+          <p className="mt-1 text-sm text-ink-soft">Take a booking by phone, WhatsApp or referral — payment link or invoice.</p>
         </Link>
         <Link href="/admin/import" className="card p-6 hover:shadow-md">
           <h2 className="text-lg font-bold">Import clients</h2>

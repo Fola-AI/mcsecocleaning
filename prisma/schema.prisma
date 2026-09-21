@@ -267,6 +267,22 @@ model Quote {
   frequency               String // one_off | weekly | fortnightly | monthly
   addons                  Json?
   pricingVersion          String
+  // Bespoke/admin quotes are priced BY HAND (§9.7): the price will not reconcile
+  // to the rate card at pricingVersion, and that is expected ONLY when this is
+  // true. pricingVersion still records the card in effect at the time (context);
+  // manualOverride is the exception flag a parity audit skips. Every quote NOT
+  // marked here must still reconcile to its card.
+  //
+  // The three below travel as a GROUP — set together when manualOverride flips
+  // true, all null/false otherwise. overrideBy (who) + createdAt (when) +
+  // overrideReason (why) + manualOverride (that) is the full §9.7 override log.
+  // overrideBy is derived SERVER-SIDE from the authenticated admin session, never
+  // from the form (an audit field that trusts the request can lie). Under the
+  // interim shared-code gate it records a constant marker, not an individual;
+  // it upgrades to the real user id when Auth.js RBAC replaces the gate.
+  manualOverride          Boolean  @default(false)
+  overrideReason          String? // why the price was set by hand (required in-app when manualOverride)
+  overrideBy              String? // who authorised it — server-side from the admin session only
   net                     Int
   vatRate                 Float    @default(0)
   vatAmount               Int      @default(0)
