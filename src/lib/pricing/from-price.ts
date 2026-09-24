@@ -55,6 +55,20 @@ export function fromPriceFor(serviceSlug: string): FromPrice {
 }
 
 /**
+ * Whether a stored Quote is subject to rate-card reconciliation (§9.7). Manual
+ * overrides are priced BY HAND, so their gross deliberately will NOT match the
+ * card at their pricingVersion (which only records the card in effect). Any audit
+ * that reconciles a stored Quote's gross against the card MUST call this FIRST and
+ * skip when it returns false — the flag gates the check, it does not sit beside
+ * it. Reading manualOverride here, in one place every audit must go through,
+ * removes the chance a future author reconciles before checking the flag and
+ * chases a phantom bug.
+ */
+export function quoteReconcilesToCard(quote: { manualOverride?: boolean | null }): boolean {
+  return !quote.manualOverride;
+}
+
+/**
  * Build-time parity guard (§12.3). Called from next.config.ts so `next build`
  * fails BEFORE a wrong or diverging price can ship.
  *

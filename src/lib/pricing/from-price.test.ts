@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fromPriceFor } from "@/lib/pricing/from-price";
+import { fromPriceFor, quoteReconcilesToCard } from "@/lib/pricing/from-price";
 import { getRateCard } from "@/lib/pricing/rate-card";
 import { computeQuote } from "@/lib/quote";
 import { services } from "@/config/services";
@@ -19,6 +19,14 @@ const card = getRateCard();
  * Change the rate card and every surface moves together; hardcode a different
  * number on any surface and it stops matching fromPriceFor — either way this fails.
  */
+
+test("quoteReconcilesToCard gates on manualOverride — hand-priced quotes are excluded", () => {
+  // A future stored-quote audit must skip manual overrides BEFORE reconciling.
+  assert.equal(quoteReconcilesToCard({ manualOverride: false }), true);
+  assert.equal(quoteReconcilesToCard({}), true); // absent flag → reconciles
+  assert.equal(quoteReconcilesToCard({ manualOverride: true }), false);
+  assert.equal(quoteReconcilesToCard({ manualOverride: null }), true);
+});
 
 test("EOT 'from' = the cheapest grid cell (studio flat), per job", () => {
   assert.deepEqual(fromPriceFor("end-of-tenancy-cleaning"), {
