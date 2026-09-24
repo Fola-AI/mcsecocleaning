@@ -29,18 +29,76 @@ export async function authoriseBookingPayment(params: {
   jobId?: string;
   customerEmail?: string;
   description: string;
+  /** Stable key so a retried booking submit never authorises the card twice. */
+  idempotencyKey?: string;
 }): Promise<{ clientSecret: string | null; paymentIntentId: string } | null> {
   const stripe = getStripe();
   if (!stripe) return null;
-  const intent = await stripe.paymentIntents.create({
-    amount: params.amountPence,
-    currency: "gbp",
-    capture_method: "manual", // authorise now, capture on completion (§6.5)
-    receipt_email: params.customerEmail,
-    description: params.description,
-    metadata: { jobId: params.jobId ?? "" },
-  });
+  const intent = await stripe.paymentIntents.create(
+    {
+      amount: params.amountPence,
+      currency: "gbp",
+      capture_method: "manual", // authorise now, capture on completion (§6.5)
+      receipt_email: params.customerEmail,
+      description: params.description,
+      metadata: { jobId: params.jobId ?? "" },
+    },
+    params.idempotencyKey ? { idempotencyKey: params.idempotencyKey } : undefined
+  );
   return { clientSecret: intent.client_secret, paymentIntentId: intent.id };
+}
+
+/**
+ * Capture a previously authorised PaymentIntent on job completion. Optionally
+ * captures LESS than authorised (final price lower — fewer rooms than quoted);
+ * capturing more than authorised is not possible, so upward changes need a
+ * separate charge. Returns the Stripe charge id for reconciliation.
+ */
+export async function captureBookingPayment(
+  paymentIntentId: string,
+  amountToCapturePence?: number
+): Promise<{ chargeId: string | null; status: string } | null> {
+  const stripe = getStripe();
+  if (!stripe) return null;
+  const intent = await stripe.paymentIntents.capture(
+    paymentIntentId,
+    amountToCapturePence != null ? { amount_to_capture: amountToCapturePence } : undefined
+  );
+  return {
+    chargeId: typeof intent.latest_charge === "string" ? intent.latest_charge : null,
+    status: intent.status,
+  };
+}
+
+/**
+ * Refund a captured payment (full or partial). Returns the Stripe refund id.
+ */
+export async function refundBookingPayment(params: {
+  paymentIntentId: string;
+  amountPence?: number;
+  idempotencyKey?: string;
+}): Promise<{ refundId: string; status: string | null } | null> {
+  const stripe = getStripe();
+  if (!stripe) return null;
+  const refund = await stripe.refunds.create(
+    {
+      payment_intent: params.paymentIntentId,
+      ...(params.amountPence != null ? { amount: params.amountPence } : {}),
+    },
+    params.idempotencyKey ? { idempotencyKey: params.idempotencyKey } : undefined
+  );
+  return { refundId: refund.id, status: refund.status };
+}
+
+/**
+ * Verify a Stripe webhook signature and return the parsed event. Throws on a bad
+ * signature (the caller returns 400); returns null when Stripe isn't configured.
+ */
+export function constructWebhookEvent(rawBody: string, signature: string): Stripe.Event | null {
+  const stripe = getStripe();
+  const secret = process.env.STRIPE_WEBHOOK_SECRET;
+  if (!stripe || !secret) return null;
+  return stripe.webhooks.constructEvent(rawBody, signature, secret);
 }
 
 /**
