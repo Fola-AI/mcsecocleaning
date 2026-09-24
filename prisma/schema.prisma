@@ -121,6 +121,15 @@ enum PaymentStatus {
   refunded
 }
 
+// Processing state of a received webhook. The PK on WebhookEvent.id already
+// rejects replays; this makes a handler that THREW ('received' with no
+// processedAt, or 'failed') distinguishable from one that finished ('processed').
+enum WebhookStatus {
+  received
+  processed
+  failed
+}
+
 enum DiscountType {
   percent
   fixed
@@ -518,6 +527,11 @@ model Payment {
   type                  PaymentType
   feeReason             FeeReason?
   stripePaymentIntentId String?
+  // Distinct Stripe ids for finance reconciliation — the captured charge and any
+  // refund each have their own id, NOT reconstructable after the fact, so they are
+  // stored when they occur (charge on capture, refund on refund).
+  stripeChargeId        String?
+  stripeRefundId        String?
   gocardlessPaymentId   String?
   net                   Int
   vatAmount             Int      @default(0)
@@ -746,11 +760,16 @@ model AIInsight {
 
 // Webhook idempotency — store event.id and reject replays (§6.5, §9.2)
 model WebhookEvent {
-  id         String   @id // provider event id (e.g. Stripe evt_...)
-  provider   String
-  type       String?
-  receivedAt DateTime @default(now())
-  payload    Json?
+  id          String        @id // provider event id (e.g. Stripe evt_...)
+  provider    String
+  type        String?
+  receivedAt  DateTime      @default(now())
+  // Processing outcome, so a silently-failed webhook is visible, not just
+  // replay-rejected. Set processedAt when the handler finishes (processed) or
+  // gives up (failed); still 'received' with no processedAt means it never ran.
+  status      WebhookStatus @default(received)
+  processedAt DateTime?
+  payload     Json?
 
   @@index([provider])
 }
