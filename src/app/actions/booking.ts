@@ -173,23 +173,50 @@ export async function createBooking(input: BookingInput): Promise<BookingResult>
     }
   }
 
-  // Authorise payment when Stripe is configured (authorise now, capture on completion).
+  // Authorise payment (§6.5: authorise now, capture on completion).
+  //
+  // Orphan-proof ordering: the Payment row is created FIRST (status pending), so an
+  // authorised card can never exist without a Payment row. Then we authorise (the
+  // Payment id rides in Stripe metadata), then stamp the intent id + 'authorised'.
+  // If that final stamp is lost, the webhook reconciles by metadata.paymentId
+  // (payment_intent.amount_capturable_updated). If the authorise call itself fails,
+  // the Payment stays 'pending' — no orphaned auth, retryable — and the booking is
+  // still confirmed by email.
+  //
+  // TODO(deposit, §6.5 payment table): large jobs (> £250 or > half a crew-day)
+  // should CAPTURE a 25% deposit at booking with the balance on completion. Held
+  // pending confirmation of the capture-vs-authorise mechanic; today every job
+  // authorises the full amount.
   let requiresPayment = false;
   let clientSecret: string | null | undefined;
-  try {
-    const { stripeConfigured, authoriseBookingPayment } = await import("@/lib/stripe");
-    if (stripeConfigured()) {
-      requiresPayment = true;
-      const res = await authoriseBookingPayment({
-        amountPence: charge.gross,
-        jobId,
-        customerEmail: data.contact.email,
-        description: `${service.name} booking ${reference}`,
-      });
-      clientSecret = res?.clientSecret;
+  if (jobId && hasDatabase) {
+    try {
+      const { stripeConfigured, authoriseBookingPayment } = await import("@/lib/stripe");
+      if (stripeConfigured()) {
+        const amountPence = charge.gross;
+        const payment = await db.payment.create({
+          data: { jobId, type: "charge", net: charge.net, vatAmount: charge.vatAmount, gross: amountPence, status: "pending" },
+        });
+        const res = await authoriseBookingPayment({
+          amountPence,
+          jobId,
+          paymentId: payment.id,
+          idempotencyKey: reference,
+          customerEmail: data.contact.email,
+          description: `${service.name} booking ${reference}`,
+        });
+        if (res?.paymentIntentId) {
+          await db.payment.update({
+            where: { id: payment.id },
+            data: { status: "authorised", stripePaymentIntentId: res.paymentIntentId },
+          });
+          requiresPayment = true;
+          clientSecret = res.clientSecret;
+        }
+      }
+    } catch (e) {
+      console.error("[booking] stripe authorise / payment persistence failed", e);
     }
-  } catch (e) {
-    console.error("[booking] stripe authorise failed", e);
   }
 
   // Pre-contract information in a durable medium (§10.2).

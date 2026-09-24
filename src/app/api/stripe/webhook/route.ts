@@ -78,6 +78,23 @@ export async function POST(req: Request): Promise<Response> {
  */
 async function handleStripeEvent(tx: Prisma.TransactionClient, event: Stripe.Event): Promise<void> {
   switch (event.type) {
+    case "payment_intent.amount_capturable_updated": {
+      // Manual-capture authorisation confirmed. Safety net: if the inline
+      // post-authorise DB update in /book was lost, reconcile the Payment here by
+      // the id we put in metadata (the row was created BEFORE authorising, so it
+      // always exists), stamping the intent id and 'authorised'.
+      const pi = event.data.object as Stripe.PaymentIntent;
+      const paymentId = pi.metadata?.paymentId || null;
+      if (paymentId) {
+        await tx.payment.updateMany({
+          where: { id: paymentId },
+          data: { status: "authorised", stripePaymentIntentId: pi.id },
+        });
+      } else {
+        await tx.payment.updateMany({ where: { stripePaymentIntentId: pi.id }, data: { status: "authorised" } });
+      }
+      break;
+    }
     case "payment_intent.succeeded": {
       const pi = event.data.object as Stripe.PaymentIntent;
       const chargeId = typeof pi.latest_charge === "string" ? pi.latest_charge : null;

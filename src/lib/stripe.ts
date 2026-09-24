@@ -27,6 +27,9 @@ export const stripeConfigured = (): boolean => Boolean(process.env.STRIPE_SECRET
 export async function authoriseBookingPayment(params: {
   amountPence: number;
   jobId?: string;
+  /** Our Payment row id — carried in metadata so the webhook can reconcile the
+   *  authorisation even if the inline post-authorise DB update is lost. */
+  paymentId?: string;
   customerEmail?: string;
   description: string;
   /** Stable key so a retried booking submit never authorises the card twice. */
@@ -41,7 +44,7 @@ export async function authoriseBookingPayment(params: {
       capture_method: "manual", // authorise now, capture on completion (§6.5)
       receipt_email: params.customerEmail,
       description: params.description,
-      metadata: { jobId: params.jobId ?? "" },
+      metadata: { jobId: params.jobId ?? "", paymentId: params.paymentId ?? "" },
     },
     params.idempotencyKey ? { idempotencyKey: params.idempotencyKey } : undefined
   );
