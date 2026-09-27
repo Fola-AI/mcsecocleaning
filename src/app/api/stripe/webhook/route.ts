@@ -2,6 +2,7 @@ import type Stripe from "stripe";
 import { Prisma } from "@prisma/client";
 import { db, hasDatabase } from "@/lib/db";
 import { constructWebhookEvent } from "@/lib/stripe";
+import { recomputeJobPaymentStatus } from "@/lib/payments";
 
 // Stripe SDK + raw-body signature verification need the Node runtime, not edge.
 export const runtime = "nodejs";
@@ -93,6 +94,7 @@ async function handleStripeEvent(tx: Prisma.TransactionClient, event: Stripe.Eve
       } else {
         await tx.payment.updateMany({ where: { stripePaymentIntentId: pi.id }, data: { status: "authorised" } });
       }
+      await recomputeJobForIntent(tx, pi.id);
       break;
     }
     case "payment_intent.succeeded": {
@@ -102,14 +104,14 @@ async function handleStripeEvent(tx: Prisma.TransactionClient, event: Stripe.Eve
         where: { stripePaymentIntentId: pi.id },
         data: { status: "captured", capturedAt: new Date(), stripeChargeId: chargeId },
       });
-      await mirrorJobPaymentStatus(tx, pi.id, "captured");
+      await recomputeJobForIntent(tx, pi.id);
       break;
     }
     case "payment_intent.payment_failed":
     case "payment_intent.canceled": {
       const pi = event.data.object as Stripe.PaymentIntent;
       await tx.payment.updateMany({ where: { stripePaymentIntentId: pi.id }, data: { status: "failed" } });
-      await mirrorJobPaymentStatus(tx, pi.id, "failed");
+      await recomputeJobForIntent(tx, pi.id);
       break;
     }
     case "charge.refunded": {
@@ -121,7 +123,7 @@ async function handleStripeEvent(tx: Prisma.TransactionClient, event: Stripe.Eve
           where: { stripePaymentIntentId: piId },
           data: { status: "refunded", stripeRefundId: refundId },
         });
-        await mirrorJobPaymentStatus(tx, piId, "refunded");
+        await recomputeJobForIntent(tx, piId);
       }
       break;
     }
@@ -131,14 +133,10 @@ async function handleStripeEvent(tx: Prisma.TransactionClient, event: Stripe.Eve
   }
 }
 
-/** Mirror the payment status onto the linked Job — a status field, never job existence. */
-async function mirrorJobPaymentStatus(
-  tx: Prisma.TransactionClient,
-  paymentIntentId: string,
-  status: "captured" | "failed" | "refunded"
-): Promise<void> {
+/** Resolve the linked Job from a PaymentIntent and recompute its status from the
+ *  charge Payment rows — never stamps the event's status directly. Job existence
+ *  is never touched (§6.2). */
+async function recomputeJobForIntent(tx: Prisma.TransactionClient, paymentIntentId: string): Promise<void> {
   const payment = await tx.payment.findFirst({ where: { stripePaymentIntentId: paymentIntentId }, select: { jobId: true } });
-  if (payment?.jobId) {
-    await tx.job.update({ where: { id: payment.jobId }, data: { paymentStatus: status } });
-  }
+  if (payment?.jobId) await recomputeJobPaymentStatus(tx, payment.jobId);
 }

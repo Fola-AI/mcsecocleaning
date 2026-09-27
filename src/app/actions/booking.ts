@@ -8,6 +8,7 @@ import { computeQuote, type Frequency, type QuotePriced } from "@/lib/quote";
 import { serviceBySlug } from "@/config/services";
 import { site, formatAddress } from "@/config/site";
 import { CCR_CONSENT } from "@/config/legal";
+import { DEPOSIT, requiresDeposit, depositSplit } from "@/config/payments";
 import { checkServiceArea } from "@/lib/serviceArea";
 import { formatPence } from "@/lib/money";
 import { computeSlots, slotsByDate } from "@/lib/capacity";
@@ -95,8 +96,15 @@ const bookingSchema = z.object({
 
 export type BookingInput = z.input<typeof bookingSchema>;
 
+/** A payment the client must confirm. A large job returns two (deposit + balance);
+ *  every other job returns one (full). The Elements UI confirms each in turn. */
+export interface BookingPaymentIntent {
+  kind: "full" | "deposit" | "balance";
+  clientSecret: string | null;
+}
+
 export type BookingResult =
-  | { status: "success"; reference: string; message: string; requiresPayment: boolean; clientSecret?: string | null }
+  | { status: "success"; reference: string; message: string; requiresPayment: boolean; paymentIntents?: BookingPaymentIntent[] }
   | { status: "error"; message: string; fieldErrors?: Record<string, string> };
 
 export async function createBooking(input: BookingInput): Promise<BookingResult> {
@@ -183,36 +191,69 @@ export async function createBooking(input: BookingInput): Promise<BookingResult>
   // the Payment stays 'pending' — no orphaned auth, retryable — and the booking is
   // still confirmed by email.
   //
-  // TODO(deposit, §6.5 payment table): large jobs (> £250 or > half a crew-day)
-  // should CAPTURE a 25% deposit at booking with the balance on completion. Held
-  // pending confirmation of the capture-vs-authorise mechanic; today every job
-  // authorises the full amount.
+  // Large jobs (§6.5): CAPTURE a 25% deposit at booking + a second Payment for the
+  // balance, authorised now and captured on completion. Small jobs authorise the
+  // full amount. Every Payment row is created FIRST (pending) so an authorised or
+  // captured card can never exist without a Payment row (webhook reconciles by
+  // metadata.paymentId; idempotency keys stop a retried submit double-charging).
   let requiresPayment = false;
-  let clientSecret: string | null | undefined;
+  const paymentIntents: BookingPaymentIntent[] = [];
   if (jobId && hasDatabase) {
     try {
-      const { stripeConfigured, authoriseBookingPayment } = await import("@/lib/stripe");
+      const { stripeConfigured, authoriseBookingPayment, captureBookingDeposit } = await import("@/lib/stripe");
       if (stripeConfigured()) {
-        const amountPence = charge.gross;
-        const payment = await db.payment.create({
-          data: { jobId, type: "charge", net: charge.net, vatAmount: charge.vatAmount, gross: amountPence, status: "pending" },
-        });
-        const res = await authoriseBookingPayment({
-          amountPence,
-          jobId,
-          paymentId: payment.id,
-          idempotencyKey: reference,
-          customerEmail: data.contact.email,
-          description: `${service.name} booking ${reference}`,
-        });
-        if (res?.paymentIntentId) {
-          await db.payment.update({
-            where: { id: payment.id },
-            data: { status: "authorised", stripePaymentIntentId: res.paymentIntentId },
+        const jid = jobId;
+        const breakdown = (p: number): MoneyBreakdown => (isVatRegistered() ? fromGross(p) : fromNet(p));
+
+        // Create a pending Payment row, then run the Stripe call, then stamp it.
+        const openPayment = async (amountPence: number) => {
+          const b = breakdown(amountPence);
+          return db.payment.create({
+            data: { jobId: jid, type: "charge", net: b.net, vatAmount: b.vatAmount, gross: amountPence, status: "pending" },
           });
-          requiresPayment = true;
-          clientSecret = res.clientSecret;
+        };
+
+        if (requiresDeposit(charge.gross, quote.elapsedMinutes)) {
+          const { depositPence, balancePence } = depositSplit(charge.gross);
+
+          // Deposit — captured at booking. Stays 'pending' until the client confirms
+          // (payment_intent.succeeded → 'captured' via the webhook).
+          const dep = await openPayment(depositPence);
+          const depRes = await captureBookingDeposit({
+            amountPence: depositPence, jobId: jid, paymentId: dep.id,
+            idempotencyKey: `${reference}-deposit`, customerEmail: data.contact.email,
+            description: `${service.name} deposit ${reference}`,
+          });
+          if (depRes?.paymentIntentId) {
+            await db.payment.update({ where: { id: dep.id }, data: { stripePaymentIntentId: depRes.paymentIntentId } });
+            paymentIntents.push({ kind: "deposit", clientSecret: depRes.clientSecret });
+          }
+
+          // Balance — authorised now, captured on completion.
+          const bal = await openPayment(balancePence);
+          const balRes = await authoriseBookingPayment({
+            amountPence: balancePence, jobId: jid, paymentId: bal.id,
+            idempotencyKey: `${reference}-balance`, customerEmail: data.contact.email,
+            description: `${service.name} balance ${reference}`,
+          });
+          if (balRes?.paymentIntentId) {
+            await db.payment.update({ where: { id: bal.id }, data: { status: "authorised", stripePaymentIntentId: balRes.paymentIntentId } });
+            paymentIntents.push({ kind: "balance", clientSecret: balRes.clientSecret });
+          }
+        } else {
+          // Authorise the full amount.
+          const payment = await openPayment(charge.gross);
+          const res = await authoriseBookingPayment({
+            amountPence: charge.gross, jobId: jid, paymentId: payment.id,
+            idempotencyKey: reference, customerEmail: data.contact.email,
+            description: `${service.name} booking ${reference}`,
+          });
+          if (res?.paymentIntentId) {
+            await db.payment.update({ where: { id: payment.id }, data: { status: "authorised", stripePaymentIntentId: res.paymentIntentId } });
+            paymentIntents.push({ kind: "full", clientSecret: res.clientSecret });
+          }
         }
+        requiresPayment = paymentIntents.length > 0;
       }
     } catch (e) {
       console.error("[booking] stripe authorise / payment persistence failed", e);
@@ -227,7 +268,7 @@ export async function createBooking(input: BookingInput): Promise<BookingResult>
     status: "success",
     reference,
     requiresPayment,
-    clientSecret,
+    paymentIntents,
     message: requiresPayment
       ? "Your booking is reserved — complete payment to confirm."
       : "Thanks — your booking request is in. We'll confirm your slot and price shortly.",
@@ -367,6 +408,15 @@ async function sendPreContractEmail({
     discountAmount > 0
       ? `<li><strong>Discount applied:</strong> ${discountCode} (−${formatPence(discountAmount)})</li>`
       : "";
+  // §6.5/§10.2: on large jobs the payment is split — disclose the deposit taken
+  // now and the balance on completion BEFORE payment, and that the deposit stays
+  // refundable within the 14-day cancellation period before the clean happens.
+  const depositLine = requiresDeposit(charge.gross, quote.elapsedMinutes)
+    ? (() => {
+        const { depositPence, balancePence } = depositSplit(charge.gross);
+        return `<li><strong>Payment split:</strong> a ${Math.round(DEPOSIT.rate * 100)}% deposit of ${formatPence(depositPence)} is taken now to secure the booking; the balance of ${formatPence(balancePence)} is charged on completion. The deposit is refundable if you cancel within your 14-day cancellation period before the clean takes place.</li>`;
+      })()
+    : "";
 
   await sendEmail({
     to: data.contact.email,
@@ -378,6 +428,7 @@ async function sendPreContractEmail({
       <ul>
         <li><strong>Service:</strong> ${service}</li>
         <li><strong>Total price:</strong> ${priceLine}</li>
+        ${depositLine}
         ${discountLine}
         <li><strong>Estimated duration:</strong> ${quote.elapsedMinutes} minutes on site</li>
         <li><strong>Cancellation:</strong> see ${site.url}/cancellation-policy — a late-cancellation or no-access fee may apply, disclosed before payment.</li>

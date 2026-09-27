@@ -116,6 +116,7 @@ enum FeeReason {
 enum PaymentStatus {
   pending
   authorised
+  part_paid // Job.paymentStatus ONLY: some charge captured, balance still authorised (deposit split, §6.5). A single Payment row is never part_paid.
   captured
   failed
   refunded

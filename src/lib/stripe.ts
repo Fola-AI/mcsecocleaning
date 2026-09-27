@@ -52,6 +52,48 @@ export async function authoriseBookingPayment(params: {
 }
 
 /**
+ * Charge a deposit that is CAPTURED at booking (§6.5), not held — capture_method
+ * automatic, so confirming client-side takes the money immediately. Used for the
+ * 25% deposit on large jobs; the balance is authorised separately and captured on
+ * completion. Returns the client secret to confirm and the intent id.
+ */
+export async function captureBookingDeposit(params: {
+  amountPence: number;
+  jobId?: string;
+  paymentId?: string;
+  customerEmail?: string;
+  description: string;
+  idempotencyKey?: string;
+}): Promise<{ clientSecret: string | null; paymentIntentId: string } | null> {
+  const stripe = getStripe();
+  if (!stripe) return null;
+  const intent = await stripe.paymentIntents.create(
+    {
+      amount: params.amountPence,
+      currency: "gbp",
+      capture_method: "automatic", // deposit is captured at booking, not held
+      receipt_email: params.customerEmail,
+      description: params.description,
+      metadata: { jobId: params.jobId ?? "", paymentId: params.paymentId ?? "", kind: "deposit" },
+    },
+    params.idempotencyKey ? { idempotencyKey: params.idempotencyKey } : undefined
+  );
+  return { clientSecret: intent.client_secret, paymentIntentId: intent.id };
+}
+
+/**
+ * Release an uncaptured authorisation (e.g. the balance hold) — cancelling the
+ * PaymentIntent frees the held funds. Used when a booking is cancelled within the
+ * cooling-off window before the balance is captured.
+ */
+export async function cancelBookingAuthorisation(paymentIntentId: string): Promise<{ status: string } | null> {
+  const stripe = getStripe();
+  if (!stripe) return null;
+  const intent = await stripe.paymentIntents.cancel(paymentIntentId);
+  return { status: intent.status };
+}
+
+/**
  * Capture a previously authorised PaymentIntent on job completion. Optionally
  * captures LESS than authorised (final price lower — fewer rooms than quoted);
  * capturing more than authorised is not possible, so upward changes need a

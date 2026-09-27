@@ -1,0 +1,13 @@
+-- Migration: PaymentStatus.part_paid (§6.5). Job-level aggregate for a split
+-- payment — some charge captured, balance still authorised (a deposit job before
+-- completion). Job.paymentStatus is DERIVED from the charge Payment rows; a single
+-- Payment row is never part_paid.
+--
+-- On a FRESH database, `prisma db push` creates the enum with this value, so this
+-- file is NOT needed. Apply it ONLY when the enum already exists. Not auto-run —
+-- the project uses `prisma db push`, not Prisma Migrate. Run BEFORE the deploy
+-- that needs it (see docs/DEPLOYMENT.md §4a).
+--
+-- Additive: ADD VALUE adds a label, it does not remap existing rows. Run it on its
+-- own (ADD VALUE must not be in a transaction that then uses the value).
+ALTER TYPE "PaymentStatus" ADD VALUE IF NOT EXISTS 'part_paid' AFTER 'authorised';
