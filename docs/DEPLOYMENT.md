@@ -79,6 +79,14 @@ state.
 - **Dashboard webhook endpoint** → `https://<domain>/api/stripe/webhook`,
   subscribed to `payment_intent.amount_capturable_updated`, `payment_intent.succeeded`,
   `payment_intent.payment_failed`, `payment_intent.canceled`, `charge.refunded`.
+- **End-to-end test-key pass (GATE — unverified until done).** The client Stripe
+  flow has not been run against live Stripe. Before go-live, in Stripe **test
+  mode**, confirm end to end: (a) a **large job** — deposit captured + balance
+  authorised on the SAME card (PaymentMethod reuse), including the 3-D Secure
+  challenge path; then capture the balance on completion; (b) a **full-amount
+  job** — authorise then capture; (c) a **refund/cancel** within the cooling-off
+  window releases the balance and refunds the deposit. This is a gate, not a
+  reminder — payments do not go live until it passes.
 
 ## 5. Email deliverability (do before sending anything real)
 Configure **SPF, DKIM and DMARC** for the sending domain in Resend and warm the
