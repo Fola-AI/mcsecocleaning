@@ -65,6 +65,18 @@ is quiet data loss.
   Job.paymentStatus). Additive `ADD VALUE`; run before the first DB-backed deploy
   that includes the deposit branch.
 
+### 4b. Payments (Stripe) — required ops setup before payments can go live
+Same go-live checklist status as the migrations above — neither gets assumed done.
+Until these are set, `stripeConfigured()` is false: booking works but **no card is
+taken** (no PaymentIntent, no `Payment` row authorised), which is the current dev
+state.
+- **`STRIPE_SECRET_KEY`** — the API key (test key in staging, live key in prod).
+- **`STRIPE_WEBHOOK_SECRET`** — the signing secret for the endpoint below; without
+  it the webhook rejects every event (400), so captures/refunds never reconcile.
+- **Dashboard webhook endpoint** → `https://<domain>/api/stripe/webhook`,
+  subscribed to `payment_intent.amount_capturable_updated`, `payment_intent.succeeded`,
+  `payment_intent.payment_failed`, `payment_intent.canceled`, `charge.refunded`.
+
 ## 5. Email deliverability (do before sending anything real)
 Configure **SPF, DKIM and DMARC** for the sending domain in Resend and warm the
 domain. Booking confirmations landing in spam is a business-ending failure (§9.2).
