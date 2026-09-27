@@ -7,6 +7,9 @@ test("large-job (deposit + balance) lifecycle derives the right Job.paymentStatu
   assert.equal(deriveJobPaymentStatus(["pending", "authorised"]), "authorised");
   // Client confirms the deposit: deposit captured + balance authorised → part_paid.
   assert.equal(deriveJobPaymentStatus(["captured", "authorised"]), "part_paid");
+  // Deposit confirmed but balance never confirmed (abandoned / page closed):
+  // deposit captured + balance still pending → part_paid, NOT pending. No gap.
+  assert.equal(deriveJobPaymentStatus(["captured", "pending"]), "part_paid");
   // Completion captures the balance: both captured → captured.
   assert.equal(deriveJobPaymentStatus(["captured", "captured"]), "captured");
   // Cancellation: deposit refunded, balance released (failed) → refunded.

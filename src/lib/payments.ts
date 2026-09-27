@@ -12,7 +12,9 @@ import type { Prisma } from "@prisma/client";
  *   no rows                          → pending
  *   any refunded                     → refunded   (a cancellation happened)
  *   all captured                     → captured
- *   any captured AND any authorised  → part_paid  (deposit captured, balance held)
+ *   some captured (not all)          → part_paid  (deposit captured; balance still
+ *                                                  pending OR authorised — covers an
+ *                                                  abandoned/incomplete balance)
  *   any authorised (none captured)   → authorised
  *   any failed (none captured/auth)  → failed
  *   otherwise                        → pending
@@ -24,7 +26,7 @@ export function deriveJobPaymentStatus(statuses: PaymentStatus[]): PaymentStatus
 
   if (has("refunded")) return "refunded";
   if (all("captured")) return "captured";
-  if (has("captured") && has("authorised")) return "part_paid";
+  if (has("captured")) return "part_paid"; // some but not all captured, no refund → deposit paid, balance outstanding
   if (has("authorised")) return "authorised";
   if (has("failed")) return "failed";
   return "pending";

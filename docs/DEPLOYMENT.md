@@ -71,6 +71,9 @@ Until these are set, `stripeConfigured()` is false: booking works but **no card 
 taken** (no PaymentIntent, no `Payment` row authorised), which is the current dev
 state.
 - **`STRIPE_SECRET_KEY`** — the API key (test key in staging, live key in prod).
+- **`NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`** — the publishable key (client-safe) the
+  booking payment step mounts Stripe Elements with. Absent → the payment step shows
+  a "we'll be in touch" fallback and no card is taken.
 - **`STRIPE_WEBHOOK_SECRET`** — the signing secret for the endpoint below; without
   it the webhook rejects every event (400), so captures/refunds never reconcile.
 - **Dashboard webhook endpoint** → `https://<domain>/api/stripe/webhook`,

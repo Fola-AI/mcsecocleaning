@@ -8,6 +8,7 @@ import { computeQuote, type Frequency, type Condition, type QuotePriced } from "
 import { formatPence, formatPounds } from "@/lib/money";
 import { checkServiceArea } from "@/lib/serviceArea";
 import { getSlots, createBooking, type BookingResult } from "@/app/actions/booking";
+import { PaymentStep } from "@/components/booking/PaymentStep";
 import { CCR_CONSENT } from "@/config/legal";
 
 const ROOM_LABELS: Record<RoomKey, string> = {
@@ -574,18 +575,17 @@ function PriceSummary({ state, quote }: { state: State; quote: ReturnType<typeof
 }
 
 function Confirmation({ result }: { result: Extract<BookingResult, { status: "success" }> }) {
+  // Pay now when payment is required and we have intents to confirm; otherwise the
+  // booking is simply received (no Stripe configured, or no card step needed).
+  if (result.requiresPayment && result.paymentIntents && result.paymentIntents.length > 0) {
+    return <PaymentStep paymentIntents={result.paymentIntents} reference={result.reference} />;
+  }
   return (
     <div className="card mx-auto max-w-lg p-8 text-center">
       <div className="text-4xl" aria-hidden>🎉</div>
       <h2 className="mt-3 text-2xl font-bold">Booking received</h2>
       <p className="mt-1 text-ink-soft">{result.message}</p>
       <p className="mt-4 rounded-lg bg-brand-tint px-4 py-3 font-semibold text-brand-ink">Reference {result.reference}</p>
-      {result.requiresPayment && (
-        <p className="mt-4 text-sm text-ink-soft">
-          {/* TODO(Phase 2 payment UI): mount Stripe Elements with the returned clientSecret to authorise the card. */}
-          Complete payment to confirm — we&apos;ll email you a secure link.
-        </p>
-      )}
       <p className="mt-4 text-sm text-ink-soft">
         We&apos;ve emailed your pre-contract information and reference. We&apos;ll be in touch to confirm your slot.
       </p>
