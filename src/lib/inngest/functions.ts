@@ -37,6 +37,8 @@ export const heartbeatOnDemand = inngest.createFunction(
 
 export { materialiseSubscriptions } from "./subscriptions";
 import { materialiseSubscriptions } from "./subscriptions";
+export { nudgeIncompleteDeposits } from "./deposit-nudge";
+import { nudgeIncompleteDeposits } from "./deposit-nudge";
 
 /** All functions registered with the serve() handler. */
-export const functions = [heartbeat, heartbeatOnDemand, materialiseSubscriptions];
+export const functions = [heartbeat, heartbeatOnDemand, materialiseSubscriptions, nudgeIncompleteDeposits];
