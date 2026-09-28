@@ -55,3 +55,18 @@ export async function currentAdminActor(): Promise<string> {
   const session = await auth();
   return session?.user?.id ?? "unknown";
 }
+
+/**
+ * Ownership gate for the customer account (§3). Returns the signed-in customer's
+ * id, which is the ONLY thing /account reads and writes should scope by — every
+ * query uses `where: { customerId }`, never an id from the request. A customer
+ * therefore can only ever reach their own data. Redirects to the account sign-in
+ * when not signed in as a customer.
+ */
+export async function requireCustomer(): Promise<{ id: string }> {
+  const session = await auth();
+  const id = session?.user?.id;
+  const role = session?.user?.role;
+  if (!id || role !== "customer") redirect("/account/signin");
+  return { id };
+}
