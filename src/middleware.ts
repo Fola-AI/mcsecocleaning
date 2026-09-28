@@ -1,10 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { ADMIN_COOKIE } from "@/lib/admin-auth";
 
 /**
- * Middleware (§3, §5.1): noindex all internal routes, and gate /admin behind the
- * interim admin access code (deny-by-default). Auth.js RBAC replaces the /admin
- * gate — and adds /crew and /account protection — once a DB is live.
+ * Middleware (§3, §5.1): noindex every internal route, and bounce unauthenticated
+ * /admin requests to sign-in. This is a COARSE convenience gate only — it checks
+ * merely for a session cookie's presence (edge-safe, no DB). The authoritative
+ * check is `requireRole` at the top of every admin page and server action, which
+ * verifies the session and the role on the data path (§3: hiding UI is not access
+ * control). /crew and /account gain the same requireRole treatment with their
+ * surfaces (Phase 2/3).
  */
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -13,9 +16,10 @@ export function middleware(req: NextRequest) {
   res.headers.set("X-Robots-Tag", "noindex, nofollow");
 
   if (pathname.startsWith("/admin") && pathname !== "/admin/login") {
-    const expected = process.env.ADMIN_ACCESS_CODE;
-    const cookie = req.cookies.get(ADMIN_COOKIE)?.value;
-    if (!expected || cookie !== expected) {
+    const hasSession =
+      req.cookies.get("authjs.session-token")?.value ||
+      req.cookies.get("__Secure-authjs.session-token")?.value;
+    if (!hasSession) {
       const url = req.nextUrl.clone();
       url.pathname = "/admin/login";
       url.search = "";

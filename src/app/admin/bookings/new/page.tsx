@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { requireAdmin } from "@/lib/admin-auth";
+import { requireRole } from "@/lib/auth";
 import { db, hasDatabase } from "@/lib/db";
 import { serviceBySlug } from "@/config/services";
 import { AdminShell } from "@/components/admin/AdminShell";
@@ -36,7 +36,7 @@ export default async function AdminNewBookingPage({
 }: {
   searchParams: Promise<{ leadId?: string }>;
 }) {
-  await requireAdmin();
+  await requireRole(["owner", "admin", "supervisor"]);
   const { leadId } = await searchParams;
   const prefill = leadId ? await prefillFromLead(leadId) : null;
 

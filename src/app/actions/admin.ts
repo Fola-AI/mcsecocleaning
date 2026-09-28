@@ -1,42 +1,15 @@
 "use server";
 
 import { z } from "zod";
-import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
 import { db, hasDatabase } from "@/lib/db";
 import { computeQuote, type Frequency } from "@/lib/quote";
 import { priceFromRateCard, type MoneyBreakdown } from "@/lib/money";
 import { serviceBySlug } from "@/config/services";
 import { ROOM_KEYS, RATE_CARD_VERSION, type RoomKey } from "@/lib/pricing/rate-card";
 import { parseClientCsv } from "@/lib/csv";
-import { ADMIN_COOKIE, checkAdminCode, currentAdminActor, requireAdmin } from "@/lib/admin-auth";
+import { requireRole, currentAdminActor } from "@/lib/auth";
 
-// ---------- Login ----------
-
-export async function loginAdmin(
-  _prev: { error?: string } | null,
-  formData: FormData
-): Promise<{ error?: string }> {
-  const code = String(formData.get("code") ?? "");
-  if (!checkAdminCode(code)) {
-    return { error: "Incorrect access code." };
-  }
-  const c = await cookies();
-  c.set(ADMIN_COOKIE, code, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: 60 * 60 * 8, // 8h
-  });
-  redirect("/admin");
-}
-
-export async function logoutAdmin(): Promise<void> {
-  const c = await cookies();
-  c.delete(ADMIN_COOKIE);
-  redirect("/admin/login");
-}
+const OPS_ROLES = ["owner", "admin", "supervisor"] as const;
 
 // ---------- Admin-created booking (§6.15) ----------
 
@@ -74,7 +47,7 @@ export type AdminBookingResult =
   | { status: "error"; message: string };
 
 export async function adminCreateBooking(input: z.input<typeof adminBookingSchema>): Promise<AdminBookingResult> {
-  await requireAdmin();
+  await requireRole([...OPS_ROLES]);
   const parsed = adminBookingSchema.safeParse(input);
   if (!parsed.success) {
     return { status: "error", message: parsed.error.issues[0]?.message ?? "Invalid input" };
@@ -255,7 +228,7 @@ export type ImportResult = {
 };
 
 export async function importClients(csvText: string): Promise<ImportResult> {
-  await requireAdmin();
+  await requireRole([...OPS_ROLES]);
   const { records, errors } = parseClientCsv(csvText);
 
   if (!hasDatabase) {

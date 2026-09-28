@@ -178,9 +178,11 @@ model User {
   id                String    @id @default(cuid())
   role              Role      @default(customer)
   email             String    @unique
+  emailVerified     DateTime? // Auth.js: set when a magic-link email is verified
+  image             String? // Auth.js standard field
   phone             String?
   name              String?
-  passwordHash      String? // crew PIN/hash; customers use magic link
+  passwordHash      String? // crew PIN/hash; customers/admins use magic link
   organisationId    String?
   organisation      Organisation? @relation(fields: [organisationId], references: [id])
   marketingConsent  Boolean   @default(false)
@@ -200,6 +202,8 @@ model User {
   referralsMade     Referral[]     @relation("Referrer")
   referredBy        Referral[]     @relation("Referred")
   issueMessages     IssueMessage[]
+  accounts          Account[]
+  sessions          Session[]
 
   @@index([organisationId])
   @@index([role])
@@ -786,4 +790,46 @@ model AccessCodeAudit {
   accessedAt DateTime @default(now())
 
   @@index([propertyId])
+}
+
+// ───────────────────────── Auth.js (§3, §13) ─────────────────────────
+// Standard @auth/prisma-adapter models. Database sessions, so role is read fresh
+// from User on every request. Magic-link (Email) for customers + admin/owner/ops
+// (role-gated); crew PIN provider lands with the crew app (Phase 3).
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
 }

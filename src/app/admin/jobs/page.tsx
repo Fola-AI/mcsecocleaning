@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { requireAdmin } from "@/lib/admin-auth";
+import { requireRole } from "@/lib/auth";
 import { db, hasDatabase } from "@/lib/db";
 import { formatPence } from "@/lib/money";
 import { localDateString } from "@/lib/timezone";
@@ -9,7 +9,7 @@ import { JobCaptureControl } from "@/components/admin/JobCaptureControl";
 export const metadata: Metadata = { title: "Jobs", robots: { index: false, follow: false } };
 
 export default async function AdminJobsPage() {
-  await requireAdmin();
+  await requireRole(["owner", "admin", "supervisor"]);
 
   const jobs = hasDatabase
     ? await db.job.findMany({

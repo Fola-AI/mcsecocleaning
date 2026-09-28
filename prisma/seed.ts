@@ -15,6 +15,15 @@ import { serviceTemplates } from "../src/config/checklists";
 const db = new PrismaClient();
 
 async function main() {
+  // Owner (RBAC, §3) — only seeded roles reach /admin. This is the single owner
+  // account; the rate-card editor (§9.7) is owner-only. Additional admin/ops users
+  // are added later. Idempotent: re-seeding keeps the role owner.
+  await db.user.upsert({
+    where: { email: "mcsecocleaning@gmail.com" },
+    update: { role: "owner" },
+    create: { email: "mcsecocleaning@gmail.com", name: "Owner", role: "owner" },
+  });
+
   // Service types
   for (const s of services) {
     await db.serviceType.upsert({

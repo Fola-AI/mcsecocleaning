@@ -934,7 +934,12 @@ Covered practices: obtaining or posting fake reviews; paid-for or incentivised r
 - **Privacy notice, cookie policy, T&Cs, cancellation policy** as real pages
 - **PECR cookie consent** — genuine consent before non-essential cookies fire. GA4 behind consent mode
 - **PECR marketing consent** — B2C email/SMS marketing needs consent or the soft opt-in. Working unsubscribe in every message including SMS `STOP`. Log opt-out state per contact and honour it across channels
-- **Right to erasure** workflow
+- **Right to erasure** workflow — NOTE: a customer with financial history (Job /
+  Subscription / AccountCredit) cannot be hard-deleted; those FKs to `User` are
+  `ON DELETE RESTRICT`, which correctly blocks the delete so retained records
+  (HMRC, §8 chargeback window) survive. Erasure must therefore be an
+  **anonymise / soft-delete** flow (null/redact personal fields, keep the
+  financial rows), not a row delete. Phase 3.
 - **Access code handling** per §9.3 — encrypted, time-scoped, access logged, never in a message body, deleted when a customer leaves
 - **AI data minimisation** per §11.5
 

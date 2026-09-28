@@ -1,13 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { requireAdmin } from "@/lib/admin-auth";
+import { requireRole } from "@/lib/auth";
 import { db, hasDatabase } from "@/lib/db";
 import { AdminShell } from "@/components/admin/AdminShell";
 
 export const metadata: Metadata = { title: "Leads", robots: { index: false, follow: false } };
 
 export default async function AdminLeadsPage() {
-  await requireAdmin();
+  await requireRole(["owner", "admin", "supervisor"]);
 
   const leads = hasDatabase
     ? await db.lead.findMany({ orderBy: { createdAt: "desc" }, take: 50 })

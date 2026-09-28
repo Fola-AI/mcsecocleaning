@@ -1,7 +1,7 @@
 "use server";
 
 import { db, hasDatabase } from "@/lib/db";
-import { requireAdmin } from "@/lib/admin-auth";
+import { requireRole } from "@/lib/auth";
 import { recomputeJobPaymentStatus } from "@/lib/payments";
 import { formatPence, priceFromRateCard } from "@/lib/money";
 
@@ -25,7 +25,7 @@ export async function markJobComplete(
   jobId: string,
   finalTotalPence?: number
 ): Promise<{ ok: boolean; message: string; capture: CaptureOutcome | null }> {
-  await requireAdmin();
+  await requireRole(["owner", "admin", "supervisor"]);
   if (!hasDatabase) return { ok: false, message: "No database configured.", capture: null };
 
   const job = await db.job.findUnique({ where: { id: jobId } });
@@ -55,7 +55,7 @@ export async function markJobComplete(
  * if one was set at completion, never the original quote. Never touches Job status.
  */
 export async function retryCapture(jobId: string): Promise<CaptureOutcome> {
-  await requireAdmin();
+  await requireRole(["owner", "admin", "supervisor"]);
   if (!hasDatabase) return { ok: false, message: "No database configured.", retryable: false, needsRecharge: false };
   return attemptCapture(jobId);
 }
@@ -163,7 +163,7 @@ async function attemptCapture(jobId: string, finalTotalPence?: number): Promise<
  * never deletes the Job.
  */
 export async function cancelAndRefundBooking(jobId: string): Promise<{ ok: boolean; message: string }> {
-  await requireAdmin();
+  await requireRole(["owner", "admin", "supervisor"]);
   if (!hasDatabase) return { ok: false, message: "No database configured." };
 
   const job = await db.job.findUnique({ where: { id: jobId } });

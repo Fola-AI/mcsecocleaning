@@ -1,9 +1,16 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { logoutAdmin } from "@/app/actions/admin";
+import { signOut } from "@/lib/auth";
+
+async function signOutAction() {
+  "use server";
+  await signOut({ redirectTo: "/admin/login" });
+}
 
 const nav = [
   { href: "/admin", label: "Dashboard" },
+  { href: "/admin/jobs", label: "Jobs" },
+  { href: "/admin/leads", label: "Leads" },
   { href: "/admin/bookings/new", label: "New booking" },
   { href: "/admin/import", label: "Import clients" },
 ];
@@ -23,7 +30,7 @@ export function AdminShell({ title, children }: { title: string; children: React
               ))}
             </nav>
           </div>
-          <form action={logoutAdmin}>
+          <form action={signOutAction}>
             <button className="text-sm text-white/80 hover:text-white">Sign out</button>
           </form>
         </div>

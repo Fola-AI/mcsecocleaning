@@ -1,13 +1,13 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { requireAdmin } from "@/lib/admin-auth";
+import { requireRole } from "@/lib/auth";
 import { db, hasDatabase } from "@/lib/db";
 import { AdminShell } from "@/components/admin/AdminShell";
 
 export const metadata: Metadata = { title: "Admin", robots: { index: false, follow: false } };
 
 export default async function AdminDashboard() {
-  await requireAdmin();
+  await requireRole(["owner", "admin", "supervisor"]);
 
   let stats: { jobs: number; leads: number; customers: number } | null = null;
   if (hasDatabase) {

@@ -39,6 +39,14 @@ export { materialiseSubscriptions } from "./subscriptions";
 import { materialiseSubscriptions } from "./subscriptions";
 export { nudgeIncompleteDeposits } from "./deposit-nudge";
 import { nudgeIncompleteDeposits } from "./deposit-nudge";
+export { sweepVerificationTokens } from "./verification-token-sweep";
+import { sweepVerificationTokens } from "./verification-token-sweep";
 
 /** All functions registered with the serve() handler. */
-export const functions = [heartbeat, heartbeatOnDemand, materialiseSubscriptions, nudgeIncompleteDeposits];
+export const functions = [
+  heartbeat,
+  heartbeatOnDemand,
+  materialiseSubscriptions,
+  nudgeIncompleteDeposits,
+  sweepVerificationTokens,
+];

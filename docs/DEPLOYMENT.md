@@ -64,6 +64,9 @@ is quiet data loss.
 - **`2026-09-27-payment-status-part-paid.sql`** — `PaymentStatus.part_paid` (split-payment
   Job.paymentStatus). Additive `ADD VALUE`; run before the first DB-backed deploy
   that includes the deposit branch.
+- **`2026-09-28-authjs-tables.sql`** — Auth.js `Account` / `Session` /
+  `VerificationToken` tables + `User.emailVerified` / `User.image`. Additive; run
+  before the first DB-backed deploy that includes Auth.js RBAC.
 
 ### 4b. Payments (Stripe) — required ops setup before payments can go live
 Same go-live checklist status as the migrations above — neither gets assumed done.
@@ -87,6 +90,16 @@ state.
   job** — authorise then capture; (c) a **refund/cancel** within the cooling-off
   window releases the balance and refunds the deposit. This is a gate, not a
   reminder — payments do not go live until it passes.
+
+### 4c. Auth (Auth.js RBAC) — required before the admin area works
+Replaces the interim shared-code gate; magic-link sign-in gated by `User.role`.
+- **`AUTH_SECRET`** — required by Auth.js to sign/encrypt session tokens (generate
+  with `npx auth secret`). Without it, sign-in fails.
+- **`RESEND_API_KEY`** + **`EMAIL_FROM`** — the magic-link email is sent via Resend
+  (same as transactional email, §5). Without a key, no link is delivered.
+- **Seed the owner + any admin users** — `npm run db:seed` creates the `owner`
+  user (email supplied by the business); only seeded roles can reach `/admin`.
+  A user with no row, or role `customer`, is denied.
 
 ## 5. Email deliverability (do before sending anything real)
 Configure **SPF, DKIM and DMARC** for the sending domain in Resend and warm the
