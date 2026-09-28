@@ -679,6 +679,8 @@ This takes two to three weeks and doubles as the best possible system test — r
 
 All customer marketing messages MUST honour PECR consent state and carry a working unsubscribe, including SMS `STOP` (§14). Access codes MUST NOT appear in any notification body (§9.3).
 
+**Consent is one field, read by every channel (written requirement, not an accident of absence).** Marketing consent lives in a single place — `User.marketingConsent` — and the customer account writes it (unsubscribe = one toggle, all channels). There is deliberately NO per-channel consent split. Any marketing sender built later — email campaigns AND SMS — MUST gate on `User.marketingConsent` before sending; a sender that skips this check is a PECR breach. Today no marketing or SMS sender exists, so nothing can bypass it — but that is because nothing exists yet, so this is a build requirement on the first such sender, not a guarantee to inherit silently.
+
 **Cost.** Budget roughly 4p per SMS. At 200 jobs a month with three messages each, about £24 monthly.
 
 ---
