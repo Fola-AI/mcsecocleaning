@@ -230,8 +230,30 @@ export async function cancelAndRefundBooking(jobId: string): Promise<{ ok: boole
  * the same session on a repeat, and the session completes once. Never re-charges
  * while an authorised amount is still capturable — that's captured first.
  */
-export async function rechargeOutstanding(jobId: string): Promise<{ ok: boolean; message: string }> {
-  await requireRole(["owner", "admin", "supervisor"]);
+export interface OutstandingCheckout {
+  ok: boolean;
+  message: string;
+  url?: string;
+  total?: number;
+  customerEmail?: string | null;
+  customerName?: string | null;
+  serviceLabel?: string;
+  when?: string | null;
+}
+
+/**
+ * Core of the re-charge path (§8) — SINGLE source for both the admin re-charge and
+ * customer self-pay, so the load-bearing logic (idempotency key, in-place
+ * supersede, audit note, PI-id storage) can't drift into double-charges or a lost
+ * trail. It does NOT authorise: callers MUST guard first (admin role, or the
+ * customer ownership filter) — a job id alone is not authorisation.
+ *
+ * Collects the TOTAL of ALL outstanding charge rows in one Checkout (an abandoned
+ * large booking can have two — deposit + balance), superseding EACH row in place
+ * (reset to pending + the one new Checkout PI id) so none is left behind or pins
+ * the job at part_paid. Returns the pay URL; the caller emails or redirects.
+ */
+async function prepareOutstandingCheckout(jobId: string): Promise<OutstandingCheckout> {
   if (!hasDatabase) return { ok: false, message: "No database configured." };
 
   const job = await db.job.findUnique({ where: { id: jobId }, include: { customer: true, serviceType: true } });
@@ -239,37 +261,31 @@ export async function rechargeOutstanding(jobId: string): Promise<{ ok: boolean;
 
   const charges = await db.payment.findMany({ where: { jobId, type: "charge" }, orderBy: { createdAt: "asc" } });
   if (charges.some((c) => c.status === "authorised")) {
-    return { ok: false, message: "There's still an authorised amount to capture — capture it first (Retry capture), then re-charge any remainder." };
+    return { ok: false, message: "There's still an authorised amount to capture — capture it first, then collect any remainder." };
   }
-  // ALL outstanding charge rows — an abandoned large booking can have two (deposit
-  // + balance). Collect their TOTAL in one Checkout so nothing is silently left
-  // behind; each row is superseded and settled by the one payment.
   const outstanding = charges.filter((c) => c.status === "pending" || c.status === "failed");
-  if (outstanding.length === 0) return { ok: false, message: "Nothing outstanding to re-charge." };
+  if (outstanding.length === 0) return { ok: false, message: "Nothing outstanding to collect." };
 
-  const email = job.customer?.email;
-  if (!email) return { ok: false, message: "No customer email on file to send a payment request." };
-
-  const serviceName = job.serviceType?.name ?? "clean";
+  const serviceLabel = job.serviceType?.name ?? "clean";
   const when = job.scheduledStart ? localDateString(job.scheduledStart) : null;
   const total = outstanding.reduce((sum, c) => sum + c.gross, 0);
 
   // One session for the total. No paymentId in metadata (multiple rows) — the
-  // webhook's succeeded handler then settles by the intent id, and because every
-  // outstanding row is stamped with THIS intent id below, updateMany captures them
-  // all at once. Key is stable across the set + amount.
+  // webhook settles by the intent id, and because every outstanding row is stamped
+  // with THIS intent id below, updateMany captures them all at once. Key is stable
+  // across the set + amount.
   const { createCheckoutUrl } = await import("@/lib/stripe");
   const checkout = await createCheckoutUrl({
     amountPence: total,
-    description: `Balance for your ${serviceName}${when ? ` on ${when}` : ""}`,
-    customerEmail: email,
+    description: `Balance for your ${serviceLabel}${when ? ` on ${when}` : ""}`,
+    customerEmail: job.customer?.email ?? undefined,
     jobId,
     idempotencyKey: `recharge-${jobId}-${total}`,
   });
   if (!checkout?.url) return { ok: false, message: "Stripe is not configured." };
 
-  // Supersede EVERY outstanding row in place + one audit note listing each (old PI,
-  // amount, reason) — all atomic. The note is the only local trace once reset.
+  // Supersede EVERY outstanding row in place + one audit note (each old PI, amount,
+  // reason) — atomic. The note is the only local trace once reset.
   const superseded = outstanding
     .map((c) => `PI ${c.stripePaymentIntentId ?? "none"}/${formatPence(c.gross)}/${c.status === "failed" ? "expired-or-failed" : "not-collected"}`)
     .join("; ");
@@ -284,24 +300,52 @@ export async function rechargeOutstanding(jobId: string): Promise<{ ok: boolean;
       data: {
         jobId,
         toStatus: job.status,
-        note: `Re-charge ${formatPence(total)} (new Checkout PI ${checkout.paymentIntentId ?? "pending"}) superseding [${superseded}].`,
+        note: `Outstanding checkout ${formatPence(total)} (new Checkout PI ${checkout.paymentIntentId ?? "pending"}) superseding [${superseded}].`,
       },
     });
     await recomputeJobPaymentStatus(tx, jobId);
   });
 
-  // Clear, non-scammy request: names the service, the date, that the work is done.
+  return {
+    ok: true,
+    message: `Collecting ${formatPence(total)}.`,
+    url: checkout.url,
+    total,
+    customerEmail: job.customer?.email ?? null,
+    customerName: job.customer?.name ?? null,
+    serviceLabel,
+    when,
+  };
+}
+
+/** Prepare the outstanding checkout for a job whose ownership the caller has ALREADY
+ *  verified (admin role, or the customer ownership filter). Exposed for the customer
+ *  self-pay action; the customer action must scope the job to the session first. */
+export async function prepareOutstandingCheckoutForVerifiedJob(jobId: string): Promise<OutstandingCheckout> {
+  return prepareOutstandingCheckout(jobId);
+}
+
+/**
+ * Admin re-charge (§8): guard by ops role, prepare the checkout, EMAIL the link to
+ * the customer. Delivery differs from customer self-pay; the core is shared.
+ */
+export async function rechargeOutstanding(jobId: string): Promise<{ ok: boolean; message: string }> {
+  await requireRole(["owner", "admin", "supervisor"]);
+  const res = await prepareOutstandingCheckout(jobId);
+  if (!res.ok || !res.url) return { ok: false, message: res.message };
+  if (!res.customerEmail) return { ok: false, message: "No customer email on file to send a payment request." };
+
   await sendEmail({
-    to: email,
-    subject: `Payment for your completed ${serviceName}`,
+    to: res.customerEmail,
+    subject: `Payment for your completed ${res.serviceLabel}`,
     html: `
       <h2>Your clean is complete — one payment left</h2>
-      <p>Hi${job.customer?.name ? ` ${job.customer.name}` : ""}, your ${serviceName}${when ? ` on ${when}` : ""} is complete. The balance of <strong>${formatPence(total)}</strong> is outstanding — you can pay it securely here:</p>
-      <p><a href="${checkout.url}">Pay ${formatPence(total)}</a></p>
+      <p>Hi${res.customerName ? ` ${res.customerName}` : ""}, your ${res.serviceLabel}${res.when ? ` on ${res.when}` : ""} is complete. The balance of <strong>${formatPence(res.total!)}</strong> is outstanding — you can pay it securely here:</p>
+      <p><a href="${res.url}">Pay ${formatPence(res.total!)}</a></p>
       <p>Payment is processed securely by Stripe. If you have already paid, please ignore this email.</p>
       <p style="font-size:12px;color:#555">${site.company.registeredName}</p>
     `,
   });
 
-  return { ok: true, message: `Payment request for ${formatPence(total)} sent to ${email}.` };
+  return { ok: true, message: `Payment request for ${formatPence(res.total!)} sent to ${res.customerEmail}.` };
 }
