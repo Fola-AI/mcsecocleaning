@@ -100,10 +100,21 @@ async function handleStripeEvent(tx: Prisma.TransactionClient, event: Stripe.Eve
     case "payment_intent.succeeded": {
       const pi = event.data.object as Stripe.PaymentIntent;
       const chargeId = typeof pi.latest_charge === "string" ? pi.latest_charge : null;
-      await tx.payment.updateMany({
-        where: { stripePaymentIntentId: pi.id },
-        data: { status: "captured", capturedAt: new Date(), stripeChargeId: chargeId },
-      });
+      const paymentId = pi.metadata?.paymentId || null;
+      // Match by our Payment id from metadata when present (deposit + re-charge
+      // Checkout, where we set it), else by the intent id. Stamp the intent id so
+      // recompute can resolve the job.
+      if (paymentId) {
+        await tx.payment.updateMany({
+          where: { id: paymentId },
+          data: { status: "captured", capturedAt: new Date(), stripeChargeId: chargeId, stripePaymentIntentId: pi.id },
+        });
+      } else {
+        await tx.payment.updateMany({
+          where: { stripePaymentIntentId: pi.id },
+          data: { status: "captured", capturedAt: new Date(), stripeChargeId: chargeId },
+        });
+      }
       await recomputeJobForIntent(tx, pi.id);
       break;
     }

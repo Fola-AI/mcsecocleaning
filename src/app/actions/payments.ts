@@ -4,6 +4,9 @@ import { db, hasDatabase } from "@/lib/db";
 import { requireRole } from "@/lib/auth";
 import { recomputeJobPaymentStatus } from "@/lib/payments";
 import { formatPence, priceFromRateCard } from "@/lib/money";
+import { sendEmail } from "@/lib/email";
+import { localDateString } from "@/lib/timezone";
+import { site } from "@/config/site";
 
 /**
  * The outcome of a capture attempt, shaped for the admin UI:
@@ -94,6 +97,7 @@ async function attemptCapture(jobId: string, finalTotalPence?: number): Promise<
   // go down, so the authorised balance is the ceiling.
   const authorisedAmount = authorised.gross;
   let captureAmount = authorisedAmount;
+  let differenceToRecharge = 0; // amount above the authorisation, collected via re-charge
   if (finalTotalPence != null) {
     if (finalTotalPence < alreadyCaptured) {
       return {
@@ -103,17 +107,20 @@ async function attemptCapture(jobId: string, finalTotalPence?: number): Promise<
     }
     const desired = finalTotalPence - alreadyCaptured;
     if (desired > authorisedAmount) {
-      return {
-        ok: false, retryable: false, needsRecharge: true,
-        message: `the final total ${formatPence(finalTotalPence)} exceeds the authorised amount (${formatPence(alreadyCaptured + authorisedAmount)}). Capture can't take more than was authorised — a separate charge is needed for the extra.`,
-      };
-    }
-    captureAmount = desired;
-    if (captureAmount !== authorisedAmount) {
-      // Persist the adjustment durably (existing columns, no schema) so retry uses
-      // it. gross/net/vat recompute through the money layer, not by scaling.
-      const adj = priceFromRateCard(captureAmount);
-      await db.payment.update({ where: { id: authorised.id }, data: { gross: captureAmount, net: adj.net, vatAmount: adj.vatAmount } });
+      // Final price exceeds the authorisation: capture the authorised MAX now, and
+      // collect the difference via a re-charge. The difference row is created only
+      // AFTER the capture below succeeds, so it can't be orphaned expecting money
+      // that was never collected.
+      captureAmount = authorisedAmount;
+      differenceToRecharge = desired - authorisedAmount;
+    } else {
+      captureAmount = desired;
+      if (captureAmount !== authorisedAmount) {
+        // Persist the adjustment durably (existing columns, no schema) so retry uses
+        // it. gross/net/vat recompute through the money layer, not by scaling.
+        const adj = priceFromRateCard(captureAmount);
+        await db.payment.update({ where: { id: authorised.id }, data: { gross: captureAmount, net: adj.net, vatAmount: adj.vatAmount } });
+      }
     }
   }
 
@@ -138,16 +145,29 @@ async function attemptCapture(jobId: string, finalTotalPence?: number): Promise<
   if (!res) return { ok: false, retryable: false, needsRecharge: false, message: "Stripe is not configured." };
 
   // Recompute net/vat for the captured amount THROUGH the money layer
-  // (vat_display_mode), never by scaling the original figures.
+  // (vat_display_mode), never by scaling the original figures. The difference row
+  // (if any) is created in the SAME transaction, only now that capture succeeded.
   const m = priceFromRateCard(captureAmount);
+  const diff = differenceToRecharge > 0 ? priceFromRateCard(differenceToRecharge) : null;
   await db.$transaction(async (tx) => {
     await tx.payment.update({
       where: { id: authorised.id },
       data: { status: "captured", capturedAt: new Date(), stripeChargeId: res!.chargeId, gross: captureAmount, net: m.net, vatAmount: m.vatAmount },
     });
+    if (diff) {
+      await tx.payment.create({
+        data: { jobId, type: "charge", net: diff.net, vatAmount: diff.vatAmount, gross: differenceToRecharge, status: "pending" },
+      });
+    }
     await recomputeJobPaymentStatus(tx, jobId);
   });
 
+  if (differenceToRecharge > 0) {
+    return {
+      ok: false, retryable: false, needsRecharge: true,
+      message: `captured ${formatPence(captureAmount)}; ${formatPence(differenceToRecharge)} above the authorisation is still to collect — send a payment request.`,
+    };
+  }
   return {
     ok: true, retryable: false, needsRecharge: false,
     message: captureAmount === authorisedAmount ? `captured ${formatPence(captureAmount)}.` : `captured ${formatPence(captureAmount)} (adjusted from the quote).`,
@@ -193,4 +213,95 @@ export async function cancelAndRefundBooking(jobId: string): Promise<{ ok: boole
   await db.job.update({ where: { id: jobId }, data: { status: "cancelled" } });
   await recomputeJobPaymentStatus(db, jobId);
   return { ok: true, message: "Booking cancelled; deposit refunded and any authorisation released." };
+}
+
+/**
+ * Send the customer a payment link for an outstanding balance on a completed job
+ * (§8) — the re-charge path for money capture can't collect: an expired
+ * authorisation, a balance never authorised at booking, or the difference above
+ * the authorisation. One mechanism (immediate-capture Checkout link, emailed);
+ * the amount and row come from the job's state.
+ *
+ * Collects the TOTAL of ALL outstanding charge rows in one Checkout (an abandoned
+ * large booking can have two — deposit + balance), superseding EACH row in place
+ * (reset to pending + the one new Checkout PI id) so none is silently left behind
+ * and none pins the job at part_paid. The audit note lists each superseded row's
+ * old PI, amount and reason. Idempotent: the key (recharge-<jobId>-<total>) returns
+ * the same session on a repeat, and the session completes once. Never re-charges
+ * while an authorised amount is still capturable — that's captured first.
+ */
+export async function rechargeOutstanding(jobId: string): Promise<{ ok: boolean; message: string }> {
+  await requireRole(["owner", "admin", "supervisor"]);
+  if (!hasDatabase) return { ok: false, message: "No database configured." };
+
+  const job = await db.job.findUnique({ where: { id: jobId }, include: { customer: true, serviceType: true } });
+  if (!job) return { ok: false, message: "Job not found." };
+
+  const charges = await db.payment.findMany({ where: { jobId, type: "charge" }, orderBy: { createdAt: "asc" } });
+  if (charges.some((c) => c.status === "authorised")) {
+    return { ok: false, message: "There's still an authorised amount to capture — capture it first (Retry capture), then re-charge any remainder." };
+  }
+  // ALL outstanding charge rows — an abandoned large booking can have two (deposit
+  // + balance). Collect their TOTAL in one Checkout so nothing is silently left
+  // behind; each row is superseded and settled by the one payment.
+  const outstanding = charges.filter((c) => c.status === "pending" || c.status === "failed");
+  if (outstanding.length === 0) return { ok: false, message: "Nothing outstanding to re-charge." };
+
+  const email = job.customer?.email;
+  if (!email) return { ok: false, message: "No customer email on file to send a payment request." };
+
+  const serviceName = job.serviceType?.name ?? "clean";
+  const when = job.scheduledStart ? localDateString(job.scheduledStart) : null;
+  const total = outstanding.reduce((sum, c) => sum + c.gross, 0);
+
+  // One session for the total. No paymentId in metadata (multiple rows) — the
+  // webhook's succeeded handler then settles by the intent id, and because every
+  // outstanding row is stamped with THIS intent id below, updateMany captures them
+  // all at once. Key is stable across the set + amount.
+  const { createCheckoutUrl } = await import("@/lib/stripe");
+  const checkout = await createCheckoutUrl({
+    amountPence: total,
+    description: `Balance for your ${serviceName}${when ? ` on ${when}` : ""}`,
+    customerEmail: email,
+    jobId,
+    idempotencyKey: `recharge-${jobId}-${total}`,
+  });
+  if (!checkout?.url) return { ok: false, message: "Stripe is not configured." };
+
+  // Supersede EVERY outstanding row in place + one audit note listing each (old PI,
+  // amount, reason) — all atomic. The note is the only local trace once reset.
+  const superseded = outstanding
+    .map((c) => `PI ${c.stripePaymentIntentId ?? "none"}/${formatPence(c.gross)}/${c.status === "failed" ? "expired-or-failed" : "not-collected"}`)
+    .join("; ");
+  await db.$transaction(async (tx) => {
+    for (const c of outstanding) {
+      await tx.payment.update({
+        where: { id: c.id },
+        data: { status: "pending", stripePaymentIntentId: checkout.paymentIntentId, stripeChargeId: null },
+      });
+    }
+    await tx.jobStatusEvent.create({
+      data: {
+        jobId,
+        toStatus: job.status,
+        note: `Re-charge ${formatPence(total)} (new Checkout PI ${checkout.paymentIntentId ?? "pending"}) superseding [${superseded}].`,
+      },
+    });
+    await recomputeJobPaymentStatus(tx, jobId);
+  });
+
+  // Clear, non-scammy request: names the service, the date, that the work is done.
+  await sendEmail({
+    to: email,
+    subject: `Payment for your completed ${serviceName}`,
+    html: `
+      <h2>Your clean is complete — one payment left</h2>
+      <p>Hi${job.customer?.name ? ` ${job.customer.name}` : ""}, your ${serviceName}${when ? ` on ${when}` : ""} is complete. The balance of <strong>${formatPence(total)}</strong> is outstanding — you can pay it securely here:</p>
+      <p><a href="${checkout.url}">Pay ${formatPence(total)}</a></p>
+      <p>Payment is processed securely by Stripe. If you have already paid, please ignore this email.</p>
+      <p style="font-size:12px;color:#555">${site.company.registeredName}</p>
+    `,
+  });
+
+  return { ok: true, message: `Payment request for ${formatPence(total)} sent to ${email}.` };
 }

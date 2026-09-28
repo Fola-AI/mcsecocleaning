@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { markJobComplete, retryCapture } from "@/app/actions/payments";
+import { markJobComplete, retryCapture, rechargeOutstanding } from "@/app/actions/payments";
 
 /**
  * Admin completion control. "Mark complete & capture" completes the job (which
@@ -52,6 +52,12 @@ export function JobCaptureControl({
       return res.message;
     });
 
+  const doRecharge = () =>
+    run(async () => {
+      const res = await rechargeOutstanding(jobId);
+      return res.message;
+    });
+
   return (
     <div className="space-y-2">
       {!isComplete && (
@@ -72,9 +78,14 @@ export function JobCaptureControl({
       )}
       {isComplete && settled && <span className="text-sm text-success">Completed · captured ✓</span>}
       {isComplete && !settled && (
-        <button className="btn btn-outline" disabled={pending} onClick={doRetry}>
-          {pending ? "Working…" : "Retry capture"}
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button className="btn btn-outline" disabled={pending} onClick={doRetry}>
+            {pending ? "Working…" : "Retry capture"}
+          </button>
+          <button className="btn btn-outline" disabled={pending} onClick={doRecharge}>
+            {pending ? "Working…" : "Send payment request"}
+          </button>
+        </div>
       )}
       {msg && <p className="max-w-md text-sm text-ink-soft">{msg}</p>}
     </div>

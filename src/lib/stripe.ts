@@ -147,32 +147,46 @@ export function constructWebhookEvent(rawBody: string, signature: string): Strip
 }
 
 /**
- * Create a shareable Checkout URL (a "payment link") for an admin-created
- * booking (§6.15). Uses inline price_data so no pre-made Price is needed.
+ * Create a shareable Checkout URL (a "payment link", immediate capture) for an
+ * admin-created booking (§6.15) or an outstanding-balance re-charge (§8). Inline
+ * price_data (no pre-made Price). Carries jobId/paymentId in the PaymentIntent
+ * metadata so the webhook reconciles the payment to our Payment row, and returns
+ * the PaymentIntent id to store on that row. An idempotencyKey makes a repeated
+ * call return the SAME session/URL (no double session, no double charge).
  */
 export async function createCheckoutUrl(params: {
   amountPence: number;
   description: string;
   customerEmail?: string;
-}): Promise<string | null> {
+  jobId?: string;
+  paymentId?: string;
+  idempotencyKey?: string;
+}): Promise<{ url: string | null; paymentIntentId: string | null } | null> {
   const stripe = getStripe();
   if (!stripe) return null;
   const origin = process.env.NEXT_PUBLIC_SITE_URL || "https://www.mcsecocleaning.co.uk";
-  const session = await stripe.checkout.sessions.create({
-    mode: "payment",
-    customer_email: params.customerEmail,
-    line_items: [
-      {
-        quantity: 1,
-        price_data: {
-          currency: "gbp",
-          unit_amount: params.amountPence,
-          product_data: { name: params.description },
+  const session = await stripe.checkout.sessions.create(
+    {
+      mode: "payment",
+      customer_email: params.customerEmail,
+      line_items: [
+        {
+          quantity: 1,
+          price_data: {
+            currency: "gbp",
+            unit_amount: params.amountPence,
+            product_data: { name: params.description },
+          },
         },
-      },
-    ],
-    success_url: `${origin}/book?paid=1`,
-    cancel_url: `${origin}/book?cancelled=1`,
-  });
-  return session.url;
+      ],
+      payment_intent_data: { metadata: { jobId: params.jobId ?? "", paymentId: params.paymentId ?? "" } },
+      success_url: `${origin}/book?paid=1`,
+      cancel_url: `${origin}/book?cancelled=1`,
+    },
+    params.idempotencyKey ? { idempotencyKey: params.idempotencyKey } : undefined
+  );
+  return {
+    url: session.url,
+    paymentIntentId: typeof session.payment_intent === "string" ? session.payment_intent : null,
+  };
 }

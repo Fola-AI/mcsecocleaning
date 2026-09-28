@@ -199,11 +199,13 @@ export async function adminCreateBooking(input: z.input<typeof adminBookingSchem
     try {
       const { stripeConfigured, createCheckoutUrl } = await import("@/lib/stripe");
       if (stripeConfigured()) {
-        paymentUrl = await createCheckoutUrl({
+        const checkout = await createCheckoutUrl({
           amountPence: grossPence,
           description: `${service.name} — ${reference}`,
           customerEmail: data.contact.email,
+          jobId: job.id,
         });
+        paymentUrl = checkout?.url;
       }
     } catch (e) {
       console.error("[admin] payment link failed", e);
