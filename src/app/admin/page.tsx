@@ -39,7 +39,11 @@ export default async function AdminDashboard() {
         </div>
       )}
 
-      <div className="mt-8 grid gap-4 sm:grid-cols-3">
+      <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Link href="/admin/jobs" className="card p-6 hover:shadow-md">
+          <h2 className="text-lg font-bold">Jobs</h2>
+          <p className="mt-1 text-sm text-ink-soft">Mark jobs complete and capture payment on completion.</p>
+        </Link>
         <Link href="/admin/leads" className="card p-6 hover:shadow-md">
           <h2 className="text-lg font-bold">Leads</h2>
           <p className="mt-1 text-sm text-ink-soft">Tailored-quote, commercial and waitlist enquiries — convert one into a booking.</p>
