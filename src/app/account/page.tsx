@@ -26,7 +26,8 @@ async function signOutAction() {
   await signOut({ redirectTo: "/account/signin" });
 }
 
-// A booking has an outstanding balance the customer can settle themselves.
+// A booking has an outstanding balance the customer can settle themselves. A
+// cancelled booking never does, whatever its payment rows read.
 const OUTSTANDING = new Set(["part_paid", "failed", "pending"]);
 
 export default async function AccountPage() {
@@ -51,7 +52,7 @@ export default async function AccountPage() {
       ])
     : [[], [], [], null];
 
-  const outstanding = jobs.filter((j) => OUTSTANDING.has(j.paymentStatus));
+  const outstanding = jobs.filter((j) => j.status !== "cancelled" && OUTSTANDING.has(j.paymentStatus));
 
   return (
     <div className="container-page max-w-3xl py-12">

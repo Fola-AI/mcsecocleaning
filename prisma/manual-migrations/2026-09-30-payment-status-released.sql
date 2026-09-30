@@ -1,0 +1,20 @@
+-- Migration: PaymentStatus.released (§6.5, §10.2). Flag 5 of the pre-Phase-3 gate.
+--
+-- A charge WE cancelled because its booking was cancelled: an uncaptured hold
+-- released, or an unpaid payment request closed. No money moved, so a released row
+-- has no refund id. Set by our own cancel call, and by payment_intent.canceled ONLY
+-- when cancellation_reason is 'requested_by_customer'; every other reason (Stripe's
+-- automatic/expired, abandoned, duplicate, fraudulent) stays 'failed'. Used on
+-- Payment rows and derived onto Job.paymentStatus.
+--
+-- Replaces the old outcome, which set these rows to 'failed': a customer
+-- cancellation read as a payment failure and showed as payable in /account.
+--
+-- On a FRESH database, `prisma db push` creates the enum with this value, so this
+-- file is NOT needed. Apply it ONLY when the enum already exists. Not auto-run.
+-- Run BEFORE the deploy that needs it (see docs/DEPLOYMENT.md §4a).
+--
+-- Additive: adds a label, remaps no rows. No backfill: no real booking has been
+-- cancelled yet. Run it ON ITS OWN (ADD VALUE must not share a transaction that
+-- then uses the value). IF NOT EXISTS makes it re-runnable.
+ALTER TYPE "PaymentStatus" ADD VALUE IF NOT EXISTS 'released' AFTER 'captured';

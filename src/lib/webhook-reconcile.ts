@@ -95,6 +95,17 @@ export function refundedUpdate(
   return { status: "refunded", ...(refundId ? { stripeRefundId: refundId } : {}) };
 }
 
+/**
+ * payment_intent.canceled → 'released' ONLY when we cancelled it with its booking:
+ * our cancel call sends cancellation_reason 'requested_by_customer'. Every other
+ * reason — Stripe's own automatic/expired (a lapsed hold), abandoned, duplicate,
+ * fraudulent — is 'failed'. An allow-list of our one reason, because Stripe's docs
+ * don't say which internal reason a lapsed card hold carries.
+ */
+export function canceledStatus(pi: Pick<Stripe.PaymentIntent, "cancellation_reason">): "released" | "failed" {
+  return pi.cancellation_reason === "requested_by_customer" ? "released" : "failed";
+}
+
 /** The PaymentIntent id a charge belongs to, whether the field is an id or expanded. */
 export function chargePaymentIntentId(charge: Pick<Stripe.Charge, "payment_intent">): string | null {
   return idOf(charge.payment_intent);

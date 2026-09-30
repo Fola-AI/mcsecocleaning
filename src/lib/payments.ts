@@ -16,7 +16,10 @@ import type { Prisma } from "@prisma/client";
  *                                                  pending OR authorised — covers an
  *                                                  abandoned/incomplete balance)
  *   any authorised (none captured)   → authorised
- *   any failed (none captured/auth)  → failed
+ *   any released (none of the above) → released   (we cancelled it with the
+ *                                                  booking; no money moved — NOT
+ *                                                  a payment failure)
+ *   any failed (none of the above)   → failed
  *   otherwise                        → pending
  */
 export function deriveJobPaymentStatus(statuses: PaymentStatus[]): PaymentStatus {
@@ -28,6 +31,7 @@ export function deriveJobPaymentStatus(statuses: PaymentStatus[]): PaymentStatus
   if (all("captured")) return "captured";
   if (has("captured")) return "part_paid"; // some but not all captured, no refund → deposit paid, balance outstanding
   if (has("authorised")) return "authorised";
+  if (has("released")) return "released";
   if (has("failed")) return "failed";
   return "pending";
 }

@@ -18,8 +18,10 @@ export async function payMyOutstanding(jobId: string): Promise<{ ok: boolean; me
   if (!hasDatabase) return { ok: false, message: "No database configured." };
 
   // Ownership filter FIRST — scope the job to this customer. Not theirs → not found.
-  const owned = await db.job.findFirst({ where: { id: jobId, customerId: id }, select: { id: true } });
+  const owned = await db.job.findFirst({ where: { id: jobId, customerId: id }, select: { id: true, status: true } });
   if (!owned) return { ok: false, message: "Booking not found." };
+  // A cancelled booking is never payable (the shared checkout core refuses it too).
+  if (owned.status === "cancelled") return { ok: false, message: "This booking was cancelled — there's nothing to pay." };
 
   const res = await prepareOutstandingCheckoutForVerifiedJob(jobId);
   if (!res.ok || !res.url) return { ok: false, message: res.message };

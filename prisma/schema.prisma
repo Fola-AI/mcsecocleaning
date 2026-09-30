@@ -118,6 +118,7 @@ enum PaymentStatus {
   authorised
   part_paid // Job.paymentStatus ONLY: some charge captured, balance still authorised (deposit split, §6.5). A single Payment row is never part_paid.
   captured
+  released // we cancelled this charge with its booking: hold released or unpaid request closed. No money moved. Row AND Job level. Stripe auto-expiry stays `failed`.
   failed
   refunded
 }

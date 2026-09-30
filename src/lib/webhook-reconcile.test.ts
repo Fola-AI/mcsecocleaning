@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type Stripe from "stripe";
 import {
+  canceledStatus,
   chargePaymentIntentId,
   checkoutIntentMetadata,
   needsRefundLookup,
@@ -103,4 +104,13 @@ test("re-charge match: nothing without both ids and a job", () => {
   // Ids but no job → match nothing rather than rows of any job.
   assert.equal(rechargeRowsWhere({ jobId: "", paymentIds: "pay1" }), null);
   assert.equal(rechargeRowsWhere(undefined), null);
+});
+
+test("canceled intent: released only for our own booking cancellation", () => {
+  assert.equal(canceledStatus({ cancellation_reason: "requested_by_customer" }), "released");
+  // A lapsed hold (whichever internal reason Stripe uses) and every other reason → failed.
+  for (const reason of ["automatic", "expired", "abandoned", "duplicate", "fraudulent", "failed_invoice", "void_invoice"] as const) {
+    assert.equal(canceledStatus({ cancellation_reason: reason }), "failed", reason);
+  }
+  assert.equal(canceledStatus({ cancellation_reason: null }), "failed");
 });

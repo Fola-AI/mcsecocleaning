@@ -4,6 +4,7 @@ import { db, hasDatabase } from "@/lib/db";
 import { constructWebhookEvent, latestRefundIdForCharge } from "@/lib/stripe";
 import { recomputeJobPaymentStatus } from "@/lib/payments";
 import {
+  canceledStatus,
   chargePaymentIntentId,
   needsRefundLookup,
   rechargeRowsWhere,
@@ -144,10 +145,16 @@ async function handleStripeEvent(tx: Prisma.TransactionClient, event: Stripe.Eve
       await recomputeJobForIntent(tx, pi.id);
       break;
     }
-    case "payment_intent.payment_failed":
-    case "payment_intent.canceled": {
+    case "payment_intent.payment_failed": {
       const pi = event.data.object as Stripe.PaymentIntent;
       await tx.payment.updateMany({ where: { stripePaymentIntentId: pi.id }, data: { status: "failed" } });
+      await recomputeJobForIntent(tx, pi.id);
+      break;
+    }
+    case "payment_intent.canceled": {
+      // Our booking cancellation → released; a lapsed hold or any other reason → failed.
+      const pi = event.data.object as Stripe.PaymentIntent;
+      await tx.payment.updateMany({ where: { stripePaymentIntentId: pi.id }, data: { status: canceledStatus(pi) } });
       await recomputeJobForIntent(tx, pi.id);
       break;
     }

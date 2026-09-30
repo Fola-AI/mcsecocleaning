@@ -5,6 +5,7 @@ import { formatPence } from "@/lib/money";
 import { localDateString } from "@/lib/timezone";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { JobCaptureControl } from "@/components/admin/JobCaptureControl";
+import { CANCELLABLE_STATUSES, cancelConfirmText, cancellationBlock } from "@/lib/cancellation";
 
 export const metadata: Metadata = { title: "Jobs", robots: { index: false, follow: false } };
 
@@ -15,9 +16,15 @@ export default async function AdminJobsPage() {
     ? await db.job.findMany({
         orderBy: { createdAt: "desc" },
         take: 50,
-        include: { customer: true, serviceType: true },
+        include: {
+          customer: true,
+          serviceType: true,
+          subscription: { select: { createdAt: true } },
+          payments: { where: { type: "charge" }, select: { status: true, gross: true } },
+        },
       })
     : [];
+  const now = new Date();
 
   return (
     <AdminShell title="Jobs">
@@ -37,7 +44,7 @@ export default async function AdminJobsPage() {
                 <th className="py-2 pr-4">Status</th>
                 <th className="py-2 pr-4">Payment</th>
                 <th className="py-2 pr-4">Amount</th>
-                <th className="py-2 pr-4">Complete &amp; capture</th>
+                <th className="py-2 pr-4">Complete &amp; capture · Cancel</th>
               </tr>
             </thead>
             <tbody>
@@ -59,6 +66,11 @@ export default async function AdminJobsPage() {
                       status={j.status}
                       paymentStatus={j.paymentStatus}
                       quotedGrossPence={j.gross}
+                      cancel={
+                        CANCELLABLE_STATUSES.includes(j.status)
+                          ? { confirmText: cancelConfirmText(j.payments), blockedReason: cancellationBlock(j, now) }
+                          : null
+                      }
                     />
                   </td>
                 </tr>

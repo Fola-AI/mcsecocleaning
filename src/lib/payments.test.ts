@@ -12,8 +12,9 @@ test("large-job (deposit + balance) lifecycle derives the right Job.paymentStatu
   assert.equal(deriveJobPaymentStatus(["captured", "pending"]), "part_paid");
   // Completion captures the balance: both captured → captured.
   assert.equal(deriveJobPaymentStatus(["captured", "captured"]), "captured");
-  // Cancellation: deposit refunded, balance released (failed) → refunded.
-  assert.equal(deriveJobPaymentStatus(["refunded", "failed"]), "refunded");
+  // Cancellation: deposit refunded, balance hold released → refunded (a refund
+  // outranks a release — money actually went back).
+  assert.equal(deriveJobPaymentStatus(["refunded", "released"]), "refunded");
 });
 
 test("full-amount (single charge) path", () => {
@@ -31,4 +32,15 @@ test("refunded/failed take precedence so a partial refund never reads as paid", 
   assert.equal(deriveJobPaymentStatus(["refunded", "authorised"]), "refunded");
   // Failed only when nothing is captured or authorised.
   assert.equal(deriveJobPaymentStatus(["failed", "pending"]), "failed");
+});
+
+test("released: a cancelled booking with no money taken reads released, never failed", () => {
+  // Full-amount booking cancelled before capture: its hold was released.
+  assert.equal(deriveJobPaymentStatus(["released"]), "released");
+  // Deposit job cancelled before either was paid: both open intents closed.
+  assert.equal(deriveJobPaymentStatus(["released", "released"]), "released");
+  // Released outranks failed: the booking was cancelled, not a payment problem.
+  assert.equal(deriveJobPaymentStatus(["released", "failed"]), "released");
+  // A live hold still outranks a release (a cancel stopped part-way).
+  assert.equal(deriveJobPaymentStatus(["authorised", "released"]), "authorised");
 });

@@ -3,6 +3,7 @@
 import { db, hasDatabase } from "@/lib/db";
 import { requireRole } from "@/lib/auth";
 import { recomputeJobPaymentStatus } from "@/lib/payments";
+import { cancellationBlock, cancelOutcome } from "@/lib/cancellation";
 import { formatPence, priceFromRateCard } from "@/lib/money";
 import { sendEmail } from "@/lib/email";
 import { localDateString } from "@/lib/timezone";
@@ -11,6 +12,8 @@ import { site } from "@/config/site";
 /** jobStatusEvent note marking the completion email as sent — the dedup signal so
  *  re-invoking markJobComplete never sends a second completion email. */
 const COMPLETION_EMAIL_NOTE = "completion-email-sent";
+
+const CANCELLED_NOTHING_TO_COLLECT = "This booking was cancelled — there's nothing to pay.";
 
 /**
  * The outcome of a capture attempt, shaped for the admin UI:
@@ -32,7 +35,7 @@ export async function markJobComplete(
   jobId: string,
   finalTotalPence?: number
 ): Promise<{ ok: boolean; message: string; capture: CaptureOutcome | null }> {
-  await requireRole(["owner", "admin", "supervisor"]);
+  const { id: actorId } = await requireRole(["owner", "admin", "supervisor"]);
   if (!hasDatabase) return { ok: false, message: "No database configured.", capture: null };
 
   const job = await db.job.findUnique({ where: { id: jobId } });
@@ -43,7 +46,9 @@ export async function markJobComplete(
   if (job.status !== "completed") {
     await db.$transaction(async (tx) => {
       await tx.job.update({ where: { id: jobId }, data: { status: "completed" } });
-      await tx.jobStatusEvent.create({ data: { jobId, toStatus: "completed", note: "Marked complete (admin)" } });
+      await tx.jobStatusEvent.create({
+        data: { jobId, fromStatus: job.status, toStatus: "completed", actorId, note: "Marked complete (admin)" },
+      });
     });
   }
 
@@ -189,44 +194,82 @@ async function attemptCapture(jobId: string, finalTotalPence?: number): Promise<
 }
 
 /**
- * Cancel a booking and make the customer whole (§10.2 CCR 14-day cooling-off).
- * A captured deposit is NOT a non-refundable fee: cancel before the service is
- * performed and it is refunded; an authorised (not yet captured) balance is
- * released. Both Payment lifecycles are handled so we never take money with no way
- * back. Schedule ≠ billing: this settles money and marks the Job cancelled — it
- * never deletes the Job.
+ * Cancel a booking within the CCR 14-day cooling-off period and make the customer
+ * whole (§10.2, §14.2). A captured deposit is NOT a non-refundable fee: cancelled
+ * before the service it is refunded; every intent still open (an uncaptured hold,
+ * an unpaid payment request or link) is closed and marked `released`.
+ *
+ * Outside 14 days the §8 fee tiers apply and aren't enforced yet, so the action is
+ * BLOCKED (cancellationBlock) — never a silent full refund.
+ *
+ * STOP AT THE FIRST FAILURE, never claim what didn't happen: refunds run first,
+ * then releases, and the Job is cancelled ONLY once every payment is settled. A
+ * Stripe failure returns its error with the booking still active; pressing again
+ * skips what's already refunded/released and finishes the rest. Schedule ≠
+ * billing: this never deletes the Job.
  */
 export async function cancelAndRefundBooking(jobId: string): Promise<{ ok: boolean; message: string }> {
-  await requireRole(["owner", "admin", "supervisor"]);
+  const { id: actorId } = await requireRole(["owner", "admin", "supervisor"]);
   if (!hasDatabase) return { ok: false, message: "No database configured." };
 
-  const job = await db.job.findUnique({ where: { id: jobId } });
+  const job = await db.job.findUnique({ where: { id: jobId }, include: { subscription: { select: { createdAt: true } } } });
   if (!job) return { ok: false, message: "Job not found." };
-  if (job.status === "completed") {
-    return { ok: false, message: "The service has been performed — this is outside the pre-service cooling-off refund." };
-  }
+  const blocked = cancellationBlock(job, new Date());
+  if (blocked) return { ok: false, message: blocked };
 
-  const { refundBookingPayment, cancelBookingAuthorisation } = await import("@/lib/stripe");
-  const payments = await db.payment.findMany({ where: { jobId, type: "charge" } });
+  const { refundBookingPayment, releasePaymentIntent, closeCheckoutSession, stripeErrorMessage } = await import("@/lib/stripe");
+  const payments = await db.payment.findMany({ where: { jobId, type: "charge" }, orderBy: { createdAt: "asc" } });
+  const stopped = (what: string) => ({
+    ok: false,
+    message: `${what} The booking is NOT cancelled — anything already refunded or released stays done; press Cancel & refund again to finish.`,
+  });
 
-  for (const p of payments) {
-    if (!p.stripePaymentIntentId) continue;
-    if (p.status === "captured") {
-      // Captured (e.g. the deposit) → refund it.
+  // STEP 1 — refund captured money (e.g. the deposit).
+  for (const p of payments.filter((x) => x.status === "captured")) {
+    if (!p.stripePaymentIntentId) return stopped(`A captured ${formatPence(p.gross)} payment has no Stripe payment to refund — handle it manually.`);
+    try {
       const r = await refundBookingPayment({ paymentIntentId: p.stripePaymentIntentId, idempotencyKey: `refund-${p.id}` });
-      if (r) await db.payment.update({ where: { id: p.id }, data: { status: "refunded", stripeRefundId: r.refundId } });
-    } else if (p.status === "authorised") {
-      // Authorised but not captured (e.g. the balance) → release the hold.
-      await cancelBookingAuthorisation(p.stripePaymentIntentId).catch(() => {});
-      await db.payment.update({ where: { id: p.id }, data: { status: "failed" } });
+      if (!r) return stopped("Stripe is not configured.");
+      await db.payment.update({ where: { id: p.id }, data: { status: "refunded", stripeRefundId: r.refundId } });
+    } catch (err) {
+      return stopped(`Refunding ${formatPence(p.gross)} failed: ${stripeErrorMessage(err)}.`);
     }
   }
 
-  // Mark the Job cancelled (lifecycle), and DERIVE paymentStatus from the now
-  // refunded/released Payment rows rather than stamping it.
-  await db.job.update({ where: { id: jobId }, data: { status: "cancelled" } });
-  await recomputeJobPaymentStatus(db, jobId);
-  return { ok: true, message: "Booking cancelled; deposit refunded and any authorisation released." };
+  // STEP 2 — close every intent still open: holds, unpaid intents, unpaid links.
+  for (const p of payments.filter((x) => x.status === "authorised" || x.status === "pending" || x.status === "failed")) {
+    try {
+      if (p.stripePaymentIntentId) {
+        await releasePaymentIntent(p.stripePaymentIntentId);
+      } else if (p.stripeCheckoutSessionId) {
+        if ((await closeCheckoutSession(p.stripeCheckoutSessionId)) === "complete") {
+          return stopped(`The customer has just paid the ${formatPence(p.gross)} payment link. Once it shows as captured, pressing again refunds it.`);
+        }
+      } // else: no Stripe object was ever created for this row — nothing open to close.
+      await db.payment.update({ where: { id: p.id }, data: { status: "released" } });
+    } catch (err) {
+      return stopped(`Releasing ${formatPence(p.gross)} failed: ${stripeErrorMessage(err)}.`);
+    }
+  }
+
+  // STEP 3 — only now is the booking cancelled: one audit event with the money
+  // outcome read from the rows' final state, and paymentStatus DERIVED, not stamped.
+  const settled = await db.payment.findMany({ where: { jobId, type: "charge" }, orderBy: { createdAt: "asc" } });
+  const outcome = cancelOutcome(settled);
+  await db.$transaction(async (tx) => {
+    await tx.job.update({ where: { id: jobId }, data: { status: "cancelled" } });
+    await tx.jobStatusEvent.create({
+      data: {
+        jobId,
+        fromStatus: job.status,
+        toStatus: "cancelled",
+        actorId,
+        note: `Cancelled (admin) within the 14-day cooling-off period: ${outcome}.`,
+      },
+    });
+    await recomputeJobPaymentStatus(tx, jobId);
+  });
+  return { ok: true, message: `Booking cancelled — ${outcome}.` };
 }
 
 /**
@@ -277,6 +320,7 @@ async function outstandingSummary(jobId: string): Promise<Omit<OutstandingChecko
   if (!hasDatabase) return { ok: false, message: "No database configured." };
   const job = await db.job.findUnique({ where: { id: jobId }, include: { customer: true, serviceType: true } });
   if (!job) return { ok: false, message: "Job not found." };
+  if (job.status === "cancelled") return { ok: false, message: CANCELLED_NOTHING_TO_COLLECT };
   const charges = await db.payment.findMany({ where: { jobId, type: "charge" } });
   if (charges.some((c) => c.status === "authorised")) {
     return { ok: false, message: "There's still an authorised amount to capture — capture it first, then collect any remainder." };
@@ -299,6 +343,8 @@ async function prepareOutstandingCheckout(jobId: string): Promise<OutstandingChe
 
   const job = await db.job.findUnique({ where: { id: jobId }, include: { customer: true, serviceType: true } });
   if (!job) return { ok: false, message: "Job not found." };
+  // A cancelled booking is never payable — not by admin re-charge, not by self-pay.
+  if (job.status === "cancelled") return { ok: false, message: CANCELLED_NOTHING_TO_COLLECT };
 
   const charges = await db.payment.findMany({ where: { jobId, type: "charge" }, orderBy: { createdAt: "asc" } });
   if (charges.some((c) => c.status === "authorised")) {

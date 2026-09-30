@@ -71,6 +71,9 @@ is quiet data loss.
   index (one Stripe Customer per user, so the deposit's card can authorise the
   balance). Additive, re-runnable; run before the first DB-backed deploy that
   includes the Stripe Customer change.
+- **`2026-09-30-payment-status-released.sql`** — `PaymentStatus.released` (a charge
+  we cancelled with its booking; no money moved). Additive `ADD VALUE`, run it on its
+  own (no `-1`); run before the first DB-backed deploy that includes Cancel & refund.
 - **`2026-09-30-payment-checkout-session-id.sql`** — `Payment.stripeCheckoutSessionId`
   (the handle that expires an unpaid payment link on cancellation). Additive,
   re-runnable; run before the first DB-backed deploy that includes the payment-link /

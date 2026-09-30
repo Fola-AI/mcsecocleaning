@@ -130,16 +130,50 @@ export async function captureBookingDeposit(
   return { clientSecret: intent.client_secret, paymentIntentId: intent.id };
 }
 
+/** Stripe's message for a failed call, for the admin (never swallowed). */
+export function stripeErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 /**
- * Release an uncaptured authorisation (e.g. the balance hold) — cancelling the
- * PaymentIntent frees the held funds. Used when a booking is cancelled within the
- * cooling-off window before the balance is captured.
+ * Close an open PaymentIntent because its booking was cancelled (§10.2) — frees an
+ * uncaptured hold, or shuts an unpaid intent so an open payment page can't still
+ * take money. Sends cancellation_reason 'requested_by_customer', which the webhook
+ * reads as 'released'. If Stripe refuses, the intent is re-read: already canceled
+ * (released earlier, or a hold that lapsed) counts as released; anything else
+ * THROWS so the caller stops and says so — a failure is never reported as success.
  */
-export async function cancelBookingAuthorisation(paymentIntentId: string): Promise<{ status: string } | null> {
+export async function releasePaymentIntent(paymentIntentId: string): Promise<void> {
   const stripe = getStripe();
-  if (!stripe) return null;
-  const intent = await stripe.paymentIntents.cancel(paymentIntentId);
-  return { status: intent.status };
+  if (!stripe) throw new Error("Stripe is not configured.");
+  try {
+    await stripe.paymentIntents.cancel(paymentIntentId, { cancellation_reason: "requested_by_customer" });
+  } catch (err) {
+    const current = await stripe.paymentIntents.retrieve(paymentIntentId);
+    if (current.status === "canceled") return;
+    throw err;
+  }
+}
+
+/**
+ * Expire an unpaid Checkout Session (payment link / re-charge) because its booking
+ * was cancelled, so the customer can't pay for it. If Stripe refuses, the session
+ * is re-read: already expired counts as closed; 'complete' means the customer paid
+ * in the meantime (the caller stops — that money needs refunding, not closing);
+ * anything else THROWS.
+ */
+export async function closeCheckoutSession(sessionId: string): Promise<"expired" | "complete"> {
+  const stripe = getStripe();
+  if (!stripe) throw new Error("Stripe is not configured.");
+  try {
+    await stripe.checkout.sessions.expire(sessionId);
+    return "expired";
+  } catch (err) {
+    const current = await stripe.checkout.sessions.retrieve(sessionId);
+    if (current.status === "expired") return "expired";
+    if (current.status === "complete") return "complete";
+    throw err;
+  }
 }
 
 /**
