@@ -532,6 +532,10 @@ model Payment {
   type                  PaymentType
   feeReason             FeeReason?
   stripePaymentIntentId String?
+  // Checkout Session behind a payment link / re-charge (§6.15, §8). A session has no
+  // PaymentIntent until the customer pays, so this is the only handle that can
+  // close an unpaid link: cancelling the booking expires it.
+  stripeCheckoutSessionId String?
   // Distinct Stripe ids for finance reconciliation — the captured charge and any
   // refund each have their own id, NOT reconstructable after the fact, so they are
   // stored when they occur (charge on capture, refund on refund).

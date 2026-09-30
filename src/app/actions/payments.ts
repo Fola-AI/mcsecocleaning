@@ -238,9 +238,9 @@ export async function cancelAndRefundBooking(jobId: string): Promise<{ ok: boole
  *
  * Collects the TOTAL of ALL outstanding charge rows in one Checkout (an abandoned
  * large booking can have two — deposit + balance), superseding EACH row in place
- * (reset to pending + the one new Checkout PI id) so none is silently left behind
+ * (reset to pending + the one Checkout session id) so none is silently left behind
  * and none pins the job at part_paid. The audit note lists each superseded row's
- * old PI, amount and reason. Idempotent: the key (recharge-<jobId>-<total>) returns
+ * old PI, amount and reason. Idempotent: the key (recharge-<jobId>-<total>-<row ids>) returns
  * the same session on a repeat, and the session completes once. Never re-charges
  * while an authorised amount is still capturable — that's captured first.
  */
@@ -258,13 +258,13 @@ export interface OutstandingCheckout {
 /**
  * Core of the re-charge path (§8) — SINGLE source for both the admin re-charge and
  * customer self-pay, so the load-bearing logic (idempotency key, in-place
- * supersede, audit note, PI-id storage) can't drift into double-charges or a lost
+ * supersede, audit note, session-id storage) can't drift into double-charges or a lost
  * trail. It does NOT authorise: callers MUST guard first (admin role, or the
  * customer ownership filter) — a job id alone is not authorisation.
  *
  * Collects the TOTAL of ALL outstanding charge rows in one Checkout (an abandoned
  * large booking can have two — deposit + balance), superseding EACH row in place
- * (reset to pending + the one new Checkout PI id) so none is left behind or pins
+ * (reset to pending + the one Checkout session id) so none is left behind or pins
  * the job at part_paid. Returns the pay URL; the caller emails or redirects.
  */
 /**
@@ -311,22 +311,25 @@ async function prepareOutstandingCheckout(jobId: string): Promise<OutstandingChe
   const when = job.scheduledStart ? localDateString(job.scheduledStart) : null;
   const total = outstanding.reduce((sum, c) => sum + c.gross, 0);
 
-  // One session for the total. No paymentId in metadata (multiple rows) — the
-  // webhook settles by the intent id, and because every outstanding row is stamped
-  // with THIS intent id below, updateMany captures them all at once. Key is stable
-  // across the set + amount.
+  // One session for the total. The session has no intent id until the customer
+  // pays, so every row id rides in the PaymentIntent metadata (paymentIds) and the
+  // webhook settles exactly those rows (same job, still pending). The key covers the
+  // job, the total and the exact row set, so a repeat returns the same session.
+  const rowIds = outstanding.map((c) => c.id);
   const { createCheckoutUrl } = await import("@/lib/stripe");
   const checkout = await createCheckoutUrl({
     amountPence: total,
     description: `Balance for your ${serviceLabel}${when ? ` on ${when}` : ""}`,
     customerEmail: job.customer?.email ?? undefined,
     jobId,
-    idempotencyKey: `recharge-${jobId}-${total}`,
+    paymentIds: rowIds,
+    idempotencyKey: `recharge-${jobId}-${total}-${rowIds.join(".")}`,
   });
   if (!checkout?.url) return { ok: false, message: "Stripe is not configured." };
 
   // Supersede EVERY outstanding row in place + one audit note (each old PI, amount,
-  // reason) — atomic. The note is the only local trace once reset.
+  // reason, and the new session) — atomic. The note is the only local trace of the
+  // old intents once reset.
   const superseded = outstanding
     .map((c) => `PI ${c.stripePaymentIntentId ?? "none"}/${formatPence(c.gross)}/${c.status === "failed" ? "expired-or-failed" : "not-collected"}`)
     .join("; ");
@@ -334,14 +337,18 @@ async function prepareOutstandingCheckout(jobId: string): Promise<OutstandingChe
     for (const c of outstanding) {
       await tx.payment.update({
         where: { id: c.id },
-        data: { status: "pending", stripePaymentIntentId: checkout.paymentIntentId, stripeChargeId: null },
+        // The old intent id is cleared ON PURPOSE (it's in the note) so a late event
+        // for the old intent can't flip the re-targeted row. The new intent id is
+        // stamped by the webhook when the customer pays; the session id is kept so a
+        // cancellation can expire the link.
+        data: { status: "pending", stripePaymentIntentId: null, stripeChargeId: null, stripeCheckoutSessionId: checkout.sessionId },
       });
     }
     await tx.jobStatusEvent.create({
       data: {
         jobId,
         toStatus: job.status,
-        note: `Outstanding checkout ${formatPence(total)} (new Checkout PI ${checkout.paymentIntentId ?? "pending"}) superseding [${superseded}].`,
+        note: `Outstanding checkout ${formatPence(total)} (Checkout session ${checkout.sessionId}) superseding [${superseded}].`,
       },
     });
     await recomputeJobPaymentStatus(tx, jobId);

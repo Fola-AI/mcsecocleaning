@@ -67,6 +67,10 @@ is quiet data loss.
 - **`2026-09-28-authjs-tables.sql`** — Auth.js `Account` / `Session` /
   `VerificationToken` tables + `User.emailVerified` / `User.image`. Additive; run
   before the first DB-backed deploy that includes Auth.js RBAC.
+- **`2026-09-30-payment-checkout-session-id.sql`** — `Payment.stripeCheckoutSessionId`
+  (the handle that expires an unpaid payment link on cancellation). Additive,
+  re-runnable; run before the first DB-backed deploy that includes the payment-link /
+  re-charge reconciliation fix.
 
 ### 4b. Payments (Stripe) — required ops setup before payments can go live
 Same go-live checklist status as the migrations above — neither gets assumed done.

@@ -193,19 +193,31 @@ export async function adminCreateBooking(input: z.input<typeof adminBookingSchem
     data: { jobId: job.id, toStatus: "booked", note: `Admin booking (${reference}, ${data.paymentMethod})` },
   });
 
-  // Optional Stripe payment link when configured and requested.
+  // Optional Stripe payment link when configured and requested. Orphan-proof, the
+  // same order as /book: the pending Payment row FIRST, then the session (its id
+  // rides in the PaymentIntent metadata as the webhook's match), then stamp the
+  // session id so a cancellation can expire an unpaid link. If the stamp is lost the
+  // payment still reconciles by metadata; only the expiry handle is missing.
   let paymentUrl: string | null | undefined;
   if (data.paymentMethod === "payment_link") {
     try {
       const { stripeConfigured, createCheckoutUrl } = await import("@/lib/stripe");
       if (stripeConfigured()) {
+        const payment = await db.payment.create({
+          data: { jobId: job.id, type: "charge", net: money.net, vatAmount: money.vatAmount, gross: grossPence, status: "pending" },
+        });
         const checkout = await createCheckoutUrl({
           amountPence: grossPence,
           description: `${service.name} — ${reference}`,
           customerEmail: data.contact.email,
           jobId: job.id,
+          paymentId: payment.id,
+          idempotencyKey: `admin-link-${payment.id}`,
         });
-        paymentUrl = checkout?.url;
+        if (checkout) {
+          await db.payment.update({ where: { id: payment.id }, data: { stripeCheckoutSessionId: checkout.sessionId } });
+          paymentUrl = checkout.url;
+        }
       }
     } catch (e) {
       console.error("[admin] payment link failed", e);

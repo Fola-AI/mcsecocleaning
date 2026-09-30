@@ -1,0 +1,17 @@
+-- Migration: Payment.stripeCheckoutSessionId (§6.15, §8). Flag 6 of the pre-Phase-3 gate.
+--
+-- A Checkout Session (admin payment link, outstanding-balance re-charge) has no
+-- PaymentIntent until the customer pays, so a Payment row waiting on one has no
+-- Stripe id at all. Storing the session id is the only way to CLOSE an unpaid
+-- link: cancelling the booking expires the session, so a customer can't pay for a
+-- cancelled booking. Payment itself is matched by metadata (paymentId/paymentIds on
+-- the PaymentIntent), never by this column, so it carries no index.
+--
+-- On a FRESH database, `prisma db push` creates this from the schema, so this file
+-- is NOT needed. Apply it ONLY when the Payment table already exists. Not auto-run.
+-- Run BEFORE the deploy that needs it (see docs/DEPLOYMENT.md §4a).
+--
+-- Additive and safe to re-run: nullable, no default (metadata-only, no table
+-- rewrite). No backfill: the session id was never stored before, and no real
+-- booking has used a link yet.
+ALTER TABLE "Payment" ADD COLUMN IF NOT EXISTS "stripeCheckoutSessionId" TEXT;

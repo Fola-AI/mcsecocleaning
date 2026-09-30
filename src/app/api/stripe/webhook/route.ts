@@ -3,7 +3,13 @@ import { Prisma } from "@prisma/client";
 import { db, hasDatabase } from "@/lib/db";
 import { constructWebhookEvent, latestRefundIdForCharge } from "@/lib/stripe";
 import { recomputeJobPaymentStatus } from "@/lib/payments";
-import { chargePaymentIntentId, needsRefundLookup, refundedUpdate, succeededUpdate } from "@/lib/webhook-reconcile";
+import {
+  chargePaymentIntentId,
+  needsRefundLookup,
+  rechargeRowsWhere,
+  refundedUpdate,
+  succeededUpdate,
+} from "@/lib/webhook-reconcile";
 
 // Stripe SDK + raw-body signature verification need the Node runtime, not edge.
 export const runtime = "nodejs";
@@ -120,11 +126,17 @@ async function handleStripeEvent(tx: Prisma.TransactionClient, event: Stripe.Eve
     case "payment_intent.succeeded": {
       const pi = event.data.object as Stripe.PaymentIntent;
       const paymentId = pi.metadata?.paymentId || null;
+      const recharge = rechargeRowsWhere(pi.metadata);
       const data = succeededUpdate(pi, new Date());
-      // Match by our Payment id from metadata when present (deposit + re-charge
-      // Checkout, where we set it), else by the intent id. Stamp the intent id so
-      // recompute can resolve the job.
-      if (paymentId) {
+      // Match by our Payment id(s) from metadata when present, else by the intent id.
+      // A re-charge Checkout settles several rows and has no intent id until paid, so
+      // it matches by metadata.paymentIds — only that job's rows, only while still
+      // pending. /book intents and admin payment links carry a single paymentId.
+      // Every branch stamps the intent id so recompute (and a later refund) can
+      // resolve the rows.
+      if (recharge) {
+        await tx.payment.updateMany({ where: recharge, data: { ...data, stripePaymentIntentId: pi.id } });
+      } else if (paymentId) {
         await tx.payment.updateMany({ where: { id: paymentId }, data: { ...data, stripePaymentIntentId: pi.id } });
       } else {
         await tx.payment.updateMany({ where: { stripePaymentIntentId: pi.id }, data });

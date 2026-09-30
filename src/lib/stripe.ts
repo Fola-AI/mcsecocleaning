@@ -1,4 +1,5 @@
 import Stripe from "stripe";
+import { checkoutIntentMetadata } from "@/lib/webhook-reconcile";
 
 /**
  * Stripe (§6.5). Model: authorise at booking, capture on completion — the final
@@ -161,19 +162,26 @@ export function constructWebhookEvent(rawBody: string, signature: string): Strip
 /**
  * Create a shareable Checkout URL (a "payment link", immediate capture) for an
  * admin-created booking (§6.15) or an outstanding-balance re-charge (§8). Inline
- * price_data (no pre-made Price). Carries jobId/paymentId in the PaymentIntent
- * metadata so the webhook reconciles the payment to our Payment row, and returns
- * the PaymentIntent id to store on that row. An idempotencyKey makes a repeated
- * call return the SAME session/URL (no double session, no double charge).
+ * price_data (no pre-made Price).
+ *
+ * A Checkout Session has NO PaymentIntent until the customer pays, so there is no
+ * intent id to store here. The webhook finds our rows through the PaymentIntent
+ * metadata instead (see checkoutIntentMetadata), and this returns the SESSION id to
+ * store on the row(s) — the only handle that can later expire an unpaid link. An
+ * idempotencyKey makes a repeated call return the SAME session/URL (no double
+ * session, no double charge).
  */
 export async function createCheckoutUrl(params: {
   amountPence: number;
   description: string;
   customerEmail?: string;
   jobId?: string;
+  /** One Payment row (admin payment link). */
   paymentId?: string;
+  /** Every Payment row one re-charge settles. */
+  paymentIds?: string[];
   idempotencyKey?: string;
-}): Promise<{ url: string | null; paymentIntentId: string | null } | null> {
+}): Promise<{ url: string | null; sessionId: string } | null> {
   const stripe = getStripe();
   if (!stripe) return null;
   const origin = process.env.NEXT_PUBLIC_SITE_URL || "https://www.mcsecocleaning.co.uk";
@@ -191,14 +199,13 @@ export async function createCheckoutUrl(params: {
           },
         },
       ],
-      payment_intent_data: { metadata: { jobId: params.jobId ?? "", paymentId: params.paymentId ?? "" } },
+      payment_intent_data: {
+        metadata: checkoutIntentMetadata({ jobId: params.jobId, paymentId: params.paymentId, paymentIds: params.paymentIds }),
+      },
       success_url: `${origin}/book?paid=1`,
       cancel_url: `${origin}/book?cancelled=1`,
     },
     params.idempotencyKey ? { idempotencyKey: params.idempotencyKey } : undefined
   );
-  return {
-    url: session.url,
-    paymentIntentId: typeof session.payment_intent === "string" ? session.payment_intent : null,
-  };
+  return { url: session.url, sessionId: session.id };
 }
