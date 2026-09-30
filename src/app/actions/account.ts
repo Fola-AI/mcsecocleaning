@@ -3,6 +3,7 @@
 import { db, hasDatabase } from "@/lib/db";
 import { requireCustomer } from "@/lib/auth";
 import { prepareOutstandingCheckoutForVerifiedJob } from "@/app/actions/payments";
+import { encryptedCodeFieldValue } from "@/lib/account-codes";
 
 /**
  * Customer account actions (§7.1, §14.3). EVERY one applies the ownership filter
@@ -73,4 +74,44 @@ export async function updateMyMarketingPrefs(consent: boolean): Promise<{ ok: bo
     data: { marketingConsent: consent, consentUpdatedAt: new Date() },
   });
   return { ok: true, message: consent ? "You're subscribed to updates." : "You've unsubscribed from all marketing." };
+}
+
+export interface PropertyEditInput {
+  addressLine1?: string;
+  entryMethod?: string;
+  parkingNotes?: string;
+  accessNotes?: string;
+  doNotTouch?: string;
+  newLockboxCode?: string;
+  newAlarmCode?: string;
+}
+
+/**
+ * Update the customer's OWN property. Non-sensitive fields are set directly. Access
+ * codes are WRITE-ONLY: a new value is re-encrypted (§9.3); a blank value leaves the
+ * stored code UNCHANGED (never overwritten with empty). The stored code is never
+ * decrypted back to the page, so this action only ever writes ciphertext.
+ */
+export async function updateMyProperty(propertyId: string, input: PropertyEditInput): Promise<{ ok: boolean; message: string }> {
+  const { id } = await requireCustomer();
+  if (!hasDatabase) return { ok: false, message: "No database configured." };
+
+  const owned = await db.property.findFirst({ where: { id: propertyId, customerId: id }, select: { id: true } });
+  if (!owned) return { ok: false, message: "Property not found." };
+
+  const data: Record<string, unknown> = {
+    addressLine1: input.addressLine1?.trim() || undefined,
+    entryMethod: input.entryMethod || undefined,
+    parkingNotes: input.parkingNotes ?? undefined,
+    accessNotes: input.accessNotes ?? undefined,
+    doNotTouch: input.doNotTouch ?? undefined,
+  };
+  // Codes: include ONLY when a new value was given (blank → unchanged).
+  const lockbox = encryptedCodeFieldValue(input.newLockboxCode);
+  if (lockbox !== undefined) data.accessCodeEncrypted = lockbox;
+  const alarm = encryptedCodeFieldValue(input.newAlarmCode);
+  if (alarm !== undefined) data.alarmCodeEncrypted = alarm;
+
+  await db.property.update({ where: { id: propertyId }, data });
+  return { ok: true, message: "Property updated." };
 }

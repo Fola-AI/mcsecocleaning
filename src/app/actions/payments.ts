@@ -8,6 +8,10 @@ import { sendEmail } from "@/lib/email";
 import { localDateString } from "@/lib/timezone";
 import { site } from "@/config/site";
 
+/** jobStatusEvent note marking the completion email as sent — the dedup signal so
+ *  re-invoking markJobComplete never sends a second completion email. */
+const COMPLETION_EMAIL_NOTE = "completion-email-sent";
+
 /**
  * The outcome of a capture attempt, shaped for the admin UI:
  *  - retryable   → a transient failure (decline / temporary); the Retry button helps.
@@ -45,6 +49,16 @@ export async function markJobComplete(
 
   // STEP 2 — capture, separately and after. Best-effort; never reverses Step 1.
   const capture = await attemptCapture(jobId, finalTotalPence);
+
+  // STEP 3 — completion email AFTER capture resolves, stating the actual outcome
+  // (paid vs outstanding). Deduped so it sends once; links to /account, never an
+  // embedded pay link. Best-effort — an email failure never fails completion.
+  try {
+    await sendCompletionEmail(jobId, capture);
+  } catch (e) {
+    console.error("[markJobComplete] completion email failed", e);
+  }
+
   return {
     ok: true,
     message: capture.ok ? `Job completed. ${capture.message}` : `Job completed. Payment not settled — ${capture.message}`,
@@ -253,6 +267,33 @@ export interface OutstandingCheckout {
  * (reset to pending + the one new Checkout PI id) so none is left behind or pins
  * the job at part_paid. Returns the pay URL; the caller emails or redirects.
  */
+/**
+ * Read-only summary of what a job still owes (no session, no supersede). Shared by
+ * the admin notify (rechargeOutstanding) and the completion email so they agree on
+ * the amount without minting a Checkout. Session creation lives only in
+ * prepareOutstandingCheckout, reached when the customer actually clicks Pay.
+ */
+async function outstandingSummary(jobId: string): Promise<Omit<OutstandingCheckout, "url">> {
+  if (!hasDatabase) return { ok: false, message: "No database configured." };
+  const job = await db.job.findUnique({ where: { id: jobId }, include: { customer: true, serviceType: true } });
+  if (!job) return { ok: false, message: "Job not found." };
+  const charges = await db.payment.findMany({ where: { jobId, type: "charge" } });
+  if (charges.some((c) => c.status === "authorised")) {
+    return { ok: false, message: "There's still an authorised amount to capture — capture it first, then collect any remainder." };
+  }
+  const outstanding = charges.filter((c) => c.status === "pending" || c.status === "failed");
+  if (outstanding.length === 0) return { ok: false, message: "Nothing outstanding to collect." };
+  return {
+    ok: true,
+    message: `${formatPence(outstanding.reduce((s, c) => s + c.gross, 0))} outstanding.`,
+    total: outstanding.reduce((s, c) => s + c.gross, 0),
+    customerEmail: job.customer?.email ?? null,
+    customerName: job.customer?.name ?? null,
+    serviceLabel: job.serviceType?.name ?? "clean",
+    when: job.scheduledStart ? localDateString(job.scheduledStart) : null,
+  };
+}
+
 async function prepareOutstandingCheckout(jobId: string): Promise<OutstandingCheckout> {
   if (!hasDatabase) return { ok: false, message: "No database configured." };
 
@@ -326,26 +367,77 @@ export async function prepareOutstandingCheckoutForVerifiedJob(jobId: string): P
 }
 
 /**
- * Admin re-charge (§8): guard by ops role, prepare the checkout, EMAIL the link to
- * the customer. Delivery differs from customer self-pay; the core is shared.
+ * Admin re-charge (§8): email the customer to pay an outstanding balance via their
+ * account. It links to /account, NOT an embedded Checkout URL — a Checkout session
+ * expires in ~24h and an async email is often opened later, so a dead link would
+ * cost the send. The session is minted fresh when the customer clicks Pay in
+ * /account (prepareOutstandingCheckout). No session or supersede happens here.
  */
 export async function rechargeOutstanding(jobId: string): Promise<{ ok: boolean; message: string }> {
   await requireRole(["owner", "admin", "supervisor"]);
-  const res = await prepareOutstandingCheckout(jobId);
-  if (!res.ok || !res.url) return { ok: false, message: res.message };
+  const res = await outstandingSummary(jobId);
+  if (!res.ok) return { ok: false, message: res.message };
   if (!res.customerEmail) return { ok: false, message: "No customer email on file to send a payment request." };
 
+  const accountUrl = `${site.url}/account`;
   await sendEmail({
     to: res.customerEmail,
     subject: `Payment for your completed ${res.serviceLabel}`,
     html: `
       <h2>Your clean is complete — one payment left</h2>
-      <p>Hi${res.customerName ? ` ${res.customerName}` : ""}, your ${res.serviceLabel}${res.when ? ` on ${res.when}` : ""} is complete. The balance of <strong>${formatPence(res.total!)}</strong> is outstanding — you can pay it securely here:</p>
-      <p><a href="${res.url}">Pay ${formatPence(res.total!)}</a></p>
+      <p>Hi${res.customerName ? ` ${res.customerName}` : ""}, your ${res.serviceLabel}${res.when ? ` on ${res.when}` : ""} is complete. The balance of <strong>${formatPence(res.total!)}</strong> is outstanding. Sign in to your account to pay it securely:</p>
+      <p><a href="${accountUrl}">Sign in to pay</a></p>
       <p>Payment is processed securely by Stripe. If you have already paid, please ignore this email.</p>
       <p style="font-size:12px;color:#555">${site.company.registeredName}</p>
     `,
   });
 
-  return { ok: true, message: `Payment request for ${formatPence(res.total!)} sent to ${res.customerEmail}.` };
+  return { ok: true, message: `Payment request (sign-in link) sent to ${res.customerEmail}.` };
+}
+
+/**
+ * Completion email (§10.3): sent by markJobComplete AFTER the capture attempt
+ * resolves, stating the actual outcome, and deduped so re-invoking markJobComplete
+ * sends one email. Links to /account (never an embedded pay link — see above).
+ */
+async function sendCompletionEmail(jobId: string, capture: CaptureOutcome): Promise<void> {
+  const already = await db.jobStatusEvent.findFirst({ where: { jobId, note: COMPLETION_EMAIL_NOTE } });
+  if (already) return; // one completion email per job
+  const job = await db.job.findUnique({ where: { id: jobId }, include: { customer: true, serviceType: true } });
+  const email = job?.customer?.email;
+  if (!email) return; // nothing to send to; not an error for completion
+  const label = job.serviceType?.name ?? "clean";
+  const when = job.scheduledStart ? ` on ${localDateString(job.scheduledStart)}` : "";
+  const accountUrl = `${site.url}/account`;
+
+  // Three distinct outcomes — a declined card must NOT read as an "outstanding
+  // balance" admin matter, or the customer waits instead of using another card.
+  let body: string;
+  let payLine = "";
+  if (capture.ok) {
+    body = `<p>Your ${label}${when} is complete and paid in full. Your receipt is in your account.</p>`;
+    payLine = "to see your bookings and receipts";
+  } else if (capture.retryable) {
+    // Transient / declined card.
+    const summary = await outstandingSummary(jobId);
+    body = `<p>Your ${label}${when} is complete, but we couldn't take payment of <strong>${formatPence(summary.total ?? 0)}</strong> from your card — it was declined or there was a temporary problem.</p>`;
+    payLine = "to pay with another card";
+  } else {
+    // needsRecharge — never authorised / expired.
+    const summary = await outstandingSummary(jobId);
+    body = `<p>Your ${label}${when} is complete. There is an outstanding balance of <strong>${formatPence(summary.total ?? 0)}</strong> — sign in to pay it securely.</p>`;
+    payLine = "to see your bookings and pay the balance";
+  }
+
+  await sendEmail({
+    to: email,
+    subject: `Your ${label} is complete`,
+    html: `
+      <h2>Your clean is complete</h2>
+      ${body}
+      <p><a href="${accountUrl}">Sign in to your account</a> ${payLine}.</p>
+      <p style="font-size:12px;color:#555">${site.company.registeredName}</p>
+    `,
+  });
+  await db.jobStatusEvent.create({ data: { jobId, toStatus: "completed", note: COMPLETION_EMAIL_NOTE } });
 }

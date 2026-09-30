@@ -76,18 +76,26 @@ const STEP_TITLES = [
 export function BookingWizard({
   initialService,
   initialPostcode,
+  initialPropertyType,
+  initialCondition,
+  initialRooms,
 }: {
   initialService?: string;
   initialPostcode?: string;
+  initialPropertyType?: PropertyType;
+  initialCondition?: Condition;
+  initialRooms?: Partial<Record<RoomKey, number>>;
 }) {
   const areaOk = initialPostcode ? checkServiceArea(initialPostcode).inArea : false;
   const [step, setStep] = useState(areaOk ? (initialService ? 2 : 1) : 0);
   const [state, setState] = useState<State>({
     postcode: initialPostcode ?? "",
     serviceSlug: initialService && selfServeServices.some((s) => s.slug === initialService) ? initialService : selfServeServices[0].slug,
-    rooms: { ...emptyRooms, kitchens: 1, bathrooms: 1, bedrooms: 1, receptions: 1 },
-    condition: "standard",
-    propertyType: "flat",
+    // Rebook prefill carries the PROPERTY (rooms/type/condition), never a price —
+    // the quote recomputes from the current rate card via computeQuote below.
+    rooms: initialRooms ? { ...emptyRooms, ...initialRooms } : { ...emptyRooms, kitchens: 1, bathrooms: 1, bedrooms: 1, receptions: 1 },
+    condition: initialCondition ?? "standard",
+    propertyType: initialPropertyType ?? "flat",
     frequency: "one_off",
     addOnSlugs: [],
     slotStartISO: "",
