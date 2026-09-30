@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { db, hasDatabase } from "@/lib/db";
 import { computeQuote, type Frequency } from "@/lib/quote";
+import { bookingCreatedMessage } from "@/lib/admin-booking";
 import { priceFromRateCard, type MoneyBreakdown } from "@/lib/money";
 import { serviceBySlug } from "@/config/services";
 import { ROOM_KEYS, RATE_CARD_VERSION, type RoomKey } from "@/lib/pricing/rate-card";
@@ -228,7 +229,7 @@ export async function adminCreateBooking(input: z.input<typeof adminBookingSchem
     status: "success",
     reference,
     paymentUrl,
-    message: paymentUrl ? "Booking created — send the customer the payment link." : "Booking created.",
+    message: bookingCreatedMessage(data.paymentMethod, paymentUrl),
   };
 }
 
