@@ -136,6 +136,18 @@ export async function refundBookingPayment(params: {
 }
 
 /**
+ * The most recent refund on a charge (Stripe lists newest first). The webhook uses
+ * this when a charge.refunded payload omits the refund list, which Stripe no longer
+ * includes on a Charge by default — e.g. a refund issued from the Dashboard.
+ */
+export async function latestRefundIdForCharge(chargeId: string): Promise<string | null> {
+  const stripe = getStripe();
+  if (!stripe) return null;
+  const refunds = await stripe.refunds.list({ charge: chargeId, limit: 1 });
+  return refunds.data[0]?.id ?? null;
+}
+
+/**
  * Verify a Stripe webhook signature and return the parsed event. Throws on a bad
  * signature (the caller returns 400); returns null when Stripe isn't configured.
  */

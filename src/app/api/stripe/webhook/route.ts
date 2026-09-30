@@ -1,8 +1,9 @@
 import type Stripe from "stripe";
 import { Prisma } from "@prisma/client";
 import { db, hasDatabase } from "@/lib/db";
-import { constructWebhookEvent } from "@/lib/stripe";
+import { constructWebhookEvent, latestRefundIdForCharge } from "@/lib/stripe";
 import { recomputeJobPaymentStatus } from "@/lib/payments";
+import { chargePaymentIntentId, needsRefundLookup, refundedUpdate, succeededUpdate } from "@/lib/webhook-reconcile";
 
 // Stripe SDK + raw-body signature verification need the Node runtime, not edge.
 export const runtime = "nodejs";
@@ -42,13 +43,17 @@ export async function POST(req: Request): Promise<Response> {
 
   const payload = event as unknown as Prisma.InputJsonValue;
   try {
+    // Stripe lookups run BEFORE the transaction: a network call inside it would eat
+    // the interactive transaction's 5 s budget. A lookup failure throws into the
+    // catch below (marked failed, 500, Stripe retries) like any handler failure.
+    const lookups = await lookupsFor(event);
     await db.$transaction(async (tx) => {
       await tx.webhookEvent.upsert({
         where: { id: event!.id },
         create: { id: event!.id, provider: "stripe", type: event!.type, status: "received", payload },
         update: { status: "received" },
       });
-      await handleStripeEvent(tx, event!);
+      await handleStripeEvent(tx, event!, lookups);
       await tx.webhookEvent.update({
         where: { id: event!.id },
         data: { status: "processed", processedAt: new Date() },
@@ -72,12 +77,27 @@ export async function POST(req: Request): Promise<Response> {
   return new Response("ok", { status: 200 });
 }
 
+/** Data an event needs from Stripe itself, fetched before the DB transaction opens. */
+interface EventLookups {
+  /** For a fully refunded charge whose payload omits the refund list. */
+  refundId: string | null;
+}
+
+async function lookupsFor(event: Stripe.Event): Promise<EventLookups> {
+  if (event.type === "charge.refunded") {
+    const charge = event.data.object as Stripe.Charge;
+    if (needsRefundLookup(charge)) return { refundId: await latestRefundIdForCharge(charge.id) };
+  }
+  return { refundId: null };
+}
+
 /**
  * Reconcile Payment (and mirror Job.paymentStatus) from a Stripe event. NEVER
  * touches Job existence. Payment updates are updateMany so a not-yet-created row
- * (before /book wiring) is a safe no-op, not a throw.
+ * (before /book wiring) is a safe no-op, not a throw. Update shapes come from
+ * webhook-reconcile, which never writes a null over a stored Stripe id.
  */
-async function handleStripeEvent(tx: Prisma.TransactionClient, event: Stripe.Event): Promise<void> {
+async function handleStripeEvent(tx: Prisma.TransactionClient, event: Stripe.Event, lookups: EventLookups): Promise<void> {
   switch (event.type) {
     case "payment_intent.amount_capturable_updated": {
       // Manual-capture authorisation confirmed. Safety net: if the inline
@@ -99,21 +119,15 @@ async function handleStripeEvent(tx: Prisma.TransactionClient, event: Stripe.Eve
     }
     case "payment_intent.succeeded": {
       const pi = event.data.object as Stripe.PaymentIntent;
-      const chargeId = typeof pi.latest_charge === "string" ? pi.latest_charge : null;
       const paymentId = pi.metadata?.paymentId || null;
+      const data = succeededUpdate(pi, new Date());
       // Match by our Payment id from metadata when present (deposit + re-charge
       // Checkout, where we set it), else by the intent id. Stamp the intent id so
       // recompute can resolve the job.
       if (paymentId) {
-        await tx.payment.updateMany({
-          where: { id: paymentId },
-          data: { status: "captured", capturedAt: new Date(), stripeChargeId: chargeId, stripePaymentIntentId: pi.id },
-        });
+        await tx.payment.updateMany({ where: { id: paymentId }, data: { ...data, stripePaymentIntentId: pi.id } });
       } else {
-        await tx.payment.updateMany({
-          where: { stripePaymentIntentId: pi.id },
-          data: { status: "captured", capturedAt: new Date(), stripeChargeId: chargeId },
-        });
+        await tx.payment.updateMany({ where: { stripePaymentIntentId: pi.id }, data });
       }
       await recomputeJobForIntent(tx, pi.id);
       break;
@@ -127,13 +141,16 @@ async function handleStripeEvent(tx: Prisma.TransactionClient, event: Stripe.Eve
     }
     case "charge.refunded": {
       const charge = event.data.object as Stripe.Charge;
-      const piId = typeof charge.payment_intent === "string" ? charge.payment_intent : null;
-      const refundId = charge.refunds?.data?.[0]?.id ?? null;
+      const piId = chargePaymentIntentId(charge);
+      const data = refundedUpdate(charge, lookups.refundId);
+      if (!data) {
+        // Partial refund: the event is recorded (WebhookEvent.payload) but the row is
+        // left as it is — partials aren't modelled yet, and 'refunded' would be wrong.
+        console.warn("[stripe webhook] partial refund not modelled; row unchanged", charge.id, charge.amount_refunded, "of", charge.amount_captured);
+        break;
+      }
       if (piId) {
-        await tx.payment.updateMany({
-          where: { stripePaymentIntentId: piId },
-          data: { status: "refunded", stripeRefundId: refundId },
-        });
+        await tx.payment.updateMany({ where: { stripePaymentIntentId: piId }, data });
         await recomputeJobForIntent(tx, piId);
       }
       break;
