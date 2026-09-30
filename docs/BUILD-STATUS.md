@@ -55,6 +55,14 @@ Tests: `npm test` — 39 passing (quote, recurrence across BST/GMT + bank holida
 Operations & crew, trust & growth, media & resolution, launch hardening, then
 AI copilot / analytics. Schema models for all of these already exist.
 
+### Carried into Phase 3 (from the pre-Phase-3 payments gate)
+- [ ] **Recover / reissue an admin payment link.** The link is shown once, on the
+  "Booking created" card, and nowhere after; a Checkout session expires after 24h
+  with no reissue, so a missed or expired link is a booking we can't collect on.
+  Add "Copy payment link" on the `/admin/jobs` row while the session is open
+  (fetch the URL from Stripe via `Payment.stripeCheckoutSessionId`), and a reissue
+  once it has expired.
+
 ---
 
 ## ⚠️ Business inputs required before launch (the §16 open decisions + registration)
