@@ -11,7 +11,9 @@ import type { BookingPaymentIntent } from "@/app/actions/booking";
  * Payment step (Option A): one card entry. For a large job the deposit is captured
  * and the balance is authorised on the SAME card under the hood, shown as a single
  * step with progress. The Payment Element is bound to the primary intent (deposit,
- * or full); the balance is confirmed by reusing the deposit's PaymentMethod.
+ * or full); the balance is confirmed by reusing the deposit's PaymentMethod. That
+ * reuse works only because the deposit intent saves the card to the booking's
+ * Stripe Customer (bookingIntentParams in lib/stripe).
  *
  * Degrades cleanly: no publishable key or no client secret → a "we'll be in touch"
  * fallback, never a broken Element (matches the server's stripeConfigured() path).

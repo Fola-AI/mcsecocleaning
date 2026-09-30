@@ -37,6 +37,26 @@ export function deriveJobPaymentStatus(statuses: PaymentStatus[]): PaymentStatus
  * Called after any Payment change (webhook / capture / refund) instead of stamping
  * the latest event's status directly. Uses the given transaction client.
  */
+/**
+ * The User's Stripe Customer id, creating it on first need (§6.5). One Customer per
+ * User, reused across bookings. The write only lands while the column is still
+ * empty: two first bookings racing get the SAME Customer from Stripe (idempotency
+ * key), whichever write lands first wins, and the other is a no-op. Returns null
+ * when Stripe isn't configured or the user doesn't exist.
+ */
+export async function ensureStripeCustomer(userId: string): Promise<string | null> {
+  const user = await db.user.findUnique({ where: { id: userId }, select: { email: true, name: true, stripeCustomerId: true } });
+  if (!user) return null;
+  if (user.stripeCustomerId) return user.stripeCustomerId;
+
+  const { createStripeCustomer } = await import("@/lib/stripe");
+  const created = await createStripeCustomer({ userId, email: user.email, name: user.name });
+  if (!created) return null;
+  await db.user.updateMany({ where: { id: userId, stripeCustomerId: null }, data: { stripeCustomerId: created } });
+  const stored = await db.user.findUnique({ where: { id: userId }, select: { stripeCustomerId: true } });
+  return stored?.stripeCustomerId ?? created;
+}
+
 export async function recomputeJobPaymentStatus(
   tx: Prisma.TransactionClient | typeof db,
   jobId: string

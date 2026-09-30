@@ -187,6 +187,9 @@ model User {
   organisation      Organisation? @relation(fields: [organisationId], references: [id])
   marketingConsent  Boolean   @default(false)
   consentUpdatedAt  DateTime?
+  // Stripe Customer (§6.5): one per User, reused across bookings so the card saved
+  // on a deposit can authorise the balance. Set once, server-side.
+  stripeCustomerId  String?   @unique
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 

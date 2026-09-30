@@ -9,6 +9,7 @@ import { serviceBySlug } from "@/config/services";
 import { site, formatAddress } from "@/config/site";
 import { CCR_CONSENT } from "@/config/legal";
 import { requiresDeposit, depositSplit, depositTerms, DEPOSIT_REFUND_NOTE } from "@/config/payments";
+import { ensureStripeCustomer } from "@/lib/payments";
 import { checkServiceArea } from "@/lib/serviceArea";
 import { formatPence } from "@/lib/money";
 import { computeSlots, slotsByDate } from "@/lib/capacity";
@@ -172,11 +173,12 @@ export async function createBooking(input: BookingInput): Promise<BookingResult>
 
   const reference = `MCS-${Date.now().toString(36).toUpperCase()}`;
   let jobId: string | undefined;
+  let userId: string | undefined;
 
   // Persist when a DB is configured.
   if (hasDatabase) {
     try {
-      jobId = await persistBooking({ data, quote, ccr, reference, charge, discountAmount, discountCode });
+      ({ jobId, userId } = await persistBooking({ data, quote, ccr, reference, charge, discountAmount, discountCode }));
     } catch (e) {
       console.error("[booking] persistence failed; continuing with notifications", e);
     }
@@ -197,13 +199,20 @@ export async function createBooking(input: BookingInput): Promise<BookingResult>
   // full amount. Every Payment row is created FIRST (pending) so an authorised or
   // captured card can never exist without a Payment row (webhook reconciles by
   // metadata.paymentId; idempotency keys stop a retried submit double-charging).
+  //
+  // Every intent belongs to the user's Stripe Customer. The deposit saves the card
+  // to it, which is what lets the browser authorise the balance on the same card —
+  // Stripe refuses to reuse a card that isn't saved to a Customer. If the Customer
+  // can't be had, the catch below takes the no-card path like any Stripe failure.
   let requiresPayment = false;
   const paymentIntents: BookingPaymentIntent[] = [];
-  if (jobId && hasDatabase) {
+  if (jobId && userId && hasDatabase) {
     try {
       const { stripeConfigured, authoriseBookingPayment, captureBookingDeposit } = await import("@/lib/stripe");
       if (stripeConfigured()) {
         const jid = jobId;
+        const customerId = await ensureStripeCustomer(userId);
+        if (!customerId) throw new Error("Stripe Customer unavailable");
         const breakdown = (p: number): MoneyBreakdown => (isVatRegistered() ? fromGross(p) : fromNet(p));
 
         // Create a pending Payment row, then run the Stripe call, then stamp it.
@@ -221,7 +230,7 @@ export async function createBooking(input: BookingInput): Promise<BookingResult>
           // (payment_intent.succeeded → 'captured' via the webhook).
           const dep = await openPayment(depositPence);
           const depRes = await captureBookingDeposit({
-            amountPence: depositPence, jobId: jid, paymentId: dep.id,
+            amountPence: depositPence, customerId, jobId: jid, paymentId: dep.id,
             idempotencyKey: `${reference}-deposit`, customerEmail: data.contact.email,
             description: `${service.name} deposit ${reference}`,
           });
@@ -233,7 +242,7 @@ export async function createBooking(input: BookingInput): Promise<BookingResult>
           // Balance — authorised now, captured on completion.
           const bal = await openPayment(balancePence);
           const balRes = await authoriseBookingPayment({
-            amountPence: balancePence, jobId: jid, paymentId: bal.id,
+            kind: "balance", amountPence: balancePence, customerId, jobId: jid, paymentId: bal.id,
             idempotencyKey: `${reference}-balance`, customerEmail: data.contact.email,
             description: `${service.name} balance ${reference}`,
           });
@@ -249,7 +258,7 @@ export async function createBooking(input: BookingInput): Promise<BookingResult>
           // Authorise the full amount.
           const payment = await openPayment(charge.gross);
           const res = await authoriseBookingPayment({
-            amountPence: charge.gross, jobId: jid, paymentId: payment.id,
+            kind: "full", amountPence: charge.gross, customerId, jobId: jid, paymentId: payment.id,
             idempotencyKey: reference, customerEmail: data.contact.email,
             description: `${service.name} booking ${reference}`,
           });
@@ -299,7 +308,7 @@ async function persistBooking({
   charge: MoneyBreakdown;
   discountAmount: number;
   discountCode?: string;
-}): Promise<string> {
+}): Promise<{ jobId: string; userId: string }> {
   const service = serviceBySlug(data.serviceSlug)!;
   const st = await db.serviceType.findUnique({ where: { slug: data.serviceSlug } });
   if (!st) throw new Error("ServiceType not seeded — run npm run db:seed");
@@ -387,7 +396,7 @@ async function persistBooking({
     data: { jobId: job.id, toStatus: "booked", note: `Booked online (${reference})` },
   });
 
-  return job.id;
+  return { jobId: job.id, userId: user.id };
 }
 
 async function sendPreContractEmail({

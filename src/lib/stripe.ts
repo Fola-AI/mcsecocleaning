@@ -22,61 +22,109 @@ export function getStripe(): Stripe | null {
 export const stripeConfigured = (): boolean => Boolean(process.env.STRIPE_SECRET_KEY);
 
 /**
- * Create a manual-capture PaymentIntent to AUTHORISE the booking amount. Capture
- * happens on job completion (Phase 3). Amount is gross pence.
+ * Create the Stripe Customer for one of our Users (§6.5). The idempotency key makes
+ * two simultaneous first bookings by the same user get the SAME Customer back.
+ * Callers go through ensureStripeCustomer (lib/payments), which stores the id.
  */
-export async function authoriseBookingPayment(params: {
+export async function createStripeCustomer(params: {
+  userId: string;
+  email: string;
+  name?: string | null;
+}): Promise<string | null> {
+  const stripe = getStripe();
+  if (!stripe) return null;
+  const customer = await stripe.customers.create(
+    { email: params.email, name: params.name ?? undefined, metadata: { userId: params.userId } },
+    { idempotencyKey: `customer-${params.userId}` }
+  );
+  return customer.id;
+}
+
+/** The three /book charges: a large job's deposit + balance, or the full amount. */
+export type BookingIntentKind = "deposit" | "balance" | "full";
+
+export interface BookingIntentInput {
   amountPence: number;
+  /** The booking's Stripe Customer. Required for deposit + balance (card reuse). */
+  customerId?: string;
   jobId?: string;
   /** Our Payment row id — carried in metadata so the webhook can reconcile the
-   *  authorisation even if the inline post-authorise DB update is lost. */
+   *  intent even if the inline post-create DB update is lost. */
   paymentId?: string;
   customerEmail?: string;
   description: string;
-  /** Stable key so a retried booking submit never authorises the card twice. */
-  idempotencyKey?: string;
-}): Promise<{ clientSecret: string | null; paymentIntentId: string } | null> {
+}
+
+/**
+ * PaymentIntent params for a /book charge (§6.5). Pure, so the rules that make the
+ * one-card deposit → balance flow work are unit-tested:
+ *  - every intent is created for the booking's Stripe Customer;
+ *  - the deposit is captured now AND saves the card to that Customer
+ *    (setup_future_usage on_session). Stripe only lets a card be used again once it
+ *    is saved to a Customer, and the balance is confirmed with the same card;
+ *  - deposit and balance are card-only, because only a card can be reused (Apple
+ *    Pay / Google Pay are cards and still show);
+ *  - balance and full are authorised now and captured on completion (manual).
+ * on_session, not off_session: the balance is confirmed straight away with the
+ * customer present, and capture on completion isn't a new payment. Nothing here
+ * charges the saved card later.
+ */
+export function bookingIntentParams(kind: BookingIntentKind, p: BookingIntentInput): Stripe.PaymentIntentCreateParams {
+  if ((kind === "deposit" || kind === "balance") && !p.customerId) {
+    throw new Error(`A ${kind} intent needs the booking's Stripe Customer — without it the card can't be reused for the balance.`);
+  }
+  const base: Stripe.PaymentIntentCreateParams = {
+    amount: p.amountPence,
+    currency: "gbp",
+    receipt_email: p.customerEmail,
+    description: p.description,
+    metadata: { jobId: p.jobId ?? "", paymentId: p.paymentId ?? "", ...(kind === "deposit" ? { kind: "deposit" } : {}) },
+    ...(p.customerId ? { customer: p.customerId } : {}),
+  };
+  if (kind === "deposit") {
+    // Captured at booking, not held — confirming client-side takes the money.
+    return { ...base, capture_method: "automatic", setup_future_usage: "on_session", payment_method_types: ["card"] };
+  }
+  if (kind === "balance") {
+    return { ...base, capture_method: "manual", payment_method_types: ["card"] };
+  }
+  return { ...base, capture_method: "manual" }; // authorise now, capture on completion
+}
+
+/**
+ * Create a manual-capture PaymentIntent to AUTHORISE a /book charge — the full
+ * amount, or a large job's balance. Capture happens on job completion. Amount is
+ * gross pence.
+ */
+export async function authoriseBookingPayment(
+  params: BookingIntentInput & {
+    kind?: "balance" | "full";
+    /** Stable key so a retried booking submit never authorises the card twice. */
+    idempotencyKey?: string;
+  }
+): Promise<{ clientSecret: string | null; paymentIntentId: string } | null> {
   const stripe = getStripe();
   if (!stripe) return null;
   const intent = await stripe.paymentIntents.create(
-    {
-      amount: params.amountPence,
-      currency: "gbp",
-      capture_method: "manual", // authorise now, capture on completion (§6.5)
-      receipt_email: params.customerEmail,
-      description: params.description,
-      metadata: { jobId: params.jobId ?? "", paymentId: params.paymentId ?? "" },
-    },
+    bookingIntentParams(params.kind ?? "full", params),
     params.idempotencyKey ? { idempotencyKey: params.idempotencyKey } : undefined
   );
   return { clientSecret: intent.client_secret, paymentIntentId: intent.id };
 }
 
 /**
- * Charge a deposit that is CAPTURED at booking (§6.5), not held — capture_method
- * automatic, so confirming client-side takes the money immediately. Used for the
- * 25% deposit on large jobs; the balance is authorised separately and captured on
- * completion. Returns the client secret to confirm and the intent id.
+ * Charge a deposit that is CAPTURED at booking (§6.5), not held. Used for the 25%
+ * deposit on large jobs; it also saves the card to the booking's Customer so the
+ * balance can be authorised on it. Returns the client secret to confirm and the
+ * intent id.
  */
-export async function captureBookingDeposit(params: {
-  amountPence: number;
-  jobId?: string;
-  paymentId?: string;
-  customerEmail?: string;
-  description: string;
-  idempotencyKey?: string;
-}): Promise<{ clientSecret: string | null; paymentIntentId: string } | null> {
+export async function captureBookingDeposit(
+  params: BookingIntentInput & { customerId: string; idempotencyKey?: string }
+): Promise<{ clientSecret: string | null; paymentIntentId: string } | null> {
   const stripe = getStripe();
   if (!stripe) return null;
   const intent = await stripe.paymentIntents.create(
-    {
-      amount: params.amountPence,
-      currency: "gbp",
-      capture_method: "automatic", // deposit is captured at booking, not held
-      receipt_email: params.customerEmail,
-      description: params.description,
-      metadata: { jobId: params.jobId ?? "", paymentId: params.paymentId ?? "", kind: "deposit" },
-    },
+    bookingIntentParams("deposit", params),
     params.idempotencyKey ? { idempotencyKey: params.idempotencyKey } : undefined
   );
   return { clientSecret: intent.client_secret, paymentIntentId: intent.id };

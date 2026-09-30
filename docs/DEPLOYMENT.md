@@ -67,6 +67,10 @@ is quiet data loss.
 - **`2026-09-28-authjs-tables.sql`** — Auth.js `Account` / `Session` /
   `VerificationToken` tables + `User.emailVerified` / `User.image`. Additive; run
   before the first DB-backed deploy that includes Auth.js RBAC.
+- **`2026-09-30-user-stripe-customer-id.sql`** — `User.stripeCustomerId` + unique
+  index (one Stripe Customer per user, so the deposit's card can authorise the
+  balance). Additive, re-runnable; run before the first DB-backed deploy that
+  includes the Stripe Customer change.
 - **`2026-09-30-payment-checkout-session-id.sql`** — `Payment.stripeCheckoutSessionId`
   (the handle that expires an unpaid payment link on cancellation). Additive,
   re-runnable; run before the first DB-backed deploy that includes the payment-link /
