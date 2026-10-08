@@ -1,8 +1,8 @@
 # mcsecocleaning
 
-A UK eco-friendly cleaning company platform: a search-optimised marketing site, an online booking & payments system, an operations/crew system, and a customer portal. Built to the spec in [`docs/mcsecocleaning_PRD_v2.1.md`](docs/mcsecocleaning_PRD_v2.1.md).
+A UK eco-friendly cleaning company platform: a search-optimised marketing site, an online booking & payments system, an operations/crew system, and a customer portal. Built to the spec in [`PRD.md`](PRD.md).
 
-**Status: Phase 1 (Foundation & Marketing Site) — built, shippable.** See [`docs/BUILD-STATUS.md`](docs/BUILD-STATUS.md) for the phase-by-phase state and the business inputs still required before launch.
+**Status: Phases 1–2 built (marketing site, booking, payments) — never yet run against a real database or Stripe. Phases 3–5 are in progress as stages L1–L15.** See [`PROGRESS.md`](PROGRESS.md) for where the build stands, what needs Fola, and the business inputs still required before launch. The rules the build follows are in [`CLAUDE.md`](CLAUDE.md); the blueprint is [`PRD.md`](PRD.md).
 
 ## Stack
 
@@ -10,11 +10,11 @@ A UK eco-friendly cleaning company platform: a search-optimised marketing site, 
 |---|---|
 | Framework | Next.js 16 (App Router, SSR/SSG), React 19, TypeScript |
 | Styling | Tailwind CSS v4, custom eco design system |
-| Database | PostgreSQL via Prisma 6 (Neon/Supabase, eu-west-2) |
+| Database | Neon PostgreSQL via Prisma 6 (eu-west-2) |
 | Scheduler/queue | Inngest (durable cron + event functions) |
-| Payments | Stripe (Phase 2) |
+| Payments | Stripe (built) |
 | Email / SMS | Resend / Twilio |
-| Object storage | Cloudflare R2 (Phase 5) |
+| Object storage | Cloudflare R2 (stage L7) |
 | Hosting | Vercel (London) |
 
 ## Getting started

@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Read", "Edit", "Write",
+      "Bash(npm:*)", "Bash(npx:*)", "Bash(node:*)", "Bash(tsx:*)",
+      "Bash(psql:*)", "Bash(stripe listen:*)", "Bash(stripe trigger:*)",
+      "Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)",
+      "Bash(git show:*)", "Bash(git add:*)", "Bash(git commit:*)",
+      "Bash(git branch:*)", "Bash(git checkout:*)", "Bash(git switch:*)",
+      "Bash(git stash:*)", "Bash(git push origin build/autonomous:*)",
+      "Bash(ls:*)", "Bash(cat:*)", "Bash(head:*)", "Bash(tail:*)",
+      "Bash(sed:*)", "Bash(grep:*)", "Bash(find:*)", "Bash(wc:*)",
+      "Bash(mkdir:*)", "Bash(mv:*)"
+    ],
+    "deny": [
+      "Bash(git push origin main:*)",
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(vercel:*)",
+      "Read(./.env.production*)"
+    ]
+  }
+}
