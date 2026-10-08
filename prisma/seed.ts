@@ -4,6 +4,10 @@
  *
  * Run once a real DATABASE_URL is provisioned:  npm run db:seed
  * Safe to re-run (idempotent upserts).
+ *
+ * The dev-database guard is asserted here as well as in the npm script, because
+ * `prisma db seed` invokes this file directly through prisma.config.ts and so
+ * never passes through the script.
  */
 import { PrismaClient, PricingModel } from "@prisma/client";
 import { services } from "../src/config/services";
@@ -11,10 +15,13 @@ import { getRateCard } from "../src/lib/pricing/rate-card";
 import { fromPriceFor } from "../src/lib/pricing/from-price";
 import { areas, canPublishLocationPage, locationWordCount } from "../src/config/areas";
 import { serviceTemplates } from "../src/config/checklists";
+import { assertDevDatabase } from "../scripts/assert-dev-db";
 
 const db = new PrismaClient();
 
 async function main() {
+  assertDevDatabase();
+
   // Owner (RBAC, §3) — only seeded roles reach /admin. This is the single owner
   // account; the rate-card editor (§9.7) is owner-only. Additional admin/ops users
   // are added later. Idempotent: re-seeding keeps the role owner.

@@ -1,11 +1,14 @@
 import Link from "next/link";
 import { site, formatAddress } from "@/config/site";
 import { orderedServices } from "@/config/services";
+import { crewAssurancePhrase } from "@/lib/trust";
 
 /**
  * Footer with Companies Act 2006 details (registered name, number, address)
  * and the NAP that MUST match the Google Business Profile (§5.8, §8, §10.2).
  */
+const crewPhrase = crewAssurancePhrase();
+
 export function Footer() {
   const year = new Date().getFullYear();
   return (
@@ -76,7 +79,8 @@ export function Footer() {
             {site.company.vatNumber ? ` VAT number ${site.company.vatNumber}.` : ""}
           </p>
           <p className="mt-2">
-            © {year} {site.company.registeredName}. Fully insured &amp; DBS-checked crews.
+            © {year} {site.company.registeredName}.{" "}
+            {crewPhrase ? `${crewPhrase[0].toUpperCase()}${crewPhrase.slice(1)} crews. ` : ""}
             Registered with the ICO ({site.company.icoRegistration}).
           </p>
         </div>

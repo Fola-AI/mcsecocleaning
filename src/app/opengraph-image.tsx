@@ -1,5 +1,6 @@
 import { ImageResponse } from "next/og";
 import { site } from "@/config/site";
+import { confirmedTrustBadges } from "@/lib/trust";
 
 export const alt = `${site.name} — eco-friendly cleaning`;
 export const size = { width: 1200, height: 630 };
@@ -64,10 +65,13 @@ export default function OgImage() {
           </div>
         </div>
 
+        {/* Confirmed claims only — the OG card is as public as a page (§12.4). */}
         <div style={{ display: "flex", gap: 28, fontSize: 24, opacity: 0.9 }}>
-          <span>🛡️ £5m public liability</span>
-          <span>✅ DBS-checked crews</span>
-          <span>♻️ Non-toxic products</span>
+          {confirmedTrustBadges()
+            .slice(0, 3)
+            .map((b) => (
+              <span key={b.label}>{`${b.icon} ${b.label}`}</span>
+            ))}
         </div>
       </div>
     ),

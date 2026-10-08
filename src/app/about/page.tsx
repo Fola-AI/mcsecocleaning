@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { site } from "@/config/site";
+import { hasAnyVettingClaim, vettingSentence } from "@/lib/trust";
 import { buildMetadata } from "@/lib/seo/metadata";
 import { PageHeader } from "@/components/marketing/PageHeader";
 import { Section, SectionHeading } from "@/components/marketing/Section";
@@ -8,13 +8,17 @@ import { CtaBanner } from "@/components/marketing/CtaBanner";
 export const metadata: Metadata = buildMetadata({
   title: "About us",
   description:
-    "We're an eco-friendly cleaning company that employs and trains its own crews — not a marketplace. Insured, DBS-checked, and transparent about pricing and results.",
+    "We're an eco-friendly cleaning company that employs and trains its own crews — not a marketplace. Transparent about pricing, and we photograph every job.",
   path: "/about",
 });
 
 const values = [
   { icon: "👥", title: "Our own crews", body: "We employ and train our cleaners — not a marketplace of strangers. Consistent people, consistent standards." },
-  { icon: "🛡️", title: "Insured & vetted", body: `${site.trust.publicLiabilityCover} public liability and DBS-checked staff. We take being trusted in your home seriously.` },
+  // Rendered only when Fola has confirmed at least one vetting claim; the card
+  // exists to carry them and says nothing without one (§12.4).
+  ...(hasAnyVettingClaim()
+    ? [{ icon: "🛡️", title: "Insured & vetted", body: `${vettingSentence()!.replace(/^Yes — /, "")}` }]
+    : []),
   { icon: "♻️", title: "Greener by default", body: "Non-toxic products as standard, because a clean home shouldn't cost you clean air." },
   { icon: "📸", title: "Proof, not promises", body: "Before/after photos of every job and a re-clean guarantee. You see exactly what was done." },
 ];

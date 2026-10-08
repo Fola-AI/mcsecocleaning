@@ -1,16 +1,14 @@
-import { site } from "@/config/site";
+import { confirmedTrustBadges } from "@/lib/trust";
 
-/** Trust bar (§8): insurance, DBS, guarantee, eco, published prices. */
-const items = [
-  { icon: "🛡️", label: `${site.trust.publicLiabilityCover} public liability` },
-  { icon: "✅", label: "DBS-checked crews" },
-  { icon: "♻️", label: "Non-toxic eco products" },
-  { icon: "📸", label: "Before/after photos" },
-  { icon: "↩️", label: "Re-clean guarantee" },
-  { icon: "£", label: "Fixed prices online" },
-];
-
+/**
+ * Trust bar (§8, §12.4). Renders only the claims Fola has confirmed in
+ * `src/config/site.ts` — insurance and DBS stay out until then. Never hardcode
+ * a claim here; see `src/lib/trust.ts`.
+ */
 export function TrustBar() {
+  const items = confirmedTrustBadges();
+  if (items.length === 0) return null;
+
   return (
     <div className="border-y border-line bg-brand-tint">
       <ul className="container-page flex flex-wrap items-center justify-center gap-x-6 gap-y-2 py-3 text-sm font-medium text-brand-ink">

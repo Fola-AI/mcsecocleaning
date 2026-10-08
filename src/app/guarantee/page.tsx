@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/marketing/PageHeader";
 import { Section, SectionHeading } from "@/components/marketing/Section";
 import { Faq } from "@/components/marketing/Faq";
 import { CtaBanner } from "@/components/marketing/CtaBanner";
+import { damageHandlingSentence } from "@/lib/trust";
 
 export const metadata: Metadata = buildMetadata({
   title: "Our re-clean guarantee",
@@ -24,7 +25,7 @@ const faqs = [
   },
   {
     q: "What if something was damaged?",
-    a: "Damage is handled separately from a cleaning complaint. Tell us as soon as you can with photos; we're fully insured and will guide you through it properly.",
+    a: damageHandlingSentence(),
   },
 ];
 

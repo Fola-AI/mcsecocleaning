@@ -12,6 +12,7 @@ import { Reviews } from "@/components/marketing/Reviews";
 import { Faq } from "@/components/marketing/Faq";
 import { CtaBanner } from "@/components/marketing/CtaBanner";
 import { JsonLd, faqLd } from "@/lib/seo/jsonld";
+import { confirmedTrustLabels, crewAssurancePhrase, vettingSentence } from "@/lib/trust";
 import { buildMetadata } from "@/lib/seo/metadata";
 
 export const metadata: Metadata = buildMetadata({
@@ -20,8 +21,13 @@ export const metadata: Metadata = buildMetadata({
   path: "/",
 });
 
-// Trust badges inline (§12.1.4).
-const TRUST_BADGES = ["Fully insured", "DBS-checked", "Eco products", "Re-clean guarantee"];
+// Trust badges inline (§12.1.4). Only the claims Fola has confirmed in
+// src/config/site.ts appear — see src/lib/trust.ts.
+const TRUST_BADGES = confirmedTrustLabels();
+
+// An adjective phrase naming the confirmed vetting claims, or null — in which
+// case step 2 reads "Our crew" instead. See src/lib/trust.ts.
+const crewPhrase = crewAssurancePhrase();
 
 const differentiators = [
   {
@@ -48,7 +54,11 @@ const differentiators = [
 
 const steps = [
   { n: 1, title: "Book or get a quote", body: "Instant fixed price for a standard job, or ask for a tailored quote on a larger one." },
-  { n: 2, title: "We arrive equipped", body: "An insured, DBS-checked crew arrives with non-toxic products and everything the job needs." },
+  {
+    n: 2,
+    title: "We arrive equipped",
+    body: `${crewPhrase ? `An ${crewPhrase} crew` : "Our crew"} arrives with non-toxic products and everything the job needs.`,
+  },
   { n: 3, title: "Inspection-ready", body: "We clean to a checklist and send before/after photos — proof the job was done right." },
 ];
 
@@ -61,10 +71,9 @@ const homeFaqs = [
     q: "Are your prices really fixed?",
     a: "Yes. You get a fixed, VAT-inclusive price online based on your actual rooms. The only changes are ones you ask for — extra rooms or add-ons found on the day — and we agree those with you first.",
   },
-  {
-    q: "Are you insured and vetted?",
-    a: `Yes — ${site.trust.publicLiabilityCover} public liability cover and DBS-checked crews. We treat your home and your keys with the seriousness they deserve.`,
-  },
+  // Asked only when there is a confirmed answer — a hollow one is worse than
+  // no FAQ entry at all (§12.4).
+  ...(vettingSentence() ? [{ q: "Are you insured and vetted?", a: vettingSentence()! }] : []),
   {
     q: "Do you cover my area?",
     a: "We're launching in selected London areas and expanding. Enter your postcode on any page — if we're not there yet, join the waitlist and we'll tell you when we are.",
@@ -119,12 +128,15 @@ export default function HomePage() {
             </div>
 
             {/* Trust badges inline (§12.1.4) — also the §12.4 filler for the
-                social-proof slot until real numbers earn their place. */}
-            <ul className="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-sm font-medium text-brand-ink">
-              {TRUST_BADGES.map((b) => (
-                <li key={b}>✓ {b}</li>
-              ))}
-            </ul>
+                social-proof slot until real numbers earn their place. Empty if
+                nothing is confirmed, in which case the strip is omitted. */}
+            {TRUST_BADGES.length > 0 && (
+              <ul className="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-sm font-medium text-brand-ink">
+                {TRUST_BADGES.map((b) => (
+                  <li key={b}>✓ {b}</li>
+                ))}
+              </ul>
+            )}
           </div>
 
           {/* Above-the-fold quote widget (§12) — the instant "book" mechanism. */}

@@ -11,6 +11,8 @@
  * price. pricingModel is kept only to describe HOW a service is priced.
  */
 
+import { commercialAssuranceLine } from "@/lib/trust";
+
 export type SelfServe = "self-serve" | "rfq";
 export type PricingModel = "room" | "hourly" | "quoted";
 
@@ -212,7 +214,7 @@ export const services: Service[] = [
     includes: [
       "Contract scoped to your site, floor types, WCs, access hours and waste needs",
       "Documented eco-friendly practice for ESG and tender requirements",
-      "Fully insured and DBS-checked crews with consistent assignment",
+      commercialAssuranceLine(),
       "Bacs Direct Debit or invoice / net-30 billing",
     ],
     accent: "slate",
@@ -249,7 +251,7 @@ export const services: Service[] = [
       "Entrances, stairwells, corridors, lifts, bin stores and glazing",
       "Scheduled recurring visits with photographic proof of attendance",
       "Billing to the managing agent, separate from the site contact and residents",
-      "Fully insured crews and documented eco-friendly products",
+      commercialAssuranceLine({ suffix: "and documented eco-friendly products" }),
     ],
     accent: "sun",
     faqs: [

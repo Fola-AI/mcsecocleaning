@@ -67,12 +67,53 @@ export const site = {
     ],
   },
 
-  /** Trust-bar facts (§8). Keep truthful — these are E-E-A-T signals. */
+  /**
+   * Trust claims (§8, §12.4). Keep truthful — these are E-E-A-T signals, and
+   * an untrue one is a DMCC 2024 problem as well as a reputational one.
+   *
+   * Every claim carries an explicit `confirmed` flag and renders ONLY when that
+   * flag is true. Unconfirmed claims are **withheld, not softened**: "fully
+   * insured", "DBS-checked" and a cover figure are factual assertions about the
+   * business, and a PLACEHOLDER value is not confirmation (`CLAUDE.md` →
+   * *Content and compliance rules*). The guarantee and eco badges fill the
+   * space, per §12.4's caution against padding the trust bar.
+   *
+   * Fola flips the first four once the insurer schedule and the DBS position
+   * are in hand — `PROGRESS.md` Q-3. The last four are our own process or
+   * positioning, verifiable on the site itself, so they ship confirmed.
+   *
+   * Resolve these through `src/lib/trust.ts`. Never read a claim field directly
+   * in a component and never hardcode the wording — `trust.test.ts` scans for
+   * exactly that and fails the suite.
+   */
   trust: {
-    publicLiabilityCover: "£5m", // PLACEHOLDER — confirm with insurer (§10.4)
-    yearsTrading: null as number | null, // PLACEHOLDER
-    dbsChecked: true,
-    reCleanGuarantee: true,
+    /** Public liability cover. `cover` is the rendered wording, e.g. "£5m". */
+    publicLiability: {
+      confirmed: false, // TODO(business-input) — insurer + cover figure (§14.5, Q-3)
+      cover: "£5m", // PLACEHOLDER — do not set confirmed on this value
+      insurer: null as string | null, // PLACEHOLDER
+    },
+    /** Whether crews hold current enhanced DBS checks. */
+    dbsChecked: {
+      confirmed: false, // TODO(business-input) — confirm the DBS position (Q-3)
+    },
+    /** The umbrella "fully insured" claim — needs the whole schedule, not just PL. */
+    insured: {
+      confirmed: false, // TODO(business-input) — PL + treatment/CCC + employers' (§14.5)
+    },
+    /** Years trading. Unconfirmed means the claim is omitted entirely (§14.3). */
+    yearsTrading: {
+      confirmed: false,
+      years: null as number | null, // PLACEHOLDER
+    },
+    /** Our own promise, not a third-party fact (§9.5). */
+    reCleanGuarantee: { confirmed: true },
+    /** Our own positioning. Note we do NOT claim "eco-certified" anywhere. */
+    ecoProducts: { confirmed: true },
+    /** We photograph every job — our own process (§9.4). */
+    photoProof: { confirmed: true },
+    /** Prices are published on /prices, verifiable on the site itself (§12.3). */
+    publishedPrices: { confirmed: true },
   },
 
   social: {
