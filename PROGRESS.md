@@ -48,7 +48,9 @@ Earlier figures in this file came from a 30 Sep snapshot of `main` and were wron
 | Prisma models / enums | 36 / 20 | **36 / 20** (unchanged) |
 | Manual migrations | 6 | **9** |
 
-The branch is 6 commits ahead of `main` and has **never been pushed** — it exists only on this Mac. Nothing in it is on GitHub.
+The branch was 6 commits ahead of `main` and had **never been pushed**. `build/autonomous` is cut from it and is now on GitHub.
+
+> This table is the **pre-L1 baseline**, fixed at commit `2cfdf3d`, and is deliberately not updated as stages land — it is what each stage's work is measured against. After L1 the branch stands at 130 `src/` files, 21 test files and **190 tests**; see the L1 evidence below. Nothing in it is on GitHub.
 
 ### Verify gate — all green on the working branch
 
