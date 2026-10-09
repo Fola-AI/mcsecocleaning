@@ -1,8 +1,8 @@
 # mcsecocleaning
 
-A UK eco-friendly cleaning company platform: a search-optimised marketing site, an online booking & payments system, an operations/crew system, and a customer portal. Built to the spec in [`PRD.md`](PRD.md).
+A UK eco-friendly cleaning company platform: a search-optimised marketing site, an online booking & payments system, an operations/crew system, and a customer portal. Built to the spec in [`PRD.md`](docs/PRD.md).
 
-**Status: Phases 1–2 built (marketing site, booking, payments) — never yet run against a real database or Stripe. Phases 3–5 are in progress as stages L1–L15.** See [`PROGRESS.md`](PROGRESS.md) for where the build stands, what needs Fola, and the business inputs still required before launch. The rules the build follows are in [`CLAUDE.md`](CLAUDE.md); the blueprint is [`PRD.md`](PRD.md).
+**Status: Phases 1–2 built (marketing site, booking, payments) — never yet run against a real database or Stripe. Phases 3–5 are in progress as stages L1–L15.** See [`PROGRESS.md`](docs/PROGRESS.md) for where the build stands, what needs Fola, and the business inputs still required before launch. The rules the build follows are in [`CLAUDE.md`](docs/CLAUDE.md); the blueprint is [`PRD.md`](docs/PRD.md).
 
 ## Stack
 

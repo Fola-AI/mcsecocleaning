@@ -1,8 +1,8 @@
-# mcsecocleaning — PRD (v2.2)
+# mcsecocleaning — PRD (v2.2.1)
 
 **File:** `PRD.md` (repo root) — the single source of truth for the product
-**Date:** 8 October 2026
-**Supersedes:** v2.1 (`docs/archive/mcsecocleaning_PRD_v2.1.md`), v2.0, v1.0 and every task brief
+**Date:** 9 October 2026 (v2.2 of 8 October, revised after an external review of `build/autonomous`)
+**Supersedes:** v2.2, v2.1 (`docs/archive/mcsecocleaning_PRD_v2.1.md`), v2.0, v1.0 and every task brief
 **Market:** United Kingdom · **Currency:** GBP · **Owner:** Fola (Afolabi Ajao)
 
 v2.2 is v2.1 plus: the stack locked as built, as-built pricing and homepage notes, the decisions taken during the reviewed Phase 1–2 build (§17), and a replacement build plan written as stages L1–L15 for autonomous execution (§16). Verified against the working branch `fix/pre-phase3-gate` (head `2cfdf3d`) on 8 October 2026, with the full verify gate run — see `PROGRESS.md` → *Baseline*.
@@ -12,6 +12,19 @@ v2.2 is v2.1 plus: the stack locked as built, as-built pricing and homepage note
 ---
 
 ## 1. Changelog
+
+### v2.2.1 (9 October 2026)
+
+External review of `build/autonomous` at `77852e5` (L1 complete). The stage plan missed three Phase 2 gaps; they are now L2 work. Nothing already built or decided is reopened.
+
+| Change | Where |
+| --- | --- |
+| Current position recorded: L1 ✅, L2 blocked on `.env.local` | §16.1 |
+| Gap 1: a recurring booking creates no `Subscription` — added to L2 | §16.1, L2 |
+| Gap 2: no way to collect once a card hold lapses (bookings > ~7 days ahead, every recurring visit) — added to L2, mechanism is Fola's SETUP D7 | §16.1, L2 |
+| Gap 3: an exported server action with no auth decision — fix and a guard test added to L2 | §16.1, L2 |
+| New gate D (recurring booking end to end) and stronger L2 acceptance | L2 |
+| "Cash" removed from admin-created bookings — §12.5 and the as-built code already forbid it | §9.7, L3 |
 
 ### v2.2 (8 October 2026)
 
@@ -630,7 +643,7 @@ Per-service-type task templates completed on site. This is how quality stays con
 
 Beyond that: job board with filters and reassignment; crew roster with DBS and insurance expiry warnings; customer records; quote overrides with a required reason (feeding back into §5); payments queue; and the agent approval inbox (§11).
 
-**Admin-created bookings are required from Phase 2.** In the first 12 months a large share of bookings will arrive by phone, WhatsApp or referral. Admin MUST be able to create a customer, property and job manually, take payment by payment link, or mark as invoice or cash. Without it the business cannot operate on day one. CSV import for any existing client list is also required.
+**Admin-created bookings are required from Phase 2.** In the first 12 months a large share of bookings will arrive by phone, WhatsApp or referral. Admin MUST be able to create a customer, property and job manually, take payment by payment link, or mark as invoice (no cash — §12.5, enforced in `src/app/actions/admin.ts`). Without it the business cannot operate on day one. CSV import for any existing client list is also required.
 
 ### 9.8 Payroll
 
@@ -1205,13 +1218,21 @@ AgentAction             [v2.1 — replaces AIInsight, §11]
 | --- | --- |
 | Phase 0 — pre-build (no code) | Fola's workstream; checklist in `docs/PHASE-0-CHECKLIST.md`. Cost-per-crew-hour model outstanding (§16.7) |
 | Phase 1 — foundation and marketing site | Built; deployed to Vercel `*.vercel.app` with `noindex` (build-enforced guard). Company details in `src/config/site.ts` are still `PLACEHOLDER`s (26 of them) |
-| Phase 2 — booking and payments | Built: engine + rate card, capacity, 8-step wizard, CCR consent, recurrence, discounts, admin bookings, CSV import, Stripe authorise/deposit/capture/refund/re-charge, Auth.js RBAC, customer account. **Never run against a real database or Stripe.** The four Stripe bugs from the pre-Phase-3 runbook are fixed on `fix/pre-phase3-gate`, which is 6 commits ahead of `main`, **unpushed**, and adds migrations #7–#9 |
+| Phase 2 — booking and payments | Built: engine + rate card, capacity, 8-step wizard, CCR consent, recurrence, discounts, admin bookings, CSV import, Stripe authorise/deposit/capture/refund/re-charge, Auth.js RBAC, customer account. **Never run against a real database or Stripe.** Three gaps found 9 Oct 2026 — see below; recurring bookings are not wired end to end The four Stripe bugs from the pre-Phase-3 runbook are fixed on `fix/pre-phase3-gate`, which is 6 commits ahead of `main`, **unpushed**, and adds migrations #7–#9 |
 | Phases 3–5 | Not started → stages L3–L15. Prisma models for most of it already exist |
 | Agent layer | Post-launch (§16.4) |
 
 **As built on `fix/pre-phase3-gate` (head `2cfdf3d`), verified 8 Oct 2026:** 126 TypeScript files in `src/` (~12,600 lines), 18 test files, **127 unit tests passing**; 36 Prisma models and 20 enums; 9 manual migrations, none applied to any real database. Typecheck, lint, unit tests and `next build` (including the price-parity gate) are all green. On `main`: 119 files, 14 test files, 6 migrations.
 
 **The environment is not yet ready for ignition.** There is no `.env.local`; the only env file present is a stale `.env` carrying the `.env.example` placeholders (`DATABASE_URL` points at `localhost`, which `hasDatabase` correctly reads as "no database"). No Neon `dev` branch connection string, no Stripe test key, no `DEV_DB_HOST`. `SETUP.md` §3 must be completed before L2 can start; L1 runs without any of it. Detail in `PROGRESS.md`.
+
+**Position on 9 October 2026** (external review of `build/autonomous` at `77852e5`): L1 is ✅ with evidence in `PROGRESS.md`. The fix branch's commits are on `build/autonomous`, which is on GitHub, 10 commits ahead of `main`. L2 is ⛔ blocked until Fola creates `.env.local` (SETUP §3–§4). Every later stage depends on L2.
+
+**Phase 2 gaps found 9 October 2026 — not covered by the 8 October stage text, now L2 work:**
+
+1. **A recurring booking creates no `Subscription`.** `createBooking` (`src/app/actions/booking.ts`) writes one `Job` and records the frequency only in `Job.notes`; nothing in `src/` creates a `Subscription` row (`adminCreateBooking` likewise). The daily materialiser (`src/lib/inngest/subscriptions.ts`) and the customer pause/resume/cancel actions therefore have nothing to act on. A customer who picks "weekly" today gets one clean. This is the recurring-revenue path §2 calls the business.
+2. **No collection path once a card hold lapses.** Card authorisations last about 7 days (the code says so in `src/app/actions/payments.ts`), but the wizard offers slots up to 21 days ahead (`bookingHorizonDays` in `src/config/availability.ts`). The deposit intent saves the card with `setup_future_usage: "on_session"` only, and `src/lib/stripe.ts` states that nothing charges a saved card later. So: a one-off booked more than ~7 days ahead, a large job's balance more than ~7 days ahead, and every materialised recurring visit (`paymentStatus: "pending"`, no charge path) all fall through to the manual re-charge email. That contradicts §8 ("Domestic recurring — card on file, charged off-session per visit"). §8 allows two compliant mechanisms; which one is Fola's decision, **SETUP D7**.
+3. **An exported server action with no authorisation decision.** `prepareOutstandingCheckoutForVerifiedJob` is exported from the `"use server"` module `src/app/actions/payments.ts` and calls no auth check; its name relies on the caller having verified ownership. Every export of a `"use server"` file is a server action and must authorise itself (`CLAUDE.md` → *Security rules*). It returns a Checkout URL plus the customer's name and email for any job id it is given.
 
 ### 16.2 How stages work
 
@@ -1245,8 +1266,12 @@ AgentAction             [v2.1 — replaces AIInsight, §11]
 - Add Playwright and an `npm run test:e2e` script (unit tests stay on `node --test` via `tsx`). Automate the runbook gates (`docs/DEPLOYMENT.md` §4b): **A** large job — deposit and balance on the same card including a 3DS challenge, then capture on completion; **B** full-amount job; **C** cooling-off cancel and refund. Add: declined card, expired card, off-session failure on the balance, duplicate webhook delivery (replay the same event id), Checkout-Session re-charge reconciliation.
 - Assert at each step: `Payment` rows, `Job.paymentStatus` derivation, `WebhookEvent` status, audit notes, Stripe object state.
 - Build the deferred **payment-link reissue**: "Copy payment link" on the `/admin/jobs` row while the session is open (fetched by saved session id), "Reissue" once expired.
+- **Gap 1 — recurring bookings create a `Subscription`** (§16.1). When frequency ≠ `one_off`, `createBooking` and `adminCreateBooking` create a `Subscription`: `recurrenceRule` from the frequency plus the chosen slot's weekday and Europe/London start time (via `rrule` — test that a Tuesday 09:00 series stays 09:00 London across both BST/GMT changes), property, service, per-visit `pricePerVisitNet` / `vatAmount` / `gross` from the quote's per-visit figures, `firstCleanSurchargeApplied`. The booked slot becomes the subscription's first `Job` (`subscriptionId` set, priced as the first visit); the materialiser generates the rest and must never duplicate that first visit. Existing pause/resume/cancel actions then act on a real row. Any missing field is an additive migration (Review queue). No price figure changes.
+- **Gap 2 — collecting once the card hold lapses** (§16.1). The mechanism is Fola's **SETUP D7**; do not choose one. If D7 is answered, build it with tests for: a one-off booked ≥ 8 days ahead, a large job's balance ≥ 8 days ahead, and recurring visits 2+; an off-session failure (test card `4000 0027 6000 3184`) falls back to the existing re-charge path and flags admin without touching the job (schedule ≠ billing). If the mechanism changes what the customer agrees to at booking (saving their card for later charges), that consent and pre-contract wording is legal wording: draft it, park it as an open question, and do not ship it unapproved. If D7 is blank, park this item as Q-10, finish the rest of L2, and record "bookings more than ~7 days ahead and recurring visits are not collected automatically" as a known gap in the Checkpoint 1 merge notes. Do not shorten `bookingHorizonDays` yourself — that is the D7 option C.
+- **Gap 3 — every server action authorises itself** (§16.1). Move `prepareOutstandingCheckout` and its "verified job" wrapper out of the `"use server"` module into `src/lib/` with `import "server-only"`, so the only callable entry points are `payMyOutstanding` (ownership-scoped) and `rechargeOutstanding` (role-gated). Add a test that reads every `src/app/actions/*.ts` export and fails unless it calls `requireRole` or the customer ownership guard, or is on an explicit public allow-list (`getSlots`, `createBooking`, `submitLead`). Review queue.
+- **Gate D — recurring booking end to end:** book weekly → exactly one `Subscription` and one first `Job` → run the materialiser twice → the series exists with no duplicate first visit → complete visit 2 → payment collected per D7 (or the parked gap recorded).
 
-**Acceptance:** drift check empty; gates A/B/C and the failure cases pass end to end against `dev` and Stripe test mode; a duplicate webhook neither double-charges nor double-creates; output pasted. **→ Merge checkpoint 1.**
+**Acceptance:** drift check empty; gates A/B/C/D and the failure cases pass end to end against `dev` and Stripe test mode (gate D's payment step only where D7 is answered); a duplicate webhook neither double-charges nor double-creates; a recurring booking produces exactly one `Subscription` and a non-duplicated series; the server-action auth test passes; output pasted. **→ Merge checkpoint 1.**
 
 #### L3 — Admin operations core
 **Depends on:** L2.
@@ -1256,7 +1281,7 @@ AgentAction             [v2.1 — replaces AIInsight, §11]
 - Failed-payment queue (visible queue, not an email). Customer records.
 - Blackout dates: affected materialised jobs are flagged (or shifted per a per-date setting) — never silently generated.
 - Recurrence: tests across a bank holiday and both BST/GMT transitions (store UTC, render Europe/London).
-- Confirm or build: discount codes (§10.2), admin-created bookings with payment link / invoice / cash-as-admin-exception (§9.7), CSV client import.
+- Confirm or build: discount codes (§10.2), admin-created bookings with payment link / invoice — no cash on any path (§12.5; already enforced in `src/app/actions/admin.ts`), CSV client import.
 
 **Acceptance:** Today view answers "what's the state of today" from seeded data in one screen; illegal transitions rejected; recurrence tests pass across the boundaries.
 
@@ -1446,4 +1471,4 @@ Code comments cite PRD **v2.0** section numbers. Map them as follows: v2.0 §4 p
 
 ---
 
-**End of PRD v2.2**
+**End of PRD v2.2.1**

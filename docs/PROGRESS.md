@@ -2,22 +2,44 @@
 
 > **For Fola:** this is the one file to check. The top section shows where things stand and whether anything needs you. **For Claude Code:** this is the only status file you write. Update it after every completed item.
 
+## ⛔ STOPPED — 9 Oct 2026 · `.env.local` does not exist
+
+The session that was asked to start L2 could not. **`.env.local` is still absent from the repo root**, so every key L2 needs is missing. Nothing was built; the branch is unchanged except for the documentation repairs logged under *Session — 9 Oct 2026 (L2 attempt)* below.
+
+**The nine keys L2 needs, all absent** (checked by name, 9 Oct 2026 — no `.env.local` file, and none of them set in the shell either):
+
+| Key | What it is | SETUP.md |
+| --- | --- | --- |
+| `DATABASE_URL` | Neon `dev` **pooled** string (host contains `-pooler`), `&connect_timeout=15` appended | §3.1 |
+| `DIRECT_URL` | Neon `dev` **direct** string (pooling off), same suffix | §3.1 |
+| `DEV_DB_HOST` | the direct host, the `ep-…` part between `@` and `/` — this is what stops the agent touching any other database | §3.1 |
+| `AUTH_SECRET` | `npx auth secret` | §3.5 |
+| `ACCESS_CODE_ENC_KEY` | `openssl rand -base64 32` | §3.6 |
+| `STRIPE_SECRET_KEY` | `sk_test_…`, **test mode only** | §3.3 |
+| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | `pk_test_…` | §3.3 |
+| `RESEND_API_KEY` | existing key | §3.4 |
+| `DEV_EMAIL_REDIRECT` | Fola's own inbox — every non-production email goes here | §3.4 |
+
+**To clear this stop:** create `.env.local` at the repo root from `SETUP.md` §4, then **delete the stale `.env`** (it still carries the `.env.example` `localhost` placeholder for `DATABASE_URL`/`DIRECT_URL`, and `prisma.config.ts` loads `.env.local` first precisely so that placeholder cannot win — see R-1). Nothing else is blocking.
+
+**Also still blank: SETUP D7** (Q-10). D7 is read, not inferred — all three boxes are unticked. So even once `.env.local` exists, L2 builds gaps 1 and 3 in full and **parks gap 2** (collecting payment once a card hold lapses) as Q-10, exactly as the revised L2 stage instructs. Answering D7 in the same sitting as `.env.local` is what avoids a second parked item.
+
 ## Status
 
 | | |
 | --- | --- |
-| **Current stage** | **L2 — ⛔ blocked.** L1 is complete and verified |
-| **Next action** | **Fola: fill `.env.local` (SETUP.md §3–§4) and delete the stale `.env`.** Then L2 — baseline the Neon `dev` branch, apply migrations #1–#9 in order, drift check, seed, Playwright, Stripe gates A/B/C. Nothing else can start first: L3–L15 all depend on L2 |
-| **Working branch** | `build/autonomous`, cut from `fix/pre-phase3-gate` head `2cfdf3d` (not merged into `main`). 3 commits |
-| **Last updated** | 8 Oct 2026 — L1 complete. Trust-claim gate, dev-db guard, outbound guard, launch-inputs check, Next 16 / Prisma 7 deprecations cleared. 190 tests |
-| **Needs Fola?** | **Yes — the build is stopped until `.env.local` exists (Q-6).** 7 live *Open questions*; 3 items in the *Review queue* for merge checkpoint 1 |
+| **Current stage** | **L2 — ⛔ blocked, second attempt stopped 9 Oct 2026.** L1 is complete and now independently re-verified on Fola's Mac |
+| **Next action** | **Fola: create `.env.local` (SETUP.md §4), delete the stale `.env`, answer SETUP D7.** The nine missing key names are listed under **⛔ STOPPED** above. Then L2 — baseline the Neon `dev` branch, apply migrations #1–#9 in order, drift check, seed, Playwright, Stripe gates A/B/C/D, plus the three Phase 2 gaps from the 9 Oct review (PRD §16.1). Nothing else can start first: L3–L15 all depend on L2 |
+| **Working branch** | `build/autonomous` on GitHub — the fix-branch work plus 4 L1 commits and the 9 Oct documentation repair, 11 commits ahead of `main` (not merged) |
+| **Last updated** | 9 Oct 2026 (second entry) — L2 attempt stopped on the missing `.env.local`; verify gate re-run green on Fola's Mac (190 tests); files deleted from the working tree restored; Q-13 raised on where the build documents live. Earlier 9 Oct — external review, documents revised to PRD v2.2.1. 8 Oct — L1 complete |
+| **Needs Fola?** | **Yes — two things, and the build cannot move without the first.** (1) `.env.local` (Q-6). (2) SETUP D7 (Q-10), or L2's gap-2 work parks. 11 live *Open questions*; 3 items in the *Review queue* for merge checkpoint 1 |
 
 ## Stage tracker
 
 | Stage | Title | Status | Merge checkpoint |
 | --- | --- | --- | --- |
 | L1 | Reconcile and guardrails | ✅ Done | |
-| L2 | Real database and Stripe test-mode gate | ⛔ Blocked — `DATABASE_URL`, `DIRECT_URL`, `DEV_DB_HOST`, `STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `RESEND_API_KEY`, `DEV_EMAIL_REDIRECT`, `AUTH_SECRET`, `ACCESS_CODE_ENC_KEY` all absent | ✅ 1 |
+| L2 | Real database and Stripe test-mode gate (+ Phase 2 gaps 1–3, gate D — added 9 Oct) | ⛔ Blocked — `DATABASE_URL`, `DIRECT_URL`, `DEV_DB_HOST`, `STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `RESEND_API_KEY`, `DEV_EMAIL_REDIRECT`, `AUTH_SECRET`, `ACCESS_CODE_ENC_KEY` all absent | ✅ 1 |
 | L3 | Admin operations core | ⛔ Blocked by L2 | |
 | L4 | Crew roster, capacity and availability | ⛔ Blocked by L2 | |
 | L5 | Crew mobile interface | ⛔ Blocked by L2 | |
@@ -89,7 +111,7 @@ The drift check (`prisma migrate diff`) has **not** been run — there is no dat
 - **Pricing:** rate card `src/lib/pricing/rate-card.ts` (EOT grid by flat/house × beds × baths; hourly services; add-ons); quote engine `src/lib/quote.ts` (EOT instant-priced, escalation only at 5+ bedrooms or heavily soiled); `fromPriceFor` derives the true floor; parity check runs inside `npm run build`.
 - **Booking:** capacity `src/lib/capacity.ts` reads the **placeholder roster in `src/config/availability.ts`**, not the database; 8-step wizard on real slots with versioned CCR consent; pre-contract email; recurrence `src/lib/recurrence.ts` tested across BST/GMT and bank holidays; discount codes and CSV import.
 - **Payments** (`src/lib/payments.ts`, `src/lib/stripe.ts`, `src/lib/webhook-reconcile.ts`, `src/app/actions/payments.ts`): authorise at booking; 25% deposit when gross > £250 or > 300 minutes (`src/config/payments.ts`); `markJobComplete`, `retryCapture`, `cancelAndRefundBooking`, `rechargeOutstanding`; webhook at `/api/stripe/webhook` with `WebhookEvent` idempotency.
-- **Admin:** `/admin` counts dashboard only; `/admin/jobs` (complete/capture), `/admin/leads` (convert), `/admin/bookings/new`, `/admin/import`. Access via Auth.js `requireRole`; `src/middleware.ts` is a coarse cookie-presence check only, by design.
+- **Admin:** `/admin` counts dashboard only; `/admin/jobs` (complete/capture), `/admin/leads` (convert), `/admin/bookings/new`, `/admin/import`. Access via Auth.js `requireRole`; `src/proxy.ts` (renamed from `src/middleware.ts` in L1, D-3) is a coarse cookie-presence check only, by design.
 - **Customer:** `/account` with pay-outstanding, pause/resume/cancel, marketing preference, property edit (write-only encrypted access codes).
 - Owner seeded as `mcsecocleaning@gmail.com`.
 
@@ -102,7 +124,7 @@ Six commits: Stripe fixes for flags 1, 2, 3 and 6 plus the flag 4/5 decisions; `
 
 | | |
 | --- | --- |
-| `.env.local` | **Absent.** The ignition prompt assumes it exists and is filled |
+| `.env.local` | **Absent — re-checked 9 Oct 2026, still not there.** The ignition prompt assumes it exists and is filled. This is the whole of the blockage |
 | `.env` | Present, git-ignored, **stale**: it is `.env.example` with `DATABASE_URL`/`DIRECT_URL` left at `postgresql://user:password@localhost:5432/...`. `hasDatabase` correctly reads that as "no database", so the app runs DB-less. No real credential is in it and nothing sensitive is committed — `.gitignore` covers `.env*` and only `.env.example` is tracked |
 | Neon `dev` branch | Not reachable — no connection string on this machine. `DEV_DB_HOST` unset, so the L1 `assert-dev-db` guard has nothing to compare against |
 | Stripe | No key present, test or live |
@@ -115,12 +137,35 @@ Six commits: Stripe fixes for flags 1, 2, 3 and 6 plus the flag 4/5 decisions; `
 | Stage | Needs | Present? |
 | --- | --- | --- |
 | L1 | none | ✅ n/a |
-| L2 | `DATABASE_URL`, `DIRECT_URL`, `DEV_DB_HOST`, `AUTH_SECRET`, `ACCESS_CODE_ENC_KEY`, `STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `RESEND_API_KEY`, `DEV_EMAIL_REDIRECT` | ❌ none |
+| L2 | `DATABASE_URL`, `DIRECT_URL`, `DEV_DB_HOST`, `AUTH_SECRET`, `ACCESS_CODE_ENC_KEY`, `STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `RESEND_API_KEY`, `DEV_EMAIL_REDIRECT` | ❌ **none — all nine, re-checked 9 Oct 2026.** Named individually under **⛔ STOPPED** |
 | L7 | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `MEDIA_LINK_SECRET` | ❌ none |
 | L9 | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_SENDER_ID` | ❌ none |
 | L11 | Stripe Bacs enabled (test), `NEXT_PUBLIC_CALCOM_URL` | ❌ none |
 | L12 | `GOOGLE_REVIEW_URL` | ❌ none |
 | L14 | `NEXT_PUBLIC_SENTRY_DSN`; Upstash optional | ❌ none |
+
+---
+
+## External review — 9 Oct 2026
+
+An outside review (Claude, in Fola's planning project) cloned `build/autonomous` at `77852e5` from GitHub and checked it against the documents. Nothing in the code was changed. The documents were revised to PRD v2.2.1; this section records what was found.
+
+**Verify gate, re-run in the review sandbox:** lint clean; unit tests 179 of 181 pass. The 2 failing test files (`src/lib/discounts.test.ts`, `src/lib/payments.test.ts`) and every typecheck error trace to one cause: the sandbox could not download Prisma's engine (`binaries.prisma.sh` unreachable), so `@prisma/client` was never generated and its enums and types were missing. That is the sandbox, not the code. The L1 evidence (190 tests, typecheck clean) is not contradicted — but it was not independently reproduced either. L2's first gate run on Fola's Mac is the real confirmation.
+
+**Findings — now L2 work (PRD §16.1 has the detail):**
+
+1. **Recurring bookings create no `Subscription`.** `createBooking` (`src/app/actions/booking.ts` ~L370) writes one `Job` with the frequency only in `notes`; nothing in `src/` creates a `Subscription` (`adminCreateBooking` likewise). The materialiser and the customer pause/resume/cancel actions have nothing to act on.
+2. **No collection once a card hold lapses.** Holds last ~7 days; `bookingHorizonDays` is 21 (`src/config/availability.ts`); the deposit saves the card `on_session` only and `src/lib/stripe.ts` says nothing charges a saved card later; materialised recurring jobs are `paymentStatus: "pending"` with no charge path. Contradicts PRD §8 "card on file, charged off-session per visit". Mechanism → SETUP D7 / Q-10.
+3. **`prepareOutstandingCheckoutForVerifiedJob`** is exported from the `"use server"` module `src/app/actions/payments.ts` with no auth check, and returns a Checkout URL plus the customer's name and email for any job id. Fix and a guard test are L2 items.
+
+**Smaller findings:**
+
+- Quote validity: PRD §7.2 says 14 days; `createBooking` stores 30 (`src/app/actions/booking.ts:362`) → Q-11.
+- `.env.example` pre-fills `MEDIA_RETENTION_MONTHS="12"` while SETUP D4 is blank → Q-12.
+- PRD L3 said "cash-as-admin-exception"; the code (`src/app/actions/admin.ts`), PRD §12.5 and `CLAUDE.md` all forbid cash. The PRD text was corrected in v2.2.1 (§9.7, L3); no code change.
+- This file's Phase 2 summary still named `src/middleware.ts`; corrected to `src/proxy.ts`.
+
+**Checked and consistent:** `main` = `2f667ff`; `build/autonomous` carries the fix-branch commits (`6a1c1c7` … `2cfdf3d`) plus L1 (`bb88059`, `408a5af`, `0f5a457`, `77852e5`); 9 manual migrations present; `requireRole` on every `/admin` page and on every admin/payment action except finding 3; no cash path; the dev-db and outbound guards exist as described.
 
 ---
 
@@ -131,6 +176,9 @@ Re-measured on 8 Oct 2026. Three entries that the earlier snapshot got wrong are
 - **L1 — trust claims nobody has confirmed, hardcoded in six files.** "£5m public liability", "DBS-checked" and "Fully insured" appear in `src/app/page.tsx` (trust badges, how-it-works step, FAQ answer), `src/app/about/page.tsx`, `src/components/ui/TrustBar.tsx`, `src/components/layout/Footer.tsx`, `src/config/services.ts` and `src/app/opengraph-image.tsx`. Only `publicLiabilityCover` reads config (`src/config/site.ts`), and that value is a `PLACEHOLDER`. Routing them through config is a prerequisite to gating them.
 - **L1 — stale config.** `.env.example` still lists the retired `ADMIN_ACCESS_CODE` (no code reads it since Auth.js) and lacks `APP_ENV`, `AUTH_SECRET`, `DEV_DB_HOST`, `DEV_EMAIL_REDIRECT`, `DEV_SMS_REDIRECT`, `MEDIA_LINK_SECRET`, `NEXT_PUBLIC_ALLOW_INDEXING`. (`README.md` was corrected on 8 Oct — status line and the links to the archived PRD and `BUILD-STATUS.md`.)
 - **L1 — business-input markers**: 26 `PLACEHOLDER`, 2 `TODO(business-input)`, 2 `TODO(ops)`, 0 `TODO(pricing)`, 0 `TODO(legal)`, across `src/config/site.ts`, `src/config/availability.ts`, `src/lib/capacity.ts`, `src/lib/pricing/rate-card.ts`, `src/app/cancellation-policy/page.tsx`. `npm run check:launch-inputs` (L1) must find these five files.
+- **L2 — recurring booking → `Subscription` (added 9 Oct).** See *External review*, finding 1.
+- **L2 — collection beyond the card hold (added 9 Oct).** Finding 2; mechanism parked on Q-10 / SETUP D7.
+- **L2 — unauthenticated server action (added 9 Oct).** Finding 3; plus a test that every `src/app/actions/*` export makes an auth decision or is on the public allow-list.
 - **L4 — capacity is config-backed, but the engine is ready.** **Corrected:** `src/lib/capacity.ts` is already a pure function taking `crews: CrewAvailability[]` and `existingJobs: ExistingJob[]`. L4 is a loader, not a rewrite.
 - **L4 — `JobAssignment`** has `isLead`/`assignedAt` only; no `offeredAt`/`acceptedAt`/`declinedAt`.
 - **L4 — `CrewProfile`.** **Corrected:** it *does* have `dbsCheckedAt`. Missing are `dbsExpiresAt` and `insuranceExpiresAt`.
@@ -158,6 +206,11 @@ Format: **Q-n** · stage · question · options (none picked) · what's blocked.
 - **Q-9** · launch · **`VAT_DISPLAY_MODE` has never been chosen.** `src/lib/money.ts` defaults to `"absorb"` when unset, so today every published price stays put on VAT registration and the VAT comes out of margin. The alternative, `"add"`, treats rate-card figures as net and raises every headline price by the VAT rate. L1 documented the variable in `.env.example` without changing the default. Options: absorb / add. Blocks: nothing now; it changes every consumer price the day `VAT_REGISTERED` flips, so decide it with Q-4.
 - **Q-4** · launch · Cost-per-crew-hour model (§16.7 #8) may change rate-card figures. Blocks: launch pricing sign-off only.
 - **Q-5** · launch · Company facts for `src/config/site.ts` (SETUP §6) — 26 placeholders. Blocks: the L15 release gate (`npm run check:launch-inputs`).
+
+- **Q-10** · L2 · **How to collect payment once a card hold lapses** — bookings more than ~7 days ahead and every recurring visit (finding 2). Options are in SETUP D7: A save card + charge off-session on completion / B save card + place the hold ~2 days before / C additionally cap one-off bookings at ~6 days ahead. Blocks: the L2 collection item and gate D's payment step only; the rest of L2 proceeds.
+- **Q-11** · L2 · **Quote validity period.** PRD §7.2 says 14 days; the code stores 30 (`src/app/actions/booking.ts:362`). Options: change the code to 14 / amend the PRD to 30. Blocks: nothing; it sets how long a quoted price is honoured.
+- **Q-13** · all · **Where the five build documents live.** They were moved into `docs/` on 9 Oct 2026 along with the v2.2.1 revision, but `CLAUDE.md` itself still states (line 24) that the five live at the **repo root**, and decision D-0a records why: *Claude Code only auto-reads `CLAUDE.md` from the repo root*. That is not theoretical — this session was **not** given `CLAUDE.md` automatically and had to be pointed at `docs/CLAUDE.md` by hand. A future session started without that instruction runs with no rulebook and would not know it. The agent may not edit `CLAUDE.md`, so the contradiction is parked rather than resolved. Options: **(a)** move the five back to the repo root, keeping the v2.2.1 content — restores auto-loading and matches `CLAUDE.md` as written; **(b)** keep them in `docs/` and amend `CLAUDE.md` line 24 and D-0a, accepting that every future session must be told where the rulebook is. `README.md`'s links were repointed at `docs/` so the repo is at least self-consistent today; under option (a) that is one edit back. Blocks: nothing in code — but it decides whether the next unattended session reads the rules at all.
+- **Q-12** · L7 · **Media retention.** `.env.example` pre-fills `MEDIA_RETENTION_MONTHS="12"` while SETUP D4 is blank, so L7 would ship 12 months by default. Options: 12 / 18 / 24 months (answer D4). L7 reads D4, not the example default; until D4 is answered the retention value is parked. Blocks: L7 retention only.
 
 ## Review queue (Fola reviews at merge checkpoints)
 
@@ -322,3 +375,101 @@ L15 release gate requires.
 **Acceptance:** met. `PROGRESS.md` matches the repo; both guards exist, are tested and are wired into every path that could reach a database or a recipient; the full suite is green; no product behaviour changed except the trust-claim gate, which is L1's stated purpose.
 
 **Notes:** two claim sites were found that the baseline had not listed (`src/config/services.ts` communal-area bullet, `src/app/guarantee/page.tsx` damage FAQ), and a third — the T&Cs §7 — was deliberately left alone as legal wording and raised as Q-8. A bug in the connection-string parser (a password containing `/` or `?` returned part of the password as the host) was caught by its own test before the guard was wired in.
+
+---
+
+### Session — 9 Oct 2026 (L2 attempt, stopped)
+
+Asked to resume on `build/autonomous`, read the v2.2.1 revisions, confirm the L2
+keys and start L2. **L2 did not start: `.env.local` is still absent** — see
+**⛔ STOPPED** at the top of this file for the nine key names and how to clear it.
+No application code was touched and no product behaviour changed.
+
+**Session-start checks.**
+
+```
+$ git status --short          # before this session's repairs
+ D CLAUDE.md  D CLAUDE_CODE_PROMPT.md  D PRD.md  D PROGRESS.md  D README.md
+ D SETUP.md   D docs/DEPLOYMENT.md     D docs/PHASE-0-CHECKLIST.md
+ D docs/archive/BUILD-STATUS.md  D docs/archive/README.md
+ D docs/archive/claude-code-prompt-v2.1-updates.md
+ D docs/archive/mcsecocleaning_PRD_v2.1.md
+?? docs/CLAUDE.md  ?? docs/CLAUDE_CODE_PROMPT.md  ?? docs/PRD.md
+?? docs/PROGRESS.md  ?? docs/SETUP.md
+
+$ git log --oneline -1
+77852e5 docs(l1): mark the Baseline table as the fixed pre-L1 reading
+
+$ git branch -vv | grep autonomous
+* build/autonomous  77852e5 [origin/build/autonomous]   # in sync with GitHub
+```
+
+The tree matched *Next action* (L1 done, L2 not started) once the file moves were
+accounted for. `main` is untouched at `2f667ff`.
+
+**Keys.** No `.env.local` at the repo root; `.env` and `.env.example` are the only
+env files present, and `.env` is the same stale placeholder set described above
+(`NEXT_PUBLIC_SITE_URL`, `VAT_REGISTERED`, `DATABASE_URL`, `DIRECT_URL`,
+`ADMIN_ACCESS_CODE` — the last of which L1 retired). All nine L2 keys were also
+checked in the shell environment and are unset there too, so there is no
+alternative source. No key value was read, printed or logged at any point.
+
+**SETUP D7.** Read, not inferred: options A, B and C are all unticked, so Q-10
+stands and L2's gap-2 item parks when L2 does run.
+
+**Verify gate — re-run on Fola's Mac, first independent confirmation of L1.**
+The external review could not reproduce L1's evidence because its sandbox could
+not download Prisma's engine. That gap is now closed:
+
+```
+$ npx tsc --noEmit
+(no output — clean)
+
+$ npx eslint .
+(no output — clean)
+
+$ node --import tsx --test "src/**/*.test.ts" "scripts/**/*.test.ts"
+ℹ tests 190
+ℹ suites 17
+ℹ pass 190
+ℹ fail 0
+ℹ duration_ms 313.81425
+
+$ npx prisma generate
+✔ Generated Prisma Client (v6.19.3) in 96ms
+
+$ npx tsx scripts/check-price-parity.ts
+✓ price parity: every 'from' surface matches the rate card
+
+$ npx next build
+✓ Compiled successfully in 175ms      # 38 routes, no warnings, no deprecations
+```
+
+So L1's 190 tests, clean typecheck and clean build are confirmed on the real
+machine. The two test files the review saw fail (`src/lib/discounts.test.ts`,
+`src/lib/payments.test.ts`) pass here, which supports the review's own reading
+that the failures were its missing Prisma client and not the code. The drift
+check is still unrun — it needs `DIRECT_URL`, and it remains L2's first job.
+
+**Working-tree repairs.** Four things had been deleted from the working tree but
+were still in `HEAD`, and were restored with `git restore`:
+
+- `docs/DEPLOYMENT.md` — **L2 cannot run without it.** PRD L2 cites §4a for the
+  per-migration run notes and §4b for Stripe gates A/B/C; D-0b restored it once
+  before, for this reason.
+- `docs/PHASE-0-CHECKLIST.md` — cited by `SETUP.md` §6.
+- `docs/archive/` (all four files) — provenance for the v2.0/v2.1 section numbers
+  that code comments cite, per D-0c.
+- `README.md` — its three links pointed at `PRD.md`, `PROGRESS.md` and
+  `CLAUDE.md` at the repo root and broke when those files moved into `docs/`.
+  Repointed at `docs/`. A repo-wide grep now finds no link to a moved or
+  archived path.
+
+**Not done, and why.** Moving the five build documents back to the repo root —
+which is what `CLAUDE.md` line 24 and D-0a require — was attempted and refused by
+this environment's permission layer. It is Fola's call in any case, so it is
+parked as **Q-13** rather than retried. The documents' current location in
+`docs/` is committed as-is so the tree is clean.
+
+**Next action:** unchanged — `.env.local`, then delete `.env`, then L2 from its
+revised plan in PRD §16.3.

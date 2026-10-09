@@ -4,12 +4,12 @@ This is yours, not Claude Code's. Work through it once. When every box in §8 is
 
 You already have some of this from the Phase 1–2 build and the pre-Phase-3 runbook (Neon project, Vercel, Resend, Auth). Where a step says *Check*, it's confirming what exists rather than creating it.
 
-> **Where this machine actually stands, checked 8 Oct 2026.** Two things gate the whole run:
+> **Where things stand, checked 9 Oct 2026** (GitHub, `build/autonomous` at `77852e5`):
 >
-> 1. **There is no `.env.local`.** The only env file in the repo is a stale `.env` carrying the `.env.example` placeholders — `DATABASE_URL` points at `localhost`, so the app runs with no database at all. Nothing in §3 has reached this machine. **Delete that `.env`** once you create `.env.local` (Next.js loads both, and a leftover placeholder will confuse the dev-database guard later). Until `.env.local` exists, the build completes L1 and then stops: every stage from L2 on needs the database.
-> 2. **D1 in §1 is unanswered**, and a blank D1 is a hard stop by design.
->
-> Everything else below is either already done or can wait. `.claude/settings.json` (§5) has been created for you.
+> 1. **L1 is done.** Claude Code ran it on 8 Oct and pushed `build/autonomous`, which now carries everything from the old `fix/pre-phase3-gate` branch plus L1. Work from `build/autonomous` from now on.
+> 2. **The build is stopped at L2 because there is no `.env.local`.** That is the single thing blocking it. Create it from §4, then **delete the stale `.env`** (Next.js loads both, and the leftover `localhost` placeholder will fight the dev-database guard).
+> 3. **D7 is new** (added 9 Oct after a review found that bookings more than about a week ahead, and every recurring visit, have no automatic way to be paid). Answer it in §1 — L2 parks that piece of work until you do.
+> 4. D1 and D2 are answered. D3–D6 can stay blank for now; Claude Code parks what depends on them.
 
 ---
 
@@ -40,6 +40,12 @@ Tick one option per line. D1 must be answered. Leave any other line blank and Cl
 **D6 — Eco positioning weight** (copy emphasis only)
 - [ ] Primary brand position from day one
 - [ ] Phase-two differentiator
+
+**D7 — Collecting payment when a card hold can't last** · *added 9 Oct 2026* (PRD §16.1 gap 2)
+A card hold lasts about 7 days. The wizard offers slots up to 21 days ahead, and recurring visits need charging every time. Today all of these fall back to a manual "please pay" email. PRD §8 allows either A or B. Tick **one of A or B**; tick C as well if you also want it.
+- [ ] A. Save the card at booking and **charge it automatically on completion** for any booking more than about 6 days ahead and every recurring visit. Closest to PRD §8 "card on file". Occasionally the customer's bank asks them to re-confirm; that falls back to the existing payment-request email.
+- [ ] B. Save the card at booking, then **place the hold about 2 days before each job** (a scheduled task) and capture on completion. Keeps "hold, then take" for every job; one more scheduled task to run and monitor; same re-confirm fallback.
+- [ ] C. Also limit one-off online bookings to about 6 days ahead, so a one-off's hold always lasts. Fewer customers can book far ahead; recurring visits still use A or B.
 
 ---
 
@@ -244,15 +250,17 @@ All of that is yours, at launch, following `LAUNCH.md`.
 
 The two that block everything are first. The rest can be filled in while the build runs.
 
-- [ ] **§1 decisions ticked — D1 is required** (Claude Code stops if it's blank); the rest may stay blank
-- [ ] **`dev` branch created; `.env.local` filled with at least the L2 keys; the stale `.env` deleted**
+- [x] §1 D1 and D2 answered (8 Oct 2026)
+- [ ] **§1 D7 answered** — new 9 Oct; if blank, L2 builds everything except automatic collection and parks that
+- [ ] **`dev` branch created; `.env.local` filled with at least the L2 keys; the stale `.env` deleted** — this is what the build is stopped on
 - [ ] §2 Neon password rotation confirmed
 - [ ] Stripe CLI installed; `psql --version` works
 - [x] `.claude/settings.json` in place — created 8 Oct 2026
-- [x] The five documents are at the repo root — moved 8 Oct 2026; the new `CLAUDE.md` has replaced the old one, keeping the `@AGENTS.md` import. **Commit them** (they are currently uncommitted)
-- [ ] Stay on `fix/pre-phase3-gate` (or `main` if you've merged it). The four Stripe fixes live there, and L1 branches from it. Note the branch is **unpushed** — it exists only on this Mac, so take a backup or push it before anything else
+- [x] The five documents are at the repo root and committed (`bb88059`, 8 Oct 2026)
+- [ ] **Replace all five documents with the 9 Oct revisions** and commit them on `build/autonomous` (`git pull` first; message: `docs: PRD v2.2.1 — three Phase 2 gaps into L2, SETUP D7`). `CLAUDE.md` changes by one word (D1–D6 → D1–D7)
+- [x] `build/autonomous` exists on GitHub and contains the old `fix/pre-phase3-gate` work plus L1. Check it out locally (`git fetch && git switch build/autonomous`); you no longer need the fix branch
 - [ ] Optional: if you still have the pre-Phase-3 runbook, save it as `docs/PRE-PHASE-3-GATE-RUNBOOK.md`. If not, `docs/DEPLOYMENT.md` §4b carries the same gates and L2 uses that instead
-- [ ] Open Claude Code in the repo root and paste `CLAUDE_CODE_PROMPT.md`
+- [ ] Open Claude Code in the repo root and paste the **Restart prompt (9 Oct revision)** from `CLAUDE_CODE_PROMPT.md` — not the original ignition prompt, which has already run
 
 ## 9. While it runs and after
 
