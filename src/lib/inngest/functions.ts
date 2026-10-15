@@ -45,6 +45,8 @@ export { sendVisitReminders, sendRecurringVisitNotices, sendReviewRequests, send
 import { sendVisitReminders, sendRecurringVisitNotices, sendReviewRequests, sendLapsingNotices } from "./notifications";
 export { sendReviewNudges, recoverAbandonedQuotes } from "./growth";
 import { sendReviewNudges, recoverAbandonedQuotes } from "./growth";
+export { sweepRateLimitCounters } from "./rate-limit-sweep";
+import { sweepRateLimitCounters } from "./rate-limit-sweep";
 
 /** All functions registered with the serve() handler. */
 export const functions = [
@@ -61,4 +63,6 @@ export const functions = [
   // §10.1 / §10.2 — the growth sweeps (L12).
   sendReviewNudges,
   recoverAbandonedQuotes,
+  // §13.3 — housekeeping for the limiter's own table (L14).
+  sweepRateLimitCounters,
 ];

@@ -11,6 +11,7 @@ import { endCrewSession, startCrewSession } from "@/lib/crew-session";
 import { canRevealAccessCode, decryptAccessCode, recordAccessCodeView } from "@/lib/access-codes";
 import { canCompleteItem } from "@/lib/checklist";
 import type { JobStatus } from "@prisma/client";
+import { describeThrown, reportError } from "@/lib/monitoring";
 
 /**
  * Crew app actions (§9.2, PRD §16.3 → L5).
@@ -58,6 +59,14 @@ export async function crewSignIn(
   const parsed = signInSchema.safeParse(input);
   if (!parsed.success) return { ok: false, message: "Enter your email or phone number, and your PIN." };
   if (!hasDatabase) return { ok: false, message: "No database configured." };
+
+  // Two limits, doing different jobs: the per-account lockout below protects one
+  // PIN from being guessed, and this one stops a client working through many
+  // accounts from the same address (§13.3).
+  const { headers } = await import("next/headers");
+  const { RATE_LIMITS, checkRateLimit, rateLimitIdentifier } = await import("@/lib/rate-limit");
+  const limited = await checkRateLimit(RATE_LIMITS.auth, rateLimitIdentifier(await headers()));
+  if (!limited.allowed) return { ok: false, message: limited.message! };
 
   const identifier = normaliseIdentifier(parsed.data.identifier);
   const attempt = await db.authAttempt.findUnique({ where: { identifier } });
@@ -366,7 +375,7 @@ export async function reportIssue(
   // the kind of delay that turns a re-clean into a dispute. Best-effort — the
   // issue is recorded whatever the email does.
   await notifyAdminOfIssue(jobId, thread.id, parsed.data.type, parsed.data.message).catch((error) => {
-    console.error("[crew] admin issue alert failed", error);
+    reportError({ ...describeThrown(error), source: "action:crew", message: "admin issue alert failed" });
   });
 
   return { ok: true, message: "Reported. The office can see it now." };

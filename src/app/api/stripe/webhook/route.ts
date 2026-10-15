@@ -13,6 +13,7 @@ import {
   savesCardForLater,
   succeededUpdate,
 } from "@/lib/webhook-reconcile";
+import { describeThrown, reportError } from "@/lib/monitoring";
 
 // Stripe SDK + raw-body signature verification need the Node runtime, not edge.
 export const runtime = "nodejs";
@@ -69,7 +70,7 @@ export async function POST(req: Request): Promise<Response> {
       });
     });
   } catch (err) {
-    console.error("[stripe webhook] handler failed", event.type, err);
+    reportError({ ...describeThrown(err), source: "webhook:stripe", message: `handler failed for ${event.type}` });
     // The transaction (including the 'received' upsert) rolled back, so persist the
     // failure separately — otherwise the silent failure this column exists to catch
     // would leave no trace.

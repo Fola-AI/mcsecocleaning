@@ -999,3 +999,27 @@ model NotificationLog {
   @@index([jobId])
   @@index([userId])
 }
+
+/**
+ * Rate-limit counters (§13.3, L14).
+ *
+ * One row per (rule, identifier, window). The key carries the window start, so
+ * a new window is a new row rather than a reset somebody has to perform — and
+ * `count` is incremented atomically, so two concurrent requests cannot both
+ * read "9 of 10" and both proceed.
+ *
+ * `expiresAt` is never read by the limiter — an expired window simply has a
+ * different key — but it is not decoration either: `sweepRateLimitCounters`
+ * (hourly, `src/lib/inngest/rate-limit-sweep.ts`) deletes windows more than a
+ * day past it. Without that this table grows by one row per caller per minute
+ * for ever, which an earlier version of this comment implied was handled by the
+ * word "expire". Nothing expires itself in Postgres.
+ */
+model RateLimitCounter {
+  key       String   @id
+  count     Int      @default(0)
+  expiresAt DateTime
+  updatedAt DateTime @updatedAt
+
+  @@index([expiresAt])
+}

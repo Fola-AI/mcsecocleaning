@@ -12,6 +12,7 @@ import { formatPence, priceFromRateCard } from "@/lib/money";
 import { sendEmail } from "@/lib/email";
 import { localDateString } from "@/lib/timezone";
 import { site } from "@/config/site";
+import { describeThrown, reportError } from "@/lib/monitoring";
 
 /** jobStatusEvent note marking the completion email as sent — the dedup signal so
  *  re-invoking markJobComplete never sends a second completion email. */
@@ -63,7 +64,7 @@ export async function markJobComplete(
   try {
     await sendCompletionEmail(jobId, capture);
   } catch (e) {
-    console.error("[markJobComplete] completion email failed", e);
+    reportError({ ...describeThrown(e), source: "action:markJobComplete", message: "completion email failed" });
   }
 
   return {

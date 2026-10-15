@@ -18,9 +18,11 @@ import { ROOM_KEYS } from "@/lib/pricing/rate-card";
 import { resolveAndApply } from "@/lib/discounts";
 import { createSubscriptionForBooking } from "@/lib/subscriptions";
 import { notify, recordCarriedBy } from "@/lib/notifications/send";
+import { RATE_LIMITS, checkRateLimit, rateLimitIdentifier } from "@/lib/rate-limit";
 import { cardOnFileEnabled, collectionModeFor } from "@/lib/collection";
 import { isRecurringFrequency } from "@/lib/subscription-rule";
 import { fromGross, fromNet, isVatRegistered, type MoneyBreakdown } from "@/lib/money";
+import { describeThrown, reportError } from "@/lib/monitoring";
 
 /**
  * Booking wizard back-end (§6.1, §6.5, §10.2). Prices are ALWAYS recomputed
@@ -31,26 +33,47 @@ import { fromGross, fromNet, isVatRegistered, type MoneyBreakdown } from "@/lib/
 
 // ---------- Slot availability ----------
 
-export async function getSlots(durationMinutes: number, postcode?: string): Promise<Record<string, string[]>> {
+/**
+ * The wizard's view of availability.
+ *
+ * Three outcomes, not two, and the third one is why this is a union rather than
+ * a bare map: a rate-limited caller used to get `{}` back, which the wizard
+ * renders as "no slots available in the next few weeks — please call us". A
+ * customer behind a shared office or carrier NAT could therefore be told the
+ * business has no availability for a fortnight, which is a lost booking and a
+ * lie, and nobody would ever hear about it.
+ */
+export type SlotsResult =
+  | { status: "ok"; byDate: Record<string, string[]> }
+  | { status: "too_many_requests" };
+
+export async function getSlots(durationMinutes: number, postcode?: string): Promise<SlotsResult> {
+  // Pricing and availability are cheap to serve and the easiest thing to scrape.
+  const limited = await limitByRequest(RATE_LIMITS.quote);
+  if (!limited.allowed) return { status: "too_many_requests" };
+
   // No database: fall back to the config roster through the same engine, so the
   // wizard still works in a DB-less environment (and so this action has one code
   // path to reason about rather than two).
   if (!hasDatabase) {
     const now = new Date();
     const to = new Date(now.getTime() + availabilityConfig.bookingHorizonDays * 24 * 60 * 60 * 1000);
-    return slotsByDate(
-      computeSlots({
-        from: now,
-        to,
-        durationMinutes,
-        crews: defaultRoster,
-        travelBufferMinutes: availabilityConfig.travelBufferMinutes,
-        slotGranularityMinutes: availabilityConfig.slotGranularityMinutes,
-        leadTimeHours: availabilityConfig.leadTimeHours,
-        now,
-        dailyCap: availabilityConfig.dailyCap,
-      }),
-    );
+    return {
+      status: "ok",
+      byDate: slotsByDate(
+        computeSlots({
+          from: now,
+          to,
+          durationMinutes,
+          crews: defaultRoster,
+          travelBufferMinutes: availabilityConfig.travelBufferMinutes,
+          slotGranularityMinutes: availabilityConfig.slotGranularityMinutes,
+          leadTimeHours: availabilityConfig.leadTimeHours,
+          now,
+          dailyCap: availabilityConfig.dailyCap,
+        }),
+      ),
+    };
   }
 
   try {
@@ -59,13 +82,13 @@ export async function getSlots(durationMinutes: number, postcode?: string): Prom
     // patch rule. The postcode is what lets the last two apply.
     const { slotAvailability } = await import("@/lib/slot-availability");
     const availability = await slotAvailability({ durationMinutes, postcode });
-    return availability.byDate;
+    return { status: "ok", byDate: availability.byDate };
   } catch (e) {
     // A failure here must not take the wizard down — but it must not invent
     // availability either. An empty calendar sends the customer to the contact
     // route, which is recoverable; a made-up slot is a crew who never turns up.
-    console.error("[booking] slot availability failed; offering none", e);
-    return {};
+    reportError({ ...describeThrown(e), source: "action:getSlots", message: "slot availability failed; offering none" });
+    return { status: "ok", byDate: {} };
   }
 }
 
@@ -120,6 +143,13 @@ export type BookingResult =
   | { status: "error"; message: string; fieldErrors?: Record<string, string> };
 
 export async function createBooking(input: BookingInput): Promise<BookingResult> {
+  // §13.3: rate limited. Generous enough that no customer meets it — a household
+  // does not submit twenty bookings a minute — and low enough to stop a script.
+  // It fails OPEN: a limiter that takes the booking form down when it breaks has
+  // cost more than the abuse it prevents.
+  const limited = await limitByRequest(RATE_LIMITS.booking);
+  if (!limited.allowed) return { status: "error", message: limited.message! };
+
   const parsed = bookingSchema.safeParse(input);
   if (!parsed.success) {
     const fieldErrors: Record<string, string> = {};
@@ -199,7 +229,7 @@ export async function createBooking(input: BookingInput): Promise<BookingResult>
       // Credit must never block a booking. Worst case the customer pays full
       // price and still has the credit, which is recoverable; a failed booking
       // is not.
-      console.error("[booking] credit lookup failed; charging full price", e);
+      reportError({ ...describeThrown(e), source: "action:createBooking", message: "credit lookup failed; charging full price" });
     }
   }
   const charge: MoneyBreakdown = isVatRegistered() ? fromGross(chargeGross) : fromNet(chargeGross);
@@ -218,7 +248,7 @@ export async function createBooking(input: BookingInput): Promise<BookingResult>
     try {
       ({ jobId, userId } = await persistBooking({ data, quote, ccr, reference, charge, discountAmount, discountCode }));
     } catch (e) {
-      console.error("[booking] persistence failed; continuing with notifications", e);
+      reportError({ ...describeThrown(e), source: "action:createBooking", message: "persistence failed; continuing with notifications" });
     }
   }
 
@@ -240,7 +270,7 @@ export async function createBooking(input: BookingInput): Promise<BookingResult>
         },
       });
     } catch (e) {
-      console.error("[booking] credit draw-down failed", e);
+      reportError({ ...describeThrown(e), source: "action:createBooking", message: "credit draw-down failed" });
     }
   }
 
@@ -382,7 +412,7 @@ export async function createBooking(input: BookingInput): Promise<BookingResult>
         requiresPayment = paymentIntents.length > 0;
       }
     } catch (e) {
-      console.error("[booking] stripe authorise / payment persistence failed", e);
+      reportError({ ...describeThrown(e), source: "action:createBooking", message: "stripe authorise / payment persistence failed" });
     }
   }
 
@@ -628,4 +658,10 @@ async function notifyTeam({
       </ul>
     `,
   });
+}
+
+/** Rate limit the caller of a server action, by the request's own address. */
+async function limitByRequest(rule: (typeof RATE_LIMITS)[keyof typeof RATE_LIMITS]) {
+  const hdrs = await headers();
+  return checkRateLimit(rule, rateLimitIdentifier(hdrs));
 }

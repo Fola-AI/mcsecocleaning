@@ -4,6 +4,7 @@
  */
 import { discountByCode, type DiscountCodeData } from "@/config/discounts";
 import { db, hasDatabase } from "@/lib/db";
+import { describeThrown, reportError } from "@/lib/monitoring";
 
 export interface DiscountContext {
   serviceSlug: string;
@@ -67,7 +68,7 @@ export async function resolveDiscountCode(code: string): Promise<DiscountCodeDat
         };
       }
     } catch (e) {
-      console.error("[discount] DB lookup failed, falling back to config", e);
+      reportError({ ...describeThrown(e), source: "lib:discounts", message: "discount DB lookup failed, falling back to config" });
     }
   }
   return discountByCode(trimmed) ?? null;

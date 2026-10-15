@@ -1,6 +1,7 @@
 import { db, hasDatabase } from "@/lib/db";
 import { isStopMessage } from "@/lib/unsubscribe";
 import { normaliseIdentifier } from "@/lib/crew-pin";
+import { signedRequestUrl, verifyTwilioSignature } from "@/lib/twilio-signature";
 
 export const runtime = "nodejs";
 
@@ -22,17 +23,45 @@ export const runtime = "nodejs";
  * that number regardless. This route is what makes our *records* agree with
  * that, so a later export, campaign or channel does not treat them as
  * subscribed.
+ *
+ * ## The signature (L14)
+ *
+ * It is verified whenever `TWILIO_AUTH_TOKEN` is set, and an unsigned or wrong
+ * signature gets 403. Without a token there is nothing to verify against: in
+ * production that is a refusal — no token means no configured Twilio, so no
+ * legitimate request — and outside production it is allowed, which is what lets
+ * the behaviour be exercised by a POST from a test.
  */
 export async function POST(request: Request): Promise<Response> {
   let from = "";
   let body = "";
+  const params: Record<string, string> = {};
 
   try {
     const form = await request.formData();
-    from = String(form.get("From") ?? "");
-    body = String(form.get("Body") ?? "");
+    for (const [key, value] of form.entries()) {
+      if (typeof value === "string") params[key] = value;
+    }
+    from = params.From ?? "";
+    body = params.Body ?? "";
   } catch {
     return new Response("ok", { status: 200 });
+  }
+
+  const authToken = process.env.TWILIO_AUTH_TOKEN;
+  if (authToken) {
+    const genuine = verifyTwilioSignature({
+      signature: request.headers.get("x-twilio-signature"),
+      authToken,
+      url: signedRequestUrl(request),
+      params,
+    });
+    // 403, not 200: a forged request is not a delivery to acknowledge, and the
+    // 200-always rule above exists so TWILIO stops retrying — it is not a reason
+    // to accept requests from anyone else.
+    if (!genuine) return new Response("forbidden", { status: 403 });
+  } else if (process.env.APP_ENV === "production") {
+    return new Response("forbidden", { status: 403 });
   }
 
   if (!isStopMessage(body)) return new Response("ok", { status: 200 });

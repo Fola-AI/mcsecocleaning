@@ -446,12 +446,21 @@ function StepSlot({
   durationMinutes,
   postcode,
 }: StepProps & { durationMinutes: number; postcode: string }) {
-  const [slotData, setSlotData] = useState<{ forDuration: number; slots: Record<string, string[]> } | null>(null);
+  const [slotData, setSlotData] = useState<{
+    forDuration: number;
+    slots: Record<string, string[]> | null;
+    tooMany: boolean;
+  } | null>(null);
 
   useEffect(() => {
     let active = true;
-    getSlots(durationMinutes, postcode).then((s) => {
-      if (active) setSlotData({ forDuration: durationMinutes, slots: s });
+    getSlots(durationMinutes, postcode).then((result) => {
+      if (!active) return;
+      setSlotData({
+        forDuration: durationMinutes,
+        slots: result.status === "ok" ? result.byDate : null,
+        tooMany: result.status === "too_many_requests",
+      });
     });
     return () => {
       active = false;
@@ -461,7 +470,18 @@ function StepSlot({
   const loading = !slotData || slotData.forDuration !== durationMinutes;
   const slots = slotData?.slots ?? null;
 
-  if (loading || !slots) return <p className="text-ink-soft">Finding available times…</p>;
+  if (loading) return <p className="text-ink-soft">Finding available times…</p>;
+  // Rate limited, which is NOT the same as having no availability — saying "no
+  // slots for a fortnight" to a customer who happens to share an office IP
+  // would cost a booking and be untrue.
+  if (slotData?.tooMany)
+    return (
+      <p role="status" className="text-ink-soft">
+        Still checking the diary — please wait a moment and try again, or call us and we&apos;ll book
+        you in.
+      </p>
+    );
+  if (!slots) return <p className="text-ink-soft">Finding available times…</p>;
   const dates = Object.keys(slots).slice(0, 14);
   if (dates.length === 0) return <p className="text-ink-soft">No slots available in the next few weeks — please call us and we&apos;ll fit you in.</p>;
 
@@ -594,8 +614,12 @@ function PriceSummary({ state, quote }: { state: State; quote: ReturnType<typeof
         <div className="flex justify-between"><dt>Service</dt><dd className="text-ink">{serviceName}</dd></div>
         <div className="flex justify-between"><dt>Frequency</dt><dd className="text-ink capitalize">{state.frequency.replace("_", "-")}</dd></div>
         <div className="flex justify-between"><dt>Est. duration</dt><dd className="text-ink">{quote.elapsedMinutes} min on site</dd></div>
-        {quote.minimumHoursApplied && <p className="text-xs">Minimum visit length applied.</p>}
       </dl>
+      {/* Outside the <dl>: a bare <p> between the dt/dd groups is invalid list
+          content and axe flags it serious (definition-list). */}
+      {quote.minimumHoursApplied && (
+        <p className="mt-1 text-xs text-ink-soft">Minimum visit length applied.</p>
+      )}
       <p className="mt-4 text-xs text-ink-soft">Prices VAT-inclusive. No card needed to see your price.</p>
     </aside>
   );

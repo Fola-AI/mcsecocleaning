@@ -16,7 +16,17 @@ export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   const res = NextResponse.next();
-  res.headers.set("X-Robots-Tag", "noindex, nofollow");
+  res.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive");
+
+  // The staff areas are never cached, and `no-store` rather than
+  // `must-revalidate`: the crew app runs on shared phones (§9.2), where a page
+  // left in the back/forward cache is the previous person's day — their
+  // customer's address, their job list. Set here rather than in
+  // `next.config.ts` because a route's own metadata was overriding the config
+  // header for /crew, which the hardening gate caught.
+  if (pathname.startsWith("/admin") || pathname.startsWith("/crew") || pathname.startsWith("/account")) {
+    res.headers.set("Cache-Control", "private, no-store, max-age=0");
+  }
 
   if (pathname.startsWith("/admin") && pathname !== "/admin/login") {
     const hasSession =
@@ -34,5 +44,16 @@ export function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/admin/:path*", "/crew/:path*", "/account/:path*", "/book"],
+  // The bare paths are listed as well as `:path*`. `"/crew/:path*"` alone did
+  // not match `/crew` itself — the page an operator actually opens — so the
+  // no-store header was never applied to it. The hardening gate caught it.
+  matcher: [
+    "/admin",
+    "/admin/:path*",
+    "/crew",
+    "/crew/:path*",
+    "/account",
+    "/account/:path*",
+    "/book",
+  ],
 };

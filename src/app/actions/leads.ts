@@ -7,6 +7,7 @@ import { sendEmail } from "@/lib/email";
 import { site } from "@/config/site";
 import { serviceBySlug } from "@/config/services";
 import { checkServiceArea } from "@/lib/serviceArea";
+import { describeThrown, reportError } from "@/lib/monitoring";
 
 /**
  * Lead capture (§13 Phase 1 — "lead capture form live; the business can take
@@ -53,6 +54,14 @@ export async function submitLead(
   _prev: LeadState,
   formData: FormData
 ): Promise<LeadState> {
+  // §13.3: the contact and quote-request forms are the classic spam target.
+  const { headers } = await import("next/headers");
+  const { RATE_LIMITS, checkRateLimit, rateLimitIdentifier } = await import("@/lib/rate-limit");
+  const limited = await checkRateLimit(RATE_LIMITS.lead, rateLimitIdentifier(await headers()));
+  if (!limited.allowed) {
+    return { status: "error" as const, message: limited.message! };
+  }
+
   const raw = Object.fromEntries(formData.entries());
   const parsed = leadSchema.safeParse(raw);
 
@@ -108,7 +117,7 @@ export async function submitLead(
         },
       });
     } catch (e) {
-      console.error("[lead] DB write failed, continuing with email", e);
+      reportError({ ...describeThrown(e), source: "action:submitLead", message: "lead DB write failed, continuing with email" });
     }
   }
 

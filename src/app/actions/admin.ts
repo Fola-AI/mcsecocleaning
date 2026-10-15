@@ -18,6 +18,7 @@ import { ensureChecklist } from "@/lib/checklist-db";
 import { notifyCrewOfJob } from "@/lib/crew-notices";
 import type { JobStatus } from "@prisma/client";
 import { createSubscriptionForBooking } from "@/lib/subscriptions";
+import { describeThrown, reportError } from "@/lib/monitoring";
 
 const OPS_ROLES = ["owner", "admin", "supervisor"] as const;
 
@@ -217,7 +218,7 @@ export async function adminCreateBooking(input: z.input<typeof adminBookingSchem
         data: { convertedQuoteId: quoteRow.id, status: "converted" },
       });
     } catch (e) {
-      console.error("[admin] lead conversion stamp failed", e);
+      reportError({ ...describeThrown(e), source: "action:admin", message: "lead conversion stamp failed" });
     }
   }
 
@@ -261,7 +262,7 @@ export async function adminCreateBooking(input: z.input<typeof adminBookingSchem
         }
       }
     } catch (e) {
-      console.error("[admin] payment link failed", e);
+      reportError({ ...describeThrown(e), source: "action:admin", message: "payment link failed" });
     }
   }
 
@@ -313,7 +314,7 @@ export async function importClients(csvText: string): Promise<ImportResult> {
       }
       imported++;
     } catch (e) {
-      console.error("[import] row failed", rec.email, e);
+      reportError({ ...describeThrown(e), source: "action:import", message: `import row failed for ${rec.email}` });
       skipped++;
     }
   }
@@ -508,7 +509,7 @@ export async function assignCrew(
   // §10.3: tell the crew member. Best-effort and after the commit — a text that
   // fails must not undo an assignment that happened.
   await notifyCrewOfJob(jobId, crewId, mode === "offer" ? "offer" : "assignment").catch((error) => {
-    console.error("[admin] crew assignment notice failed", error);
+    reportError({ ...describeThrown(error), source: "action:admin", message: "crew assignment notice failed" });
   });
 
   return {
