@@ -5,6 +5,7 @@ import { formatPence } from "@/lib/money";
 import { localDateString } from "@/lib/timezone";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { JobCaptureControl } from "@/components/admin/JobCaptureControl";
+import { JobPaymentLinkControl } from "@/components/admin/JobPaymentLinkControl";
 import { CANCELLABLE_STATUSES, cancelConfirmText, cancellationBlock } from "@/lib/cancellation";
 
 export const metadata: Metadata = { title: "Jobs", robots: { index: false, follow: false } };
@@ -20,7 +21,10 @@ export default async function AdminJobsPage() {
           customer: true,
           serviceType: true,
           subscription: { select: { createdAt: true } },
-          payments: { where: { type: "charge" }, select: { status: true, gross: true } },
+          payments: {
+            where: { type: "charge" },
+            select: { status: true, gross: true, stripeCheckoutSessionId: true },
+          },
         },
       })
     : [];
@@ -44,6 +48,7 @@ export default async function AdminJobsPage() {
                 <th className="py-2 pr-4">Status</th>
                 <th className="py-2 pr-4">Payment</th>
                 <th className="py-2 pr-4">Amount</th>
+                <th className="py-2 pr-4">Payment link</th>
                 <th className="py-2 pr-4">Complete &amp; capture · Cancel</th>
               </tr>
             </thead>
@@ -60,6 +65,12 @@ export default async function AdminJobsPage() {
                   <td className="py-3 pr-4">{j.status}</td>
                   <td className="py-3 pr-4">{j.paymentStatus}</td>
                   <td className="py-3 pr-4">{formatPence(j.gross)}</td>
+                  <td className="py-3 pr-4">
+                    <JobPaymentLinkControl
+                      jobId={j.id}
+                      outstanding={j.payments.some((p) => p.status === "pending" || p.status === "failed")}
+                    />
+                  </td>
                   <td className="py-3 pr-4">
                     <JobCaptureControl
                       jobId={j.id}

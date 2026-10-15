@@ -3,7 +3,8 @@
 import { db, hasDatabase } from "@/lib/db";
 import { requireRole } from "@/lib/auth";
 import { recomputeJobPaymentStatus } from "@/lib/payments";
-import { outstandingSummary } from "@/lib/outstanding";
+import { outstandingSummary, prepareOutstandingCheckout } from "@/lib/outstanding";
+import { paymentLinkAction, storedSessionId } from "@/lib/payment-link";
 import { cardOnFileEnabled } from "@/lib/collection";
 import { cancellationBlock, cancelOutcome } from "@/lib/cancellation";
 import { formatPence, priceFromRateCard } from "@/lib/money";
@@ -509,4 +510,73 @@ async function sendCompletionEmail(jobId: string, capture: CaptureOutcome): Prom
     `,
   });
   await db.jobStatusEvent.create({ data: { jobId, toStatus: "completed", note: COMPLETION_EMAIL_NOTE } });
+}
+
+/**
+ * Recover a job's payment link, or say what to do instead (PRD §16.3 → L2 —
+ * deferred from Phase 2, where an admin-created booking's link was emailed once
+ * and then unrecoverable).
+ *
+ * Role-gated, and it reads the session Stripe actually holds rather than
+ * trusting the stored id: a link the admin copies has to be one that still
+ * works. A session Stripe cannot find is reported as expired, because from the
+ * admin's side the action is the same — reissue.
+ */
+export async function jobPaymentLink(jobId: string): Promise<{
+  action: "copy" | "reissue" | "paid" | "none";
+  url?: string | null;
+  message: string;
+}> {
+  await requireRole(["owner", "admin", "supervisor"]);
+  if (!hasDatabase) return { action: "none", message: "No database configured." };
+
+  const rows = await db.payment.findMany({
+    where: { jobId, type: "charge" },
+    select: { status: true, stripeCheckoutSessionId: true },
+  });
+
+  const sessionId = storedSessionId(rows);
+  if (!sessionId) {
+    const action = paymentLinkAction(rows);
+    return {
+      action,
+      message:
+        action === "none"
+          ? "Nothing outstanding on this job."
+          : "No payment link has been created for this job yet — reissue to create one.",
+    };
+  }
+
+  const { retrieveCheckoutSession } = await import("@/lib/stripe");
+  const session = await retrieveCheckoutSession(sessionId);
+  if (!session) return { action: "none", message: "Stripe is not configured." };
+
+  const action = paymentLinkAction(rows, session.status);
+  if (action === "copy" && session.url) {
+    return { action, url: session.url, message: "Link is still open — copy and send it." };
+  }
+  if (action === "paid") {
+    return { action, message: "The customer has already paid through this link." };
+  }
+  return { action: "reissue", message: "That link has expired. Reissue to create a new one." };
+}
+
+/**
+ * Mint a fresh payment link for everything a job still owes, superseding the old
+ * rows (PRD §16.3 → L2).
+ *
+ * It deliberately reuses the re-charge core rather than creating a session of its
+ * own: that is what supersedes each outstanding row in place, writes the audit
+ * note naming every superseded intent, and keys the session so a double click
+ * returns the same link instead of a second one. A separate implementation here
+ * is exactly how a job ends up with two live links for the same money.
+ */
+export async function reissueJobPaymentLink(
+  jobId: string,
+): Promise<{ ok: boolean; url?: string; message: string }> {
+  await requireRole(["owner", "admin", "supervisor"]);
+  if (!hasDatabase) return { ok: false, message: "No database configured." };
+  const res = await prepareOutstandingCheckout(jobId);
+  if (!res.ok || !res.url) return { ok: false, message: res.message };
+  return { ok: true, url: res.url, message: `New payment link for ${formatPence(res.total!)}.` };
 }

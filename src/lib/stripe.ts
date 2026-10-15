@@ -442,3 +442,29 @@ export async function savedCardFor(customerId: string): Promise<string | null> {
   const methods = await stripe.paymentMethods.list({ customer: customerId, type: "card", limit: 1 });
   return methods.data[0]?.id ?? null;
 }
+
+/**
+ * Read a Checkout Session back, to see whether its payment link is still usable
+ * (PRD §16.3 → L2, the deferred payment-link copy / reissue).
+ *
+ * The session id is the only handle we store for a payment link — a Checkout
+ * Session has no PaymentIntent until it is paid — so this is how the admin UI
+ * answers "can I still send this link, or do I need a new one?". A session that
+ * Stripe no longer knows is reported as expired rather than throwing: from the
+ * admin's point of view a link that cannot be retrieved and a link that has
+ * expired need the same action.
+ */
+export async function retrieveCheckoutSession(
+  sessionId: string,
+): Promise<{ status: "open" | "expired" | "complete"; url: string | null } | null> {
+  const stripe = getStripe();
+  if (!stripe) return null;
+  try {
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    if (session.status === "complete") return { status: "complete", url: null };
+    if (session.status === "open") return { status: "open", url: session.url ?? null };
+    return { status: "expired", url: null };
+  } catch {
+    return { status: "expired", url: null };
+  }
+}
