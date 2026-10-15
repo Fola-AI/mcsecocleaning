@@ -39,7 +39,7 @@
 import "../../scripts/load-env";
 
 import Stripe from "stripe";
-import { expect, type Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
 
 export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 

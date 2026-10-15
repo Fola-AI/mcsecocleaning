@@ -22,7 +22,7 @@ export function JobPaymentLinkControl({ jobId, outstanding }: { jobId: string; o
   const [pending, start] = useTransition();
   const [url, setUrl] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
-  const [canReissue, setCanReissue] = useState(false);
+  const [paid, setPaid] = useState(false);
   const [copied, setCopied] = useState(false);
 
   // Nothing owed → no link to send. The server action refuses too; this just keeps
@@ -34,7 +34,7 @@ export function JobPaymentLinkControl({ jobId, outstanding }: { jobId: string; o
       const res = await jobPaymentLink(jobId);
       setUrl(res.url ?? null);
       setMsg(res.message);
-      setCanReissue(res.action === "reissue");
+      setPaid(res.action === "paid");
       setCopied(false);
     });
 
@@ -43,7 +43,6 @@ export function JobPaymentLinkControl({ jobId, outstanding }: { jobId: string; o
       const res = await reissueJobPaymentLink(jobId);
       setUrl(res.url ?? null);
       setMsg(res.message);
-      setCanReissue(!res.ok);
       setCopied(false);
     });
 
@@ -71,7 +70,13 @@ export function JobPaymentLinkControl({ jobId, outstanding }: { jobId: string; o
             {copied ? "Copied ✓" : "Copy"}
           </button>
         )}
-        {canReissue && (
+        {/* Always offered while money is outstanding, rather than only after a
+            lookup has failed: the admin's need ("send them a link") does not
+            depend on having checked first, and reissue is idempotent — the same
+            outstanding rows and total return the same session, so a second press
+            cannot leave two live links for one job's money. Hidden only once the
+            customer has paid through the link, when a new one would be wrong. */}
+        {!paid && (
           <button type="button" className="btn btn-primary text-xs" disabled={pending} onClick={reissue}>
             {pending ? "Reissuing…" : "Reissue"}
           </button>

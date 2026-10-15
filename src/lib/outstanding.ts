@@ -126,19 +126,62 @@ export async function prepareOutstandingCheckout(jobId: string): Promise<Outstan
   const when = job.scheduledStart ? localDateString(job.scheduledStart) : null;
   const total = outstanding.reduce((sum, c) => sum + c.gross, 0);
 
+  const rowIds = outstanding.map((c) => c.id);
+  const { createCheckoutUrl, retrieveCheckoutSession } = await import("@/lib/stripe");
+
+  // A session may already exist for these rows. What to do about it depends
+  // entirely on whether Stripe still considers it usable — and getting this wrong
+  // hands the customer a dead link, which is what happened before L2's gates
+  // caught it: the idempotency key below is derived from the job, the total and
+  // the row set, none of which change when a session EXPIRES, so Stripe kept
+  // returning the same expired session and both "Reissue" and the customer's own
+  // Pay button produced a link that failed the moment it was opened.
+  const existingSessionId = outstanding.find((c) => c.stripeCheckoutSessionId)?.stripeCheckoutSessionId ?? null;
+  let supersededSessionId: string | null = null;
+  if (existingSessionId) {
+    const existing = await retrieveCheckoutSession(existingSessionId);
+    if (existing?.status === "open" && existing.url) {
+      // Still good: hand back the same link and change NOTHING. No second
+      // session, no second supersede, no extra audit noise — a double click and
+      // a customer refreshing /account both land here.
+      return {
+        ok: true,
+        message: `Collecting ${formatPence(total)}.`,
+        url: existing.url,
+        total,
+        customerEmail: job.customer?.email ?? null,
+        customerName: job.customer?.name ?? null,
+        serviceLabel,
+        when,
+      };
+    }
+    if (existing?.status === "complete") {
+      // Paid, and the reconciliation has not landed yet. Minting another link for
+      // money already taken is how a customer gets charged twice.
+      return {
+        ok: false,
+        message: "The customer has already paid through the last payment link — reconciling now.",
+      };
+    }
+    // Expired or unknown: a new session is needed, and the key must differ from
+    // the one that produced the expired session or Stripe will return it again.
+    supersededSessionId = existingSessionId;
+  }
+
   // One session for the total. The session has no intent id until the customer
   // pays, so every row id rides in the PaymentIntent metadata (paymentIds) and the
   // webhook settles exactly those rows (same job, still pending). The key covers the
-  // job, the total and the exact row set, so a repeat returns the same session.
-  const rowIds = outstanding.map((c) => c.id);
-  const { createCheckoutUrl } = await import("@/lib/stripe");
+  // job, the total, the exact row set and the session being replaced, so a repeat
+  // returns the same session while a reissue after expiry returns a fresh one.
   const checkout = await createCheckoutUrl({
     amountPence: total,
     description: `Balance for your ${serviceLabel}${when ? ` on ${when}` : ""}`,
     customerEmail: job.customer?.email ?? undefined,
     jobId,
     paymentIds: rowIds,
-    idempotencyKey: `recharge-${jobId}-${total}-${rowIds.join(".")}`,
+    idempotencyKey: `recharge-${jobId}-${total}-${rowIds.join(".")}${
+      supersededSessionId ? `-after-${supersededSessionId}` : ""
+    }`,
   });
   if (!checkout?.url) return { ok: false, message: "Stripe is not configured." };
 
