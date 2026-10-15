@@ -473,6 +473,15 @@ model JobChecklistItem {
   job             Job       @relation(fields: [jobId], references: [id])
   templateItemRef String?
   label           String
+  // The room or area the item belongs to, and its position — carried from the
+  // template so the list on a phone reads in the order the work happens.
+  groupLabel      String?
+  sortOrder       Int       @default(0)
+  // Whether THIS item needs a photograph. Stored on the item, not looked up from
+  // the template, because the template can be edited months later and §9.6 calls
+  // the completed checklist "your evidence in a deposit dispute" — the rule that
+  // applied on the day is the one that counts.
+  requiresPhoto   Boolean   @default(false)
   completed       Boolean   @default(false)
   completedBy     String? // audit reference
   completedAt     DateTime?

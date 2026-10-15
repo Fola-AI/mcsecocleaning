@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { db } from "./support/db";
+import { db, deleteJobCascade } from "./support/db";
 import { encryptAccessCode } from "../src/lib/access-codes";
 
 /**
@@ -104,8 +104,7 @@ test("inside the window, the assigned crew sees the code — and it is logged", 
   await expect(page.getByText(LOCKBOX)).toHaveCount(0);
 
   await db.accessCodeAudit.deleteMany({ where: { propertyId: property.id } });
-  await db.jobAssignment.deleteMany({ where: { jobId: job.id } });
-  await db.job.delete({ where: { id: job.id } });
+  await deleteJobCascade(job.id);
   await db.property.delete({ where: { id: property.id } });
 });
 
@@ -134,8 +133,7 @@ test("outside the window the reveal is refused, with a reason — and the refusa
   expect(JSON.stringify(refusal)).not.toContain(ALARM);
 
   await db.accessCodeAudit.deleteMany({ where: { propertyId: property.id } });
-  await db.jobAssignment.deleteMany({ where: { jobId: job.id } });
-  await db.job.delete({ where: { id: job.id } });
+  await deleteJobCascade(job.id);
   await db.property.delete({ where: { id: property.id } });
 });
 
@@ -160,7 +158,6 @@ test("a crew member who is not on the job cannot reveal its codes", async ({ pag
   const audits = await db.accessCodeAudit.count({ where: { propertyId: property.id } });
   expect(audits, "nothing was revealed, so there is nothing to log").toBe(0);
 
-  await db.jobAssignment.deleteMany({ where: { jobId: job.id } });
-  await db.job.delete({ where: { id: job.id } });
+  await deleteJobCascade(job.id);
   await db.property.delete({ where: { id: property.id } });
 });

@@ -99,3 +99,26 @@ export async function seriesFor(subscriptionId: string) {
     select: { id: true, scheduledStart: true, gross: true, status: true, notes: true, paymentStatus: true },
   });
 }
+
+/**
+ * Delete a job a test created, and everything that hangs off it.
+ *
+ * Centralised because the list grows: checklist items arrived in L8 and broke
+ * three specs' hand-written teardown at once. A test that cannot clean up after
+ * itself leaves rows that the next run trips over, which looks like a product
+ * bug and is not one.
+ *
+ * Deliberately forgiving — a missing job is not a failure, because teardown runs
+ * after assertions that may already have failed.
+ */
+export async function deleteJobCascade(jobId: string): Promise<void> {
+  await db.jobChecklistItem.deleteMany({ where: { jobId } });
+  await db.jobAssignment.deleteMany({ where: { jobId } });
+  await db.jobStatusEvent.deleteMany({ where: { jobId } });
+  await db.timeEntry.deleteMany({ where: { jobId } });
+  await db.payment.deleteMany({ where: { jobId } });
+  const issues = await db.issueThread.findMany({ where: { jobId }, select: { id: true } });
+  await db.issueMessage.deleteMany({ where: { threadId: { in: issues.map((i) => i.id) } } });
+  await db.issueThread.deleteMany({ where: { jobId } });
+  await db.job.delete({ where: { id: jobId } }).catch(() => {});
+}

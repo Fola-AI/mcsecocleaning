@@ -8,6 +8,9 @@ import { localDateString, localTimeString } from "@/lib/timezone";
 import { label as statusLabel } from "@/lib/job-status";
 import { CrewJobControls } from "@/components/crew/CrewJobControls";
 import { AccessCodeReveal } from "@/components/crew/AccessCodeReveal";
+import { CrewChecklist } from "@/components/crew/CrewChecklist";
+import { groupItems } from "@/lib/checklist";
+import { ensureChecklist } from "@/lib/checklist-db";
 
 export const metadata: Metadata = { title: "Job", robots: { index: false, follow: false } };
 
@@ -60,10 +63,52 @@ export default async function CrewJobPage({ params }: { params: Promise<{ id: st
         select: { id: true, clockInAt: true, clockOutAt: true, durationMinutes: true },
       },
       assignments: { select: { crew: { select: { name: true } }, isLead: true } },
+      checklistItems: {
+        orderBy: { sortOrder: "asc" },
+        select: {
+          id: true,
+          label: true,
+          groupLabel: true,
+          sortOrder: true,
+          requiresPhoto: true,
+          completed: true,
+          mediaId: true,
+        },
+      },
     },
   });
 
   if (!job) notFound();
+
+  // A job scheduled before L8 existed has no checklist. Rather than leave a crew
+  // on a doorstep without one, it is created on first open — idempotent, so a
+  // job that has one is untouched.
+  let items = job.checklistItems;
+  if (items.length === 0) {
+    const added = await ensureChecklist(job.id);
+    if (added > 0) {
+      items = await db.jobChecklistItem.findMany({
+        where: { jobId: job.id },
+        orderBy: { sortOrder: "asc" },
+        select: {
+          id: true,
+          label: true,
+          groupLabel: true,
+          sortOrder: true,
+          requiresPhoto: true,
+          completed: true,
+          mediaId: true,
+        },
+      });
+    }
+  }
+
+  // Media exchange (L7) is unbuilt — its R2 keys are not configured — so the
+  // checklist says so for photo-required items instead of offering an upload
+  // button that cannot work.
+  const photoUploadAvailable = Boolean(
+    process.env.R2_ACCOUNT_ID && process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY,
+  );
 
   const property = job.property;
   const address = [property?.addressLine1, property?.addressLine2, property?.city, property?.postcode]
@@ -134,6 +179,21 @@ export default async function CrewJobPage({ params }: { params: Promise<{ id: st
           With you: {job.assignments.map((a) => a.crew?.name).filter(Boolean).join(", ")}
         </p>
       )}
+
+      <CrewChecklist
+        photoUploadAvailable={photoUploadAvailable}
+        groups={groupItems(
+          items.map((item) => ({
+            id: item.id,
+            label: item.label,
+            groupLabel: item.groupLabel,
+            sortOrder: item.sortOrder,
+            requiresPhoto: item.requiresPhoto,
+            completed: item.completed,
+            hasPhoto: Boolean(item.mediaId),
+          })),
+        )}
+      />
 
       <CrewJobControls
         jobId={job.id}

@@ -233,7 +233,9 @@ function JobTable({
                 {j.scheduledStart ? localTimeString(j.scheduledStart) : "—"}
               </td>
               <td className="py-3 pr-4">
-                <span className="font-semibold">{j.serviceType?.name ?? "Clean"}</span>
+                <Link href={`/admin/jobs/${j.id}`} className="font-semibold underline">
+                  {j.serviceType?.name ?? "Clean"}
+                </Link>
                 <span className="block text-xs text-ink-soft">{j.customer?.name ?? j.customer?.email ?? "—"}</span>
                 {j.property?.postcode && <span className="block text-xs text-ink-soft">{j.property.postcode}</span>}
                 {j.subscription && (

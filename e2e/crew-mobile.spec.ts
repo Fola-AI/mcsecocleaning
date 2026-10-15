@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { db } from "./support/db";
+import { db, deleteJobCascade } from "./support/db";
 /** The PIN `prisma/seed-dev.ts` gives every seeded crew member. Declared here
  *  rather than imported, because importing from a seed script runs it. */
 const DEV_CREW_PIN = "4729";
@@ -133,7 +133,7 @@ test("a crew member signs in, works a job and signs out, on a phone", async ({ p
   await page.goto("/crew", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "Crew sign-in" })).toBeVisible();
 
-  await db.job.delete({ where: { id: job.id } }).catch(() => {});
+  await deleteJobCascade(job.id);
 });
 
 test("a crew member cannot open another crew's job", async ({ page }) => {

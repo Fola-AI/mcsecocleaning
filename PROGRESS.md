@@ -52,11 +52,11 @@ drafted and parked, per the L2 stage text.
 
 | | |
 | --- | --- |
-| **Current stage** | **L6 — ✅ done, 15 Oct 2026. → Merge checkpoint 2.** Crews can open the houses they are booked into, and nobody else can: the reveal is assigned-crew-only, inside the window, decrypted per request, and **every attempt is logged — including the refusals**. **L7 (media exchange) is next, and will park: its three R2 keys are empty** |
-| **Next action** | *(Claude Code)* attempt **L7** — PRD §16.3 → L7 needs `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY`, which are blank, so per PRD §16.2 the stage parks with the missing keys named and the build moves to **L8 (quality checklists)**, which needs none. *(Fola)* **checkpoints 1 and 2 are both ready to merge** — see *Checkpoint merge notes* |
-| **Working branch** | `build/autonomous`, pushed — L1 → L6 ahead of `main` (`2f667ff`, untouched) |
-| **Last updated** | 15 Oct 2026 — **L6 complete, checkpoint 2 reached.** `AccessCodeAudit` gains `outcome` and `reason`, and is written on **both** branches of the decision; the crew reveal decrypts per request so a code never enters a page payload; a source scan keeps codes out of every message template, log line and audit row. Unit tests 389 → 396, E2E 27 → 30 |
-| **Needs Fola?** | **Not to proceed.** Two merge checkpoints are waiting. L7 needs the **R2 keys** (`SETUP.md` §3.7) or it stays parked; L9 will need the **Twilio** keys. Four answers still open: **Q-14** card-on-file consent wording, **Q-15** manual price on a recurring admin booking, **Q-16** dev email delivery, **D2** the production assignment mode |
+| **Current stage** | **L8 — ✅ done, 15 Oct 2026.** Quality checklists are snapshotted onto a job when it is scheduled, ticked by the crew with who-and-when recorded, and reviewable by a supervisor. A photo-required item cannot be ticked without a photo. **L9 (notifications and recurring self-service) is next — partly blocked: the Twilio keys are empty** |
+| **Next action** | *(Claude Code)* start **L9** — build the email and in-app parts (booking, reminder, completion, review request, recurring pause/resume/skip self-service) and **park the SMS half** on the missing `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN`, per PRD §16.2. Note **Q-16**: no dev email is delivered at all right now because of a Resend account limit, which would hollow out the stage's evidence — it is the one thing worth fixing before L9's output can be trusted |
+| **Working branch** | `build/autonomous`, pushed — L1 → L6, L8 ahead of `main` (`2f667ff`, untouched); L7 parked |
+| **Last updated** | 15 Oct 2026 — **L8 complete.** Checklists snapshot onto the job (not referenced), carry their own photo rule, and are held rather than tickable where a photo is required and media is unbuilt. New `/admin/jobs/[id]` is the account of a visit: checklist with who and when, time entries, money, issues, trail. Unit tests 396 → 415, E2E 30 → 33 |
+| **Needs Fola?** | **Not to proceed with L9's email half.** Most useful now, in order: **Q-16** (dev email is not delivered — Resend account limit; L9 is about email arriving), the **Twilio keys** for SMS, the **R2 keys** to unpark L7, and **D4** media retention. Two merge checkpoints are ready. Still open: **Q-14**, **Q-15**, **D2** |
 
 ## Stage tracker
 
@@ -69,8 +69,8 @@ drafted and parked, per the L2 stage text.
 | L5 | Crew mobile interface | ✅ Done — 15 Oct 2026 (evidence below) | |
 | L6 | Access codes | ✅ Done — 15 Oct 2026 (evidence below) | ✅ 2 ← **here** |
 | L7 | Media exchange | ⛔ Parked — needs `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | |
-| L8 | Quality checklists | ☐ Next | |
-| L9 | Notifications and recurring self-service | ☐ Not started | |
+| L8 | Quality checklists | ✅ Done — 15 Oct 2026 (evidence below) | |
+| L9 | Notifications and recurring self-service | ☐ Next — SMS half will park (Twilio keys) | |
 | L10 | Payroll and owner rate-card editor | ☐ Not started | ✅ 3 |
 | L11 | Commercial RFQ, invoicing and Bacs | ☐ Not started | |
 | L12 | Reviews, growth and content gaps | ☐ Not started | |
@@ -269,6 +269,8 @@ Per SETUP D1 = A these were built, tested and committed; they wait for Fola at *
 
 - **R-16** · L6 · `prisma/manual-migrations/2026-10-15-access-code-audit-outcome.sql`, `prisma/schema.prisma` · **New migration (#14).** `AccessCodeAudit.outcome` (`revealed` | `refused`) and `reason`. *Data-safety:* a new enum type plus a column **with a default**, so every existing row keeps the meaning it was written with — each one was a successful reveal, because that was the only kind the old code wrote. Nothing fails on existing rows and no stored value changes. Reverse: `DROP COLUMN` + `DROP TYPE`, returning the audit to success-only.
 - **R-17** · L6 · `src/app/actions/crew.ts` (`revealAccessCode`), `src/lib/access-codes.ts`, `src/components/crew/AccessCodeReveal.tsx` · **Access-code handling.** The one place a plaintext alarm or lockbox code exists in the system. Worth reading in full: it decrypts only on request (never into a page payload), checks both conditions server-side, logs every attempt including refusals, never echoes the stored payload or a decryption error, and returns the code to a single request. The accompanying scan (`access-codes.leak.test.ts`) is what keeps it true as templates are added later.
+
+- **R-18** · L8 · `prisma/manual-migrations/2026-10-15-checklist-item-fields.sql`, `prisma/schema.prisma` · **New migration (#15).** `JobChecklistItem` gains `requiresPhoto`, `groupLabel` and `sortOrder`. The first is the stage's acceptance criterion and is stored **on the item** rather than read from the template, because §9.6 calls a completed checklist evidence in a deposit dispute and a template edited months later must not change what was agreed on the day. *Data-safety:* all three are defaulted or nullable; existing rows become "no photo required, no group, order 0", which is exactly how they behaved before. Reverse: `DROP COLUMN`.
 
 ## Decisions made (by Claude Code)
 
@@ -1812,3 +1814,110 @@ being half-built around an upload that cannot happen.
 
 **Resuming it:** fill the three keys, answer D4, then run L7 from PRD §16.3. Nothing in
 L8–L15 has to be revisited.
+
+---
+
+### L8 — Quality checklists
+
+**Started 15 Oct 2026.** Depends on L7 — which is **parked** on its R2 keys. L8 is built
+anyway, because only the *photo* part of it depends on media: the checklist itself, the
+snapshot, the completion rules and the review view do not. Where a photo is required, the
+item is held and says exactly why, rather than being quietly completable. Stage text: PRD
+§16.3 → L8, §9.6.
+
+#### Plan — written before coding
+
+**8.1 Schema** — ✅ done (migration #15)
+- [ ] `JobChecklistItem.requiresPhoto`, `sortOrder`, `groupLabel`. The first is the
+      acceptance criterion ("a photo-required item cannot be ticked without media") and
+      cannot be enforced without storing it **on the item**: the template can change after
+      a job is snapshotted, and the rule that applied on the day is the one that counts in
+      a dispute.
+
+**8.2 Snapshot on scheduling** — ✅ done
+- [ ] Copy the service's template onto the job when it is scheduled — a **snapshot**, not
+      a reference, because §9.6 calls the checklist "your evidence in a deposit dispute"
+      and evidence that changes when someone edits a template months later is not evidence.
+- [ ] Idempotent: scheduling twice does not double the list.
+
+**8.3 Completion** — ✅ done
+- [ ] Crew ticks items; `completedBy` and `completedAt` recorded.
+- [ ] **A photo-required item cannot be ticked without media** — server-enforced.
+- [ ] With L7 parked there is no way to attach a photo yet, so those items are **held**
+      and say so. That is the honest state: the alternative is letting a crew tick an item
+      whose whole purpose is the photograph.
+
+**8.4 Admin and supervisor review** — ✅ done
+- [ ] A job detail page in the admin area: the checklist, who ticked what and when, and
+      the ability to mark items photo-required (§9.6: "admin can require photo evidence on
+      specified items").
+
+**8.5 Acceptance (PRD)** — ✅ met
+- [ ] A photo-required item cannot be ticked without media; the checklist is visible on
+      the crew job detail and in admin.
+
+#### Work — ✅ stage complete
+
+**8.2 A snapshot, not a reference.** When a job is scheduled, the service's template is
+**copied** onto it — in the same transaction as the status change, so a job cannot be
+scheduled without one. §9.6 calls a completed end-of-tenancy checklist *"your evidence in
+a deposit dispute"*, and evidence that changes when someone edits a template months later
+is not evidence. For the same reason `requiresPhoto` is stored **on the item**: the rule
+that applied on the day is the one that counts.
+
+It is idempotent by count rather than item-by-item. "Fixing up" a checklist someone has
+already part-completed is precisely the thing that must not happen.
+
+A job scheduled before L8 existed gets its checklist when a crew first opens it, and an
+admin can add one from the job page — better than leaving someone on a doorstep with no
+list.
+
+**8.3 The rule the stage turns on.** A photo-required item cannot be ticked without a
+photo, enforced server-side. With L7 parked there is no way to attach one, so those items
+are **held** — shown, greyed, labelled "photo needed", with a message that says photo
+upload is not switched on and to tell the office. That is the honest state. The
+alternative is letting a crew tick an item whose entire purpose is the photograph, which
+would leave the dispute evidence looking complete and being worthless.
+
+**8.4 The supervisor view.** `/admin/jobs/[id]` is the account of a visit: the checklist
+with **who ticked each item and when**, the time entries (including "no location given"),
+the money, the issues raised, and the status trail. In a dispute the useful sentence is
+"the oven was photographed clean by this person at this time", not "the list was
+completed".
+
+An admin can require a photo on an item or take the requirement off. It changes **this
+job's** item, not the template — and requiring a photo on something already ticked
+without one is refused, because that would make the record self-contradictory: completed,
+and not completable.
+
+#### Evidence — acceptance (PRD §16.3 → L8)
+
+```
+$ npm run test:e2e -- checklists
+✓ a crew sees the checklist, can tick ordinary items, and cannot tick a photo-required one
+✓ the checklist is visible in admin, with who ticked what
+✓ an admin can require a photo on an item, and take it off again
+```
+
+The first asserts both halves: an ordinary item ticks and records the crew member and the
+time, while the photo-required one is **disabled in the UI and still unticked in the
+database** — the tick is refused, not merely hidden.
+
+A unit test also pins the end-of-tenancy template against §9.6's list — oven interior,
+cupboards, limescale, skirting, interior windows, extractor fans — so if someone trims it
+for being long, the test says why it is long.
+
+**One test-hygiene fix:** three specs' hand-written teardown broke at once when jobs
+gained checklist rows. Teardown is one `deleteJobCascade` helper now; a test that cannot
+clean up after itself leaves rows the next run trips over, which looks like a product bug
+and is not one.
+
+#### Evidence — the stage gate
+
+```
+$ npx tsc --noEmit        (clean)        $ npx eslint .          (clean)
+$ npm test                ℹ tests 415   ℹ pass 415   ℹ fail 0     # 396 → 415 (+19)
+$ npm run build           ✓ Compiled successfully
+$ npm run db:drift        -- This is an empty migration.  ✓ no drift
+$ npm run test:e2e        33 passed (2.9m)                        # 30 → 33 (+3)
+```

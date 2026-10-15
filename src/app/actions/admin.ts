@@ -13,6 +13,7 @@ import { checkTransition, label as statusLabel } from "@/lib/job-status";
 import { localDateString } from "@/lib/timezone";
 import { checkAssign } from "@/lib/assignment";
 import { availabilityConfig } from "@/config/availability";
+import { ensureChecklist } from "@/lib/checklist-db";
 import type { JobStatus } from "@prisma/client";
 import { createSubscriptionForBooking } from "@/lib/subscriptions";
 
@@ -369,6 +370,9 @@ export async function setJobStatus(
             : null,
       },
     });
+    // Scheduling is when the checklist is snapshotted onto the job (§9.6). In
+    // the same transaction, so a job can never be scheduled without one.
+    if (to === "scheduled") await ensureChecklist(jobId, tx);
   });
 
   return { ok: true, message: `Moved to ${statusLabel(to)}.` };
@@ -619,4 +623,51 @@ export async function setCapacity(
   if (overrideCap) return { ok: true, message: `Cap overridden for ${scope} — availability is roster-limited only.` };
   if (dailyCap == null) return { ok: true, message: `No cap for ${scope} — availability is roster-limited.` };
   return { ok: true, message: `Cap of ${dailyCap} job${dailyCap === 1 ? "" : "s"} for ${scope}.` };
+}
+
+// ---------- Checklists (§9.6) ----------
+
+/**
+ * Mark a checklist item as needing photo evidence, or not (§9.6: "Admin can
+ * require photo evidence on specified items").
+ *
+ * It changes **this job's** item, not the template: the template is the default
+ * for future jobs, and a job's checklist is the record of what was agreed for
+ * that job. Changing one must not rewrite the other.
+ */
+export async function setChecklistItemPhotoRequired(
+  itemId: string,
+  requiresPhoto: boolean,
+): Promise<{ ok: boolean; message: string }> {
+  await requireRole([...OPS_ROLES]);
+  if (!hasDatabase) return { ok: false, message: "No database configured." };
+
+  const item = await db.jobChecklistItem.findUnique({ where: { id: itemId } });
+  if (!item) return { ok: false, message: "That checklist item no longer exists." };
+
+  if (item.completed && requiresPhoto && !item.mediaId) {
+    // Requiring a photo for something already ticked would make the record
+    // self-contradictory: completed, and not completable.
+    return {
+      ok: false,
+      message: "That item is already ticked without a photo. Untick it first if the photo is needed.",
+    };
+  }
+
+  await db.jobChecklistItem.update({ where: { id: itemId }, data: { requiresPhoto } });
+  return {
+    ok: true,
+    message: requiresPhoto ? "Photo evidence now required for that item." : "Photo no longer required.",
+  };
+}
+
+/** Put a checklist on a job that has none — e.g. one created before L8. */
+export async function backfillChecklist(jobId: string): Promise<{ ok: boolean; message: string }> {
+  await requireRole([...OPS_ROLES]);
+  if (!hasDatabase) return { ok: false, message: "No database configured." };
+  const added = await ensureChecklist(jobId);
+  return {
+    ok: true,
+    message: added > 0 ? `Added ${added} checklist items.` : "That job already has a checklist.",
+  };
 }

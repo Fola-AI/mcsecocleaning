@@ -9,6 +9,7 @@ import { checkTransition, label as statusLabel } from "@/lib/job-status";
 import { lockoutState, nextAttemptState, normaliseIdentifier, verifyPin, checkPinStrength, hashPin } from "@/lib/crew-pin";
 import { endCrewSession, startCrewSession } from "@/lib/crew-session";
 import { canRevealAccessCode, decryptAccessCode, recordAccessCodeView } from "@/lib/access-codes";
+import { canCompleteItem } from "@/lib/checklist";
 import type { JobStatus } from "@prisma/client";
 
 /**
@@ -474,4 +475,66 @@ export async function revealAccessCode(
   });
 
   return { ok: true, message: "Shown once — close it when you're in.", code };
+}
+
+// ---------- Checklist (§9.6, L8) ----------
+
+/**
+ * Tick (or untick) a checklist item.
+ *
+ * The rule the stage turns on: **an item that requires a photograph cannot be
+ * ticked without one**, enforced here rather than by hiding the tick box. An
+ * oven marked clean with no picture is worth nothing in the deposit dispute the
+ * checklist exists for (§9.6).
+ *
+ * While media exchange is unbuilt (L7 is parked on its keys) there is no way to
+ * attach a photo, so those items are held and the refusal says exactly that —
+ * it does not imply the crew has done something wrong, and it tells them who can
+ * unblock it.
+ *
+ * Unticking is allowed and is not an error: a crew member who taps the wrong row
+ * on a phone needs to be able to put it back, and the record keeps `completedBy`
+ * only while the item is actually complete.
+ */
+export async function setChecklistItem(
+  itemId: string,
+  completed: boolean,
+): Promise<{ ok: boolean; message: string }> {
+  const { id: crewId } = await requireCrew();
+  if (!hasDatabase) return { ok: false, message: "No database configured." };
+
+  // Scoped through the job's assignments: a checklist item id is not
+  // authorisation any more than a job id is.
+  const item = await db.jobChecklistItem.findFirst({
+    where: { id: itemId, job: { assignments: { some: { crewId } } } },
+    select: { id: true, completed: true, requiresPhoto: true, mediaId: true, label: true },
+  });
+  if (!item) return { ok: false, message: "That checklist isn't on your list." };
+
+  if (completed) {
+    const verdict = canCompleteItem(item, { mediaAvailable: mediaUploadAvailable() });
+    if (!verdict.ok) return { ok: false, message: verdict.reason! };
+  }
+
+  await db.jobChecklistItem.update({
+    where: { id: item.id },
+    data: completed
+      ? { completed: true, completedBy: crewId, completedAt: new Date() }
+      : { completed: false, completedBy: null, completedAt: null },
+  });
+
+  return { ok: true, message: completed ? "Ticked." : "Unticked." };
+}
+
+/**
+ * Can a photo be attached at all?
+ *
+ * Media exchange (L7) needs Cloudflare R2 credentials, which are not configured.
+ * Rather than a half-built upload button, the checklist asks this and says the
+ * truth to whoever is standing there.
+ */
+function mediaUploadAvailable(): boolean {
+  return Boolean(
+    process.env.R2_ACCOUNT_ID && process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY,
+  );
 }
