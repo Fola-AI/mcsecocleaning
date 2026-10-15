@@ -638,7 +638,7 @@ from §16.1 and gate D. SETUP **D7 = A**, so gap 2 is built, not parked.
 - [ ] "Copy payment link" on the `/admin/jobs` row while the saved Checkout Session
       is open; "Reissue" once expired. (Deferred from Phase 2.)
 
-**2.5 Gap 1 — recurring bookings create a `Subscription`** (`src/app/actions/booking.ts`, `src/lib/`)
+**2.5 Gap 1 — recurring bookings create a `Subscription`** — ✅ done (`85bd8dd`)
 - [ ] When frequency ≠ `one_off`, `createBooking` **and** `adminCreateBooking` create a
       `Subscription`: `recurrenceRule` from frequency + the chosen slot's weekday and
       Europe/London start time (via `rrule`), property, service, per-visit
@@ -649,7 +649,7 @@ from §16.1 and gate D. SETUP **D7 = A**, so gap 2 is built, not parked.
 - [ ] Test: a Tuesday 09:00 series stays 09:00 London across **both** BST/GMT changes.
 - [ ] Any missing field is an additive migration → *Review queue*. No price figure changes.
 
-**2.6 Gap 2 — collection once the hold lapses, mechanism A** (`src/lib/stripe.ts`, `src/app/actions/payments.ts`, `src/lib/inngest/`)
+**2.6 Gap 2 — collection once the hold lapses, mechanism A** — ✅ done (`d2616ed`)
 - [ ] Save the card at booking for later off-session use, and charge it on completion for
       any booking more than ~6 days ahead and for every recurring visit.
 - [ ] Tests: a one-off booked ≥ 8 days ahead; a large job's balance ≥ 8 days ahead;
@@ -660,7 +660,7 @@ from §16.1 and gate D. SETUP **D7 = A**, so gap 2 is built, not parked.
       as **Q-14**, and keep it behind a confirmed flag — do not ship it unapproved.
 - [ ] `bookingHorizonDays` stays 21 (that would be D7 option C, which Fola did not tick).
 
-**2.7 Gap 3 — every server action authorises itself** (`src/app/actions/payments.ts` → `src/lib/`)
+**2.7 Gap 3 — every server action authorises itself** — ✅ done (`deb3773`)
 - [ ] Move `prepareOutstandingCheckout` and its "verified job" wrapper into `src/lib/` with
       `import "server-only"`, leaving `payMyOutstanding` (ownership-scoped) and
       `rechargeOutstanding` (role-gated) as the only callable entry points.
@@ -753,5 +753,109 @@ seven). Re-running the seed leaves the counts unchanged, so the upserts are idem
 $ npx tsc --noEmit        (clean)      $ npx eslint .            (clean)
 $ npm test                ℹ tests 203  ℹ pass 203  ℹ fail 0      # 190 → 203 (+13)
 $ npm run build           ✓ 38 routes — first build against a real database
+```
+
+**2.7 Gap 3 — every server action authorises itself — ✅ done (`deb3773`).**
+
+`prepareOutstandingCheckoutForVerifiedJob` was exported from the `"use server"`
+payments module with no auth check. Its *name* was the only thing standing between
+any job id and a live Stripe Checkout URL plus the customer's name and email. The
+core moved to `src/lib/outstanding.ts` with `import "server-only"`, so it is not an
+action and cannot reach a client bundle; `payMyOutstanding` (ownership-scoped) and
+`rechargeOutstanding` (role-gated) are unchanged and are now the only entry points.
+
+`src/app/actions/actions-authorise.test.ts` is what stops the next one appearing: it
+scans every export of every action module and fails unless it calls `requireRole` or
+`requireCustomer`, or is allow-listed with a written reason. **Verified by breaking it
+on purpose** — an unguarded export was added and the scan failed on it:
+
+```
+$ npx tsx --test src/app/actions/actions-authorise.test.ts     # with a deliberate leak
+✖ payments.ts → leakyAction
+  leakyAction is an export of a "use server" module, so the client can call it with
+  any argument. It calls neither requireRole( nor requireCustomer(. …
+
+$ npx tsx --test src/app/actions/actions-authorise.test.ts     # leak removed
+ℹ tests 18   ℹ pass 18   ℹ fail 0      # 15 actions + 3 structural assertions
+```
+
+**2.5 Gap 1 — recurring bookings create a `Subscription` — ✅ done (`85bd8dd`).**
+
+Both booking paths now go through `src/lib/subscriptions.ts`; the booked slot becomes
+the series' first `Job` with `subscriptionId` set, so pause / resume / cancel in the
+customer account have a real row and the materialiser has something to generate from.
+Rule derivation is pure and tested (`src/lib/subscription-rule.ts`).
+
+```
+$ npx tsx --test src/lib/subscription-rule.test.ts
+ℹ tests 14   ℹ pass 14   ℹ fail 0
+  ✔ GMT begins (25 Oct 2026): every visit stays Tuesday 09:00 London
+  ✔ BST begins (29 Mar 2027): every visit stays Tuesday 09:00 London
+  ✔ the booked slot is itself the first occurrence of its own series
+  ✔ a fortnightly series keeps the booked week's parity
+```
+
+The weekday is read from the **London** calendar, not the `Date`: a 00:30 BST Tuesday
+slot is 23:30 Monday in UTC, and reading the instant directly would have booked the
+whole series a day early. The DST tests assert the UTC hour *does* shift (08:00Z ↔
+09:00Z) while the London wall-clock time does not — a series that holds 09:00 by
+accident of a fixed offset would pass a weaker test.
+
+**Two corrections in the materialiser**, whose behaviour had never been exercised
+because no `Subscription` ever existed:
+
+1. It anchors on the first **visit**, not `createdAt`. For a fortnightly booking made
+   in a different week from its first visit, anchoring on the creation date puts the
+   series on the opposite week — so the booked visit is not in the generated set, it
+   survives, *and* a near-duplicate appears beside it. That is precisely the duplicate
+   gate D exists to catch.
+2. Materialised visits are priced from the `Subscription` row, not from a fresh
+   `computeQuote`. `computeQuote` reads the live rate card, so the old code would have
+   repriced every existing subscription the day a rate changed — which `CLAUDE.md` →
+   *Money rules* forbids. Duration still comes from the quote, since duration is not a
+   price.
+
+**2.6 Gap 2 — card on file (D7 = A) — ✅ done (`d2616ed`), and OFF by default.**
+
+Mechanism A is built end to end: the card is saved at booking and charged off-session
+on completion for any booking more than ~6 days ahead and for every recurring visit.
+The boundary is 6 days, not 7 — a job exactly 7 days out would be captured against an
+authorisation expiring the same day.
+
+- a large job's deposit now saves the card `off_session` and its balance is **not**
+  authorised at booking (the hold would lapse first);
+- a job with no deposit confirms a **SetupIntent**, so any 3-D Secure challenge happens
+  while the customer is present rather than failing a charge later;
+- a recurring visit has no `Payment` row until it completes (the materialiser creates
+  jobs and nothing else), so the row is created at completion from the job's stored
+  price and charged;
+- a failure marks the row `failed`, writes the reason into `JobStatusEvent` and leaves
+  the job **completed** — schedule ≠ billing. `authentication_required` is reported
+  separately from a decline, because the customer *can* still pay and an admin told
+  "declined" would chase a new card for nothing.
+- `User.stripeDefaultPaymentMethodId` (additive migration #10, applied, drift still
+  empty) is written **only** by the signed webhook — never from the client, and it
+  holds a Stripe `pm_…` handle, never card data.
+
+**It does not ship switched on.** Saving a card to charge later changes what the
+customer agrees to at checkout, and that is legal wording — a Park item. So
+`CARD_ON_FILE_CONSENT.confirmed` is `false` and every booking keeps the old behaviour,
+holes included, until Fola approves the draft (**Q-14**). Outside production
+`CARD_ON_FILE_DEV_PREVIEW=true` exercises it for the gates; in production the consent
+flag is the only switch, which is asserted by a test. The draft carries `TODO(legal)`,
+so the L15 launch gate reports it:
+
+```
+$ npm run check:launch-inputs
+TODO(legal) — 2
+  src/config/legal.ts (2)
+    48: /** TODO(legal) — draft wording, unapproved. Do not render while unconfirmed. */
+```
+
+```
+$ npm test
+ℹ tests 257   ℹ pass 257   ℹ fail 0      # 203 → 257 (+54 across gaps 1–3)
+$ npx tsc --noEmit  (clean)   $ npx eslint .  (clean)   $ npm run build  ✓ 38 routes
+$ npm run db:drift  -- This is an empty migration.   ✓ no drift
 ```
 
