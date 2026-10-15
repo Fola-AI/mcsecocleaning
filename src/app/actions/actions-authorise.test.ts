@@ -52,6 +52,11 @@ const PUBLIC_ALLOW_LIST: Record<string, string> = {
     "signing out must work whatever state the session is in, including already " +
     "expired; requiring a valid session to end one would strand a shared device " +
     "on the last person's day",
+  acceptProposal:
+    "a commercial customer accepting a proposal has no account — a managing agent " +
+    "clicks the link they were sent, so the proposal id IS the credential. It " +
+    "accepts only a proposal already marked sent, only once, and touches nothing " +
+    "the holder of that link was not already given",
 };
 
 /**

@@ -52,11 +52,11 @@ drafted and parked, per the L2 stage text.
 
 | | |
 | --- | --- |
-| **Current stage** | **L10 — ✅ payroll done, 15 Oct 2026; the rate-card editor is parked on SETUP D3** (a stated pre-authorisation, not a preference). **→ Merge checkpoint 3.** **L11 (commercial RFQ, invoicing and Bacs) is next and will partly park** — it needs Bacs enabled in Stripe test mode and `NEXT_PUBLIC_CALCOM_URL` |
-| **Next action** | *(Claude Code)* start **L11**, building the RFQ and invoicing parts and parking the Bacs and site-survey items on their missing prerequisites. *(Fola)* **three merge checkpoints are now ready.** The most valuable answers, in order: **Q-16** (no dev email is delivered), **D3** (build the rate-card editor or not), the **Twilio** and **R2** keys |
-| **Working branch** | `build/autonomous`, pushed — L1 → L6, L8 → L10 ahead of `main` (`2f667ff`, untouched); L7 parked |
-| **Last updated** | 15 Oct 2026 — **L10 payroll complete.** Three pay types with the distinctions that matter (a two-person crew does not pay out twice on one job; an attended-but-cancelled visit is not an automatic payment); report and CSV generated from one set of functions so they cannot disagree; reconciliation asserted against the database. The rate-card editor is not started, pending D3. Unit tests 473 → 491, E2E 38 → 40 |
-| **Needs Fola?** | **Yes, for the parked half.** **D3** decides whether the rate-card editor is built at all. Then: **Q-16** (dev email), **Q-17** (does holiday pay apply?), the **Twilio** keys, the **R2** keys and **D4**. Three checkpoints ready to merge. Still open: **Q-14**, **Q-15**, **D2** |
+| **Current stage** | **L11 — ✅ done, 15 Oct 2026**, except three items parked on prerequisites that were **checked rather than assumed**: Bacs (the Stripe account is not configured for it), the Cal.com survey link, and invoice PDF storage (R2). A commercial enquiry now reaches an active recurring contract and an invoice that reconciles. **L12 (reviews, growth and content gaps) is next** |
+| **Next action** | *(Claude Code)* start **L12** — PRD §16.3 → L12: the review flow under DMCC 2024 (no gating), abandoned-quote recovery, the location-page publish gate, and the schema fields reviews need. `GOOGLE_REVIEW_URL` is empty, so the Google link item parks and a `TODO(business-input)` marker stands in its place. *(Fola)* **three merge checkpoints are ready** |
+| **Working branch** | `build/autonomous`, pushed — L1 → L6, L8 → L11 ahead of `main` (`2f667ff`, untouched); L7 parked |
+| **Last updated** | 15 Oct 2026 — **L11 complete** bar three parked items. Proposal acceptance reuses the domestic subscription code rather than reimplementing recurring work; invoice numbers come from the highest issued (never a count), gaps are surfaced, state is derived from dates, and the VAT number appears only when we are registered. Unit tests 491 → 510, E2E 40 → 42 |
+| **Needs Fola?** | **Not to proceed with L12.** Unblocking work, in order: **Q-16** (no dev email is delivered), **D3** (rate-card editor), **Bacs** in Stripe test mode, the **R2** keys + **D4** (unparks L7 and invoice PDFs), the **Twilio** keys, `NEXT_PUBLIC_CALCOM_URL`. Three checkpoints ready. Still open: **Q-14**, **Q-15**, **Q-17**, **D2** |
 
 ## Stage tracker
 
@@ -72,8 +72,8 @@ drafted and parked, per the L2 stage text.
 | L8 | Quality checklists | ✅ Done — 15 Oct 2026 (evidence below) | |
 | L9 | Notifications and recurring self-service | ✅ Done — 15 Oct 2026 (SMS delivery parked: Twilio keys) | |
 | L10 | Payroll and owner rate-card editor | ✅ Payroll done — 15 Oct 2026; editor ⛔ parked on D3 | ✅ 3 ← **here** |
-| L11 | Commercial RFQ, invoicing and Bacs | ☐ Next — Bacs and Cal.com items will park | |
-| L12 | Reviews, growth and content gaps | ☐ Not started | |
+| L11 | Commercial RFQ, invoicing and Bacs | ✅ Done — 15 Oct 2026 (Bacs, Cal.com link and PDF storage parked) | |
+| L12 | Reviews, growth and content gaps | ☐ Next | |
 | L13 | Issue resolution and data rights | ☐ Not started | ✅ 4 |
 | L14 | Launch hardening | ☐ Not started | |
 | L15 | Release candidate and LAUNCH.md | ☐ Not started | ✅ 5 |
@@ -2235,4 +2235,114 @@ $ npm test                ℹ tests 491   ℹ pass 490   ℹ fail 0   ℹ skippe
 $ npm run build           ✓ Compiled successfully
 $ npm run db:drift        -- This is an empty migration.  ✓ no drift
 $ npm run test:e2e        40 passed (3.1m)                        # 38 → 40 (+2)
+```
+
+---
+
+### L11 — Commercial RFQ, invoicing and Bacs
+
+**Started 15 Oct 2026.** Depends on L3 (done). **Three items park on missing
+prerequisites**, each verified rather than assumed:
+
+| Item | State | Evidence |
+| --- | --- | --- |
+| **Bacs mandate and collection** | ⛔ parked | Checked against the live test account, not inferred from the key list: `stripe.setupIntents.create({ payment_method_types: ["bacs_debit"] })` returns *"Your account isn't configured to directly use SetupIntents to create Mandates for Bacs Direct Debits."* `SETUP.md` §3.3 step 2 (Stripe → Settings → Payment methods → enable **Bacs Direct Debit** in test mode) has not been done |
+| **Site survey booking link** | ⛔ parked | `NEXT_PUBLIC_CALCOM_URL` is empty (`SETUP.md` §3.10). The RFQ still captures the lead and an admin arranges the survey; what is missing is the self-service link |
+| **Invoice PDF storage** | ⛔ parked | Needs R2, which L7 is parked on. Invoices render as a printable page instead, which is what is actually sent — the stored PDF is the archive copy |
+
+Everything else is built. Stage text: PRD §16.3 → L11, §7.6, §12.5.
+
+#### Plan — written before coding
+
+**11.1 Invoicing** — ✅ done
+- [ ] **Sequential** invoice numbers with no gaps — a gap in a sales-invoice sequence is
+      the first thing an inspector asks about.
+- [ ] Net / VAT / gross from the jobs invoiced, reconciling exactly; the **VAT number
+      appears only when registered**, because showing one we do not have is an offence and
+      omitting one we do have invalidates the invoice for the customer's own return.
+- [ ] Net-30 status: issued → due → overdue, from the dates rather than a field someone
+      has to remember to change.
+- [ ] **Bank transfer appears on invoices only** (§12.5) — never as a checkout option.
+
+**11.2 Commercial contract flow** — ✅ done
+- [ ] An RFQ lead becomes a `Proposal` (scope, frequency, price per visit, term), sent to
+      the customer, accepted online, and becomes a **real `Subscription` with jobs** —
+      through the same code the domestic path uses (L2's gap 1), not a second
+      implementation.
+
+**11.3 Organisation as the billing entity** — ✅ done
+- [ ] The organisation is who is invoiced; the site contact and the residents are not. A
+      block of flats has a managing agent who pays and residents who are present, and
+      conflating them is how invoices go to the wrong person.
+
+**11.4 Acceptance (PRD)** — ✅ met (Bacs excepted, parked)
+- [ ] A commercial lead reaches an **active recurring contract** end to end.
+- [ ] **Invoice totals reconcile to the jobs** invoiced.
+
+#### Work — ✅ complete except the three parked items
+
+**11.2 One implementation of "recurring work".** Accepting a proposal calls the **same**
+`createSubscriptionForBooking` the domestic wizard uses. A second implementation would be
+a second place for L2's gap 1 to come back — a plan that exists on paper and generates no
+cleans — and that gap cost this build a stage to find the first time.
+
+The acceptance page is reachable by someone with **no account**, because that is who
+accepts: a managing agent clicking a link. So the proposal id *is* the credential, and the
+action is written to that: it accepts only a proposal already marked **sent**, only
+**once**, and touches nothing the holder of the link was not already given. A **draft is
+not an offer** — the page 404s until an admin sends it, because accepting a draft would
+commit us to a price nobody has checked.
+
+**11.1 Invoices that survive being looked at.** Numbers come from the **highest already
+issued**, never a count, so a deleted draft cannot reuse one — two invoices sharing a
+number is worse than a gap. Gaps are detected and shown on the screen, because an
+inspector asks about them and the time to notice is now. State is **derived from the
+dates**, so "overdue" cannot be wrong because somebody forgot to change a field, and the
+list says *"27 days late"* rather than "overdue" — the first gets a payment, the second
+gets ignored. Totals are summed from each job's **stored** figures, so an invoice says
+what was charged rather than what today's rate card would make it.
+
+The **VAT number appears only when we are registered**, and a `PLACEHOLDER` value is
+treated as absent: showing a VAT number we do not have is an offence, and the screen says
+plainly "Not VAT registered — no VAT is charged and none is shown". Bank transfer appears
+on invoices **and nowhere else** (§12.5).
+
+#### Evidence — acceptance (PRD §16.3 → L11)
+
+```
+$ npm run test:e2e -- commercial
+✓ a commercial enquiry becomes an active recurring contract
+✓ a draft proposal is not an offer and cannot be seen
+
+$ npx tsx --test src/lib/invoicing.test.ts
+ℹ tests 14   ℹ pass 14   ℹ fail 0
+```
+
+The first walks it end to end: a commercial `Lead`, a sent `Proposal` showing the price,
+the frequency and **the term**, accepted by a signed-out visitor who picks the start date,
+producing exactly one active `Subscription` priced from the proposal (not the rate card)
+with its first visit in the diary — then an invoice whose totals reconcile to that job,
+with no VAT number shown and bank transfer named as the way to pay. Accepting twice
+changes nothing.
+
+#### ⛔ Three parked items, each verified rather than assumed
+
+1. **Bacs Direct Debit.** Checked against the live Stripe test account:
+   `setupIntents.create({ payment_method_types: ["bacs_debit"] })` returns *"Your account
+   isn't configured to directly use SetupIntents to create Mandates for Bacs Direct
+   Debits."* `SETUP.md` §3.3 step 2 — enable Bacs in Stripe test mode — has not been done.
+   Commercial collection is by invoice and bank transfer meanwhile, which is what §12.5
+   has an invoice carry anyway.
+2. **The site-survey booking link.** `NEXT_PUBLIC_CALCOM_URL` is empty. The RFQ captures
+   the lead and an admin arranges the survey; the self-service link is what is missing.
+3. **Invoice PDF storage.** Needs R2, which L7 is parked on. The invoice renders as a page
+   — which is what is actually sent — and the stored PDF is the archive copy.
+
+#### Evidence — the stage gate
+
+```
+$ npx tsc --noEmit        (clean)        $ npx eslint .          (clean)
+$ npm test                ℹ tests 510   ℹ pass 509   ℹ fail 0   ℹ skipped 1   # 491 → 510 (+19)
+$ npm run build           ✓ Compiled successfully
+$ npm run test:e2e        42 passed (4.3m)                        # 40 → 42 (+2)
 ```

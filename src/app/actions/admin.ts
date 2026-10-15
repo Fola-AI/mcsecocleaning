@@ -11,6 +11,7 @@ import { parseClientCsv } from "@/lib/csv";
 import { requireRole, currentAdminActor } from "@/lib/auth";
 import { checkTransition, label as statusLabel } from "@/lib/job-status";
 import { localDateString } from "@/lib/timezone";
+import { site } from "@/config/site";
 import { checkAssign } from "@/lib/assignment";
 import { availabilityConfig } from "@/config/availability";
 import { ensureChecklist } from "@/lib/checklist-db";
@@ -711,4 +712,155 @@ export async function payrollCsvForPeriod(
     await payrollInputs({ from: new Date(`${from}T00:00:00Z`), to: new Date(`${to}T23:59:59Z`) }),
   );
   return { ok: true, csv: payrollCsv(report, { from, to }) };
+}
+
+// ---------- Commercial proposals and invoices (§7.6, §12.5, L11) ----------
+
+const proposalSchema = z.object({
+  leadId: z.string().min(1),
+  /** What is being cleaned, in the customer's terms. */
+  scope: z.string().trim().min(3).max(2000),
+  pricePerVisitPence: z.coerce.number().int().min(100).max(1_000_000),
+  frequency: z.enum(["weekly", "fortnightly", "monthly"]),
+  termMonths: z.coerce.number().int().min(0).max(60).optional(),
+});
+
+/**
+ * Draft a commercial proposal from an RFQ lead (§7.6).
+ *
+ * Commercial work is priced by a person, not by the engine: a block of flats is
+ * quoted after a site survey, and the figure is the surveyor's. So the price is
+ * entered here rather than computed — and because it is hand-set, it is recorded
+ * as a proposal with a scope and a term that the customer accepts, rather than
+ * appearing as a booking nobody agreed to.
+ */
+export async function createProposal(
+  input: z.input<typeof proposalSchema>,
+): Promise<{ ok: boolean; message: string; proposalId?: string }> {
+  const { id: actorId } = await requireRole([...OPS_ROLES]);
+  const parsed = proposalSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, message: parsed.error.issues[0]?.message ?? "Invalid input" };
+  if (!hasDatabase) return { ok: false, message: "No database configured." };
+
+  const lead = await db.lead.findUnique({ where: { id: parsed.data.leadId } });
+  if (!lead) return { ok: false, message: "That enquiry no longer exists." };
+
+  const proposal = await db.proposal.create({
+    data: {
+      leadId: lead.id,
+      scope: { description: parsed.data.scope, preparedBy: actorId },
+      pricePerVisit: parsed.data.pricePerVisitPence,
+      frequency: parsed.data.frequency,
+      termMonths: parsed.data.termMonths ?? null,
+      status: "draft",
+    },
+  });
+
+  return { ok: true, message: "Proposal drafted. Send it when you are happy with it.", proposalId: proposal.id };
+}
+
+/** Mark a proposal as sent. Separate from drafting so a half-written one is never sent. */
+export async function sendProposal(proposalId: string): Promise<{ ok: boolean; message: string }> {
+  await requireRole([...OPS_ROLES]);
+  if (!hasDatabase) return { ok: false, message: "No database configured." };
+
+  const proposal = await db.proposal.findUnique({ where: { id: proposalId }, include: { lead: true } });
+  if (!proposal) return { ok: false, message: "That proposal no longer exists." };
+  if (proposal.status === "accepted") return { ok: false, message: "That proposal has already been accepted." };
+
+  await db.proposal.update({
+    where: { id: proposalId },
+    data: { status: "sent", sentAt: new Date() },
+  });
+
+  return {
+    ok: true,
+    message: `Marked as sent. The customer accepts it at ${site.url}/proposal/${proposalId}.`,
+  };
+}
+
+const invoiceSchema = z.object({
+  organisationId: z.string().min(1),
+  jobIds: z.array(z.string().min(1)).min(1),
+  termDays: z.coerce.number().int().min(0).max(120).optional(),
+});
+
+/**
+ * Raise an invoice for completed jobs (§7.6, §12.5).
+ *
+ * The number comes from the **highest already issued**, never from a count, so a
+ * deleted draft cannot cause a reused number — two invoices sharing a number is
+ * worse than a gap in the sequence.
+ *
+ * Only completed work is invoiced, and only work that has not been invoiced
+ * before: billing a visit twice is the error a commercial customer notices and
+ * remembers.
+ */
+export async function createInvoice(
+  input: z.input<typeof invoiceSchema>,
+): Promise<{ ok: boolean; message: string; invoiceId?: string }> {
+  await requireRole(["owner", "admin"]);
+  const parsed = invoiceSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, message: parsed.error.issues[0]?.message ?? "Invalid input" };
+  if (!hasDatabase) return { ok: false, message: "No database configured." };
+
+  const { invoiceTotals, nextInvoiceNumber, dueDate } = await import("@/lib/invoicing");
+
+  const jobs = await db.job.findMany({
+    where: {
+      id: { in: parsed.data.jobIds },
+      status: { in: ["completed", "awaiting_feedback", "closed"] },
+    },
+    include: { serviceType: { select: { name: true } } },
+  });
+  if (jobs.length === 0) {
+    return { ok: false, message: "None of those jobs are completed, so there is nothing to invoice yet." };
+  }
+
+  const existing = await db.invoice.findMany({ select: { invoiceNumber: true, jobIds: true } });
+  const alreadyInvoiced = new Set(existing.flatMap((invoice) => invoice.jobIds));
+  const fresh = jobs.filter((job) => !alreadyInvoiced.has(job.id));
+  if (fresh.length === 0) {
+    return { ok: false, message: "Those jobs are already on an invoice." };
+  }
+
+  const totals = invoiceTotals(
+    fresh.map((job) => ({
+      id: job.id,
+      gross: job.gross,
+      net: job.net,
+      vatAmount: job.vatAmount,
+      description: job.serviceType?.name ?? "Cleaning",
+      date: job.scheduledStart ? localDateString(job.scheduledStart) : "",
+    })),
+  );
+
+  const issueDate = new Date();
+  const invoice = await db.invoice.create({
+    data: {
+      organisationId: parsed.data.organisationId,
+      jobIds: fresh.map((job) => job.id),
+      invoiceNumber: nextInvoiceNumber(existing.map((row) => row.invoiceNumber)),
+      issueDate,
+      dueDate: dueDate(issueDate, parsed.data.termDays),
+      net: totals.net,
+      vatAmount: totals.vatAmount,
+      gross: totals.gross,
+      status: "issued",
+    },
+  });
+
+  return {
+    ok: true,
+    message: `${invoice.invoiceNumber} raised for ${fresh.length} job${fresh.length === 1 ? "" : "s"}.`,
+    invoiceId: invoice.id,
+  };
+}
+
+/** Mark an invoice paid. A fact somebody asserts, which is why it is not derived. */
+export async function markInvoicePaid(invoiceId: string): Promise<{ ok: boolean; message: string }> {
+  await requireRole(["owner", "admin"]);
+  if (!hasDatabase) return { ok: false, message: "No database configured." };
+  await db.invoice.update({ where: { id: invoiceId }, data: { status: "paid" } });
+  return { ok: true, message: "Marked paid." };
 }
