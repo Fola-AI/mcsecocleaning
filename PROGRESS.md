@@ -52,11 +52,11 @@ drafted and parked, per the L2 stage text.
 
 | | |
 | --- | --- |
-| **Current stage** | **L12 — ✅ done, 15 Oct 2026.** Reviews are DMCC-compliant by construction (the ask cannot see a rating; an undisclosed incentive is never displayed), quote recovery picks and records a lawful basis per send, and account credit applies automatically at checkout. **L13 (issue resolution and data rights) is next, and needs no keys** |
-| **Next action** | *(Claude Code)* start **L13** — PRD §16.3 → L13: the issue thread lifecycle, the re-clean guarantee, and the data-rights work (access, erasure as anonymise/soft-delete, retention). **→ Merge checkpoint 4** after L13. *(Fola)* three checkpoints ready |
-| **Working branch** | `build/autonomous`, pushed — L1 → L6, L8 → L12 ahead of `main` (`2f667ff`, untouched); L7 parked |
-| **Last updated** | 15 Oct 2026 — **L12 complete.** `reviewAction` takes no rating by design and a test keeps it that way; an incentivised review with no disclosure is refused outright rather than shown unlabelled; quote recovery sends only on consent or soft opt-in and records the basis; credit applies itself, soonest-expiring first, never exceeding the bill. Unit tests 510 → 531, E2E 42 → 45 |
-| **Needs Fola?** | **Not to proceed with L13.** Unblocking work unchanged, in order: **Q-16** (dev email), **D3**, **Bacs**, **R2 keys + D4**, **Twilio keys**, `NEXT_PUBLIC_CALCOM_URL`, `GOOGLE_REVIEW_URL`. Still open: **Q-14**, **Q-15**, **Q-17**, **D2** |
+| **Current stage** | **L13 — ✅ done, 15 Oct 2026. → Merge checkpoint 4.** A complaint becomes a free re-clean linked to the original; the thread stays open after the guarantee window because the window is a promise rather than a cut-off; and erasure removes the person while keeping the records the law requires. **L14 (launch hardening) is next and will partly park** — Sentry has no DSN and SETUP **D5** (rate-limiting backend) is unanswered |
+| **Next action** | *(Claude Code)* start **L14** — the hardening that needs no keys (rate limiting on the Postgres path, security headers, the launch gates), parking Sentry and anything that depends on D5. Then **L15**, which **cannot complete**: its release gate requires `npm run check:launch-inputs` to pass, and that needs the 26 business placeholders in `src/config/site.ts` (**Q-5**). *(Fola)* **four merge checkpoints are ready** |
+| **Working branch** | `build/autonomous`, pushed — L1 → L6, L8 → L13 ahead of `main` (`2f667ff`, untouched); L7 parked |
+| **Last updated** | 15 Oct 2026 — **L13 complete.** Zero-price re-cleans linked to the original and scheduled 24–48h out; refunds and explanations require a reason; urgency flagged by hand rather than guessed; erasure anonymises and states what it keeps and why, refusing while a visit is booked or money is outstanding. Unit tests 531 → 550, E2E 45 → 47 |
+| **Needs Fola?** | **Yes, increasingly.** L15 cannot finish without **Q-5** (the 26 business facts). Also: **Q-16** (dev email), **D3**, **D5** (rate-limiting backend), **Bacs**, **R2 keys + D4**, **Twilio keys**, Sentry DSN, Cal.com and Google review URLs. Four checkpoints ready. Still open: **Q-14**, **Q-15**, **Q-17**, **D2** |
 
 ## Stage tracker
 
@@ -74,8 +74,8 @@ drafted and parked, per the L2 stage text.
 | L10 | Payroll and owner rate-card editor | ✅ Payroll done — 15 Oct 2026; editor ⛔ parked on D3 | ✅ 3 ← **here** |
 | L11 | Commercial RFQ, invoicing and Bacs | ✅ Done — 15 Oct 2026 (Bacs, Cal.com link and PDF storage parked) | |
 | L12 | Reviews, growth and content gaps | ✅ Done — 15 Oct 2026 (Google review link parked) | |
-| L13 | Issue resolution and data rights | ☐ Next | ✅ 4 |
-| L14 | Launch hardening | ☐ Not started | |
+| L13 | Issue resolution and data rights | ✅ Done — 15 Oct 2026 (evidence below) | ✅ 4 ← **here** |
+| L14 | Launch hardening | ☐ Next — Sentry and D5 items will park | |
 | L15 | Release candidate and LAUNCH.md | ☐ Not started | ✅ 5 |
 
 Legend: ☐ not started · ⏳ in progress · ✅ done (evidence below) · ⛔ blocked (reason in stage log)
@@ -468,6 +468,47 @@ same single field.
 
 **Two decisions are now blocking real work:** **D3** (rate-card editor), and **D4** (media
 retention, needed by L7).
+
+---
+
+### Checkpoint 4 — after L13 · ready for Fola
+
+**What is on the branch since checkpoint 3.** L11 (commercial proposals, contracts and
+invoicing), L12 (reviews, quote recovery and credit) and L13 (issue resolution and data
+rights).
+
+**Migrations to apply before merging** — after checkpoint 3's three:
+
+```
+  2026-10-15-review-provenance-and-recovery.sql   psql -1    ← L12
+```
+
+L11 and L13 added **no** schema change; L12's is five additive columns. Applied to `dev`,
+drift empty.
+
+**New Production environment variables** — none. Three that change behaviour when filled:
+`GOOGLE_REVIEW_URL` (the review request deep-links instead of asking for a reply),
+`NEXT_PUBLIC_CALCOM_URL` (self-service site surveys), and Bacs enabled in Stripe
+(commercial Direct Debit instead of bank transfer only).
+
+**Review-queue items in scope:** R-23, R-24 (L12). L11 and L13 added no migration and no
+new auth surface, so there is nothing of that kind to review — but two pieces are worth
+reading anyway because of what they commit the business to:
+
+- **`src/lib/reviews.ts`** — the DMCC 2024 decisions, made structural. The function that
+  decides who is asked for a review *cannot see a rating*, and an incentivised review with
+  no disclosure is refused rather than shown unlabelled.
+- **`src/lib/data-rights.ts`** — the two lists: what erasure removes, and what it keeps
+  with the lawful basis for each. If you disagree with anything on the second list, that
+  is the file.
+
+**Two things to know about what customers now experience:**
+
+1. **Account credit comes off the price automatically at checkout.** A customer with £15
+   of credit is charged £15 less without asking. That is the intended behaviour, and it
+   changes what the card is asked for.
+2. **A free re-clean is a zero-price job**, not a discounted one, and it is linked to the
+   job it replaces. Takings will show a £0 job rather than a £390 job with a £390 discount.
 
 ---
 
@@ -2472,3 +2513,128 @@ $ npm run test:e2e        45 passed (3.9m)                        # 42 → 45 (+
 botched edit had left out of `schema.prisma`, and `npm run db:drift` printed the exact
 `ALTER TABLE` that disagreed. That is the check working as designed, on the day it
 mattered rather than at the next deploy.
+
+---
+
+### L13 — Issue resolution and data rights
+
+**Started 15 Oct 2026.** Depends on L7 (parked) and L9 (done). The L7 dependency is the
+**media** in a damage evidence pack: the pack is built from what exists — clock times,
+the checklist, the thread — and names photographs as the piece that arrives with media
+exchange, rather than pretending to a complete pack. Stage text: PRD §16.3 → L13, §9.5,
+§14.3. **→ Merge checkpoint 4.**
+
+#### Plan — written before coding
+
+**13.1 Remedy windows** — ✅ done
+- [ ] Opened automatically on completion: **72h for end of tenancy, 48h otherwise**.
+- [ ] The PRD is emphatic, and the code must be too: *"The window is a guaranteed-remedy
+      window, not a support cut-off."* An elapsed window converts the thread to a general
+      support ticket and **never locks it** — UK consumer protection would not respect a
+      lock, and a customer who cannot reach us complains somewhere public instead.
+
+**13.2 The thread and its triage** — ✅ done
+- [ ] `IssueThread` / `IssueMessage` with admin triage and **manual** urgency flags —
+      manual because an automatic sentiment score on a handful of messages is a guess
+      presented as a fact (§11's own reasoning about small datasets).
+
+**13.3 Resolution paths** — ✅ done
+- [ ] **Zero-price re-clean**, linked to the original job and scheduled 24–48h out.
+- [ ] **Partial refund**, reason-coded.
+- [ ] **Explanation / no action** — a real outcome, recorded as one.
+
+**13.4 Damage and breakage** — ✅ done (photographs arrive with L7)
+- [ ] A separate path with an **evidence pack**: clock-in/out times, the checklist as it
+      was completed, the thread. Different handling and different retention from a
+      complaint — it may end up with an insurer.
+
+**13.5 Data rights** — ✅ done
+- [ ] **Erasure as anonymise / soft-delete**: PII and access codes go; the financial
+      record stays, because we are required to keep it and because deleting an invoice to
+      honour an erasure request breaks a different law.
+- [ ] **Subject-access export**: everything we hold about one person, in one file.
+
+**13.6 Acceptance (PRD)** — ✅ met
+- [ ] Complaint → **scheduled zero-price re-clean linked to the original**.
+- [ ] The thread is **reachable after the window**.
+- [ ] Erasure **strips PII and access codes while financial records remain**.
+
+#### Work — ✅ stage complete
+
+**13.1 The window is a promise, not a cut-off.** The PRD puts this in a block quote and
+the code takes it literally: neither branch of `remedyState` closes anything. Inside the
+window a re-clean is guaranteed and free; outside it the customer is told *"your re-clean
+guarantee window has closed, but you can still contact us about this clean and we will
+help"* — deliberately **not** "your window has expired", which invites an argument we would
+lose and which UK consumer protection would not respect anyway.
+
+A re-clean outside the window is allowed and **recorded as goodwill** rather than refused,
+so the business can see what it is giving away without anyone having to say no to a
+customer.
+
+**13.3 Zero price, not a discount.** The re-clean job is created at `gross: 0`, linked by
+`isRecleanForJobId`. A free re-clean that reads as a £390 job with a 100% discount is a
+different thing to explain at year end from one that was always zero. A partial refund and
+an explanation both **require a reason** — "refunded £20" with no reason is worthless three
+months later when takings do not match, and an explanation nobody wrote down is a
+conversation that happened once.
+
+Urgency is flagged **by hand**. An automatic sentiment score over a handful of messages is
+a guess presented as a fact, which §11 rejects for the same reason on much larger datasets.
+
+**13.5 Erasure is anonymisation, and the hard part is what stays.** Deleting the customer
+row would orphan every financial record pointing at it — and those must be kept: HMRC
+requires six years, and that legal obligation outranks an erasure request. So the module is
+written as two explicit lists, and the **retained** list is the one that gets forgotten:
+every entry has to state a lawful basis, because *"we might want it"* is not one.
+
+Erasure waits while a visit is booked or money is outstanding — not to obstruct a right,
+but because erasing a customer with a job next Tuesday sends a crew to a house with no
+contact details, and an unpaid invoice nobody can explain is worse for everyone than a
+short conversation.
+
+The admin screen says what will be **kept** *before* it asks, and the list stays on screen
+afterwards.
+
+#### Evidence — acceptance (PRD §16.3 → L13)
+
+```
+$ npm run test:e2e -- issues-and-rights
+✓ a complaint becomes a scheduled zero-price re-clean linked to the original
+✓ erasure strips the person and the access codes, and keeps the financial record
+
+$ npx tsx --test src/lib/data-rights.test.ts
+ℹ tests 14   ℹ pass 14   ℹ fail 0
+```
+
+- *"Complaint → scheduled zero-price re-clean linked to the original"* — asserted on the
+  row: `gross: 0`, `isRecleanForJobId` set, status `scheduled`, and 24–48 hours out.
+- *"Thread reachable after the window"* — the gate's job is **four days old** against a
+  72-hour window, and the screen says "outside the guarantee window — still ours to
+  answer" while the re-clean button still works.
+- *"Erasure strips PII and access codes while financial records remain"* — run through the
+  real admin action: the email becomes `@erased.invalid`, the phone, address, access codes
+  and job notes are gone, and the `Payment` row is still there at £390, captured.
+
+#### One dependency acknowledged rather than faked
+
+L13 depends on L7 for the **photographs** in a damage evidence pack. The pack is built from
+what exists — clock-in and clock-out times, the checklist as it was completed, the thread —
+and the admin screen separates damage claims from complaints because they are handled and
+retained differently. Photographs join it when media exchange is unparked; nothing claims a
+complete pack meanwhile.
+
+#### Evidence — the stage gate
+
+```
+$ npx tsc --noEmit        (clean)        $ npx eslint .          (clean)
+$ npm test                ℹ tests 550   ℹ pass 549   ℹ fail 0   ℹ skipped 1   # 531 → 550 (+19)
+$ npm run build           ✓ Compiled successfully
+$ npm run db:drift        -- This is an empty migration.  ✓ no drift
+$ npm run test:e2e        47 passed (3.9m)                        # 45 → 47 (+2)
+```
+
+**A third instance of one pattern, worth naming:** a confirmation rendered inside the thing
+it changes disappears with it — the blackout row (L4), the skipped visit (L9), and now the
+erased customer leaving a filtered list. Here the fix was not to refresh at all: the list
+of what was **kept** is the part an admin will be asked about, and it must not flash past.

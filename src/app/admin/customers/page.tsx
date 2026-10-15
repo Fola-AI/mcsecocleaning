@@ -6,6 +6,7 @@ import { db, hasDatabase } from "@/lib/db";
 import { formatPence } from "@/lib/money";
 import { localDateString } from "@/lib/timezone";
 import { AdminShell } from "@/components/admin/AdminShell";
+import { CustomerDataRights } from "@/components/admin/CustomerDataRights";
 
 export const metadata: Metadata = { title: "Customers", robots: { index: false, follow: false } };
 
@@ -127,6 +128,8 @@ export default async function AdminCustomersPage({
               <p className="mt-1 text-sm text-ink-soft">
                 {customer.properties.map((p) => `${p.addressLine1}, ${p.postcode}`).join(" · ") || "No property on file"}
               </p>
+
+              <CustomerDataRights customerId={customer.id} name={customer.name ?? customer.email} />
 
               <p className="mt-1 text-sm">
                 {lastJob?.scheduledStart ? `Last visit ${localDateString(lastJob.scheduledStart)}. ` : "No visits yet. "}
