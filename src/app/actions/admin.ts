@@ -9,6 +9,7 @@ import { serviceBySlug } from "@/config/services";
 import { ROOM_KEYS, RATE_CARD_VERSION, type RoomKey } from "@/lib/pricing/rate-card";
 import { parseClientCsv } from "@/lib/csv";
 import { requireRole, currentAdminActor } from "@/lib/auth";
+import { createSubscriptionForBooking } from "@/lib/subscriptions";
 
 const OPS_ROLES = ["owner", "admin", "supervisor"] as const;
 
@@ -157,12 +158,34 @@ export async function adminCreateBooking(input: z.input<typeof adminBookingSchem
   const scheduledStart = data.slotStartISO ? new Date(data.slotStartISO) : null;
   const scheduledEnd = scheduledStart ? new Date(scheduledStart.getTime() + elapsedMinutes * 60000) : null;
 
+  // Recurring admin booking → a Subscription, exactly as the wizard does (§6.2,
+  // PRD §16.1 gap 1). Both paths go through one function so a fix to one cannot
+  // leave the other on the old behaviour.
+  //
+  // The per-visit price: the engine's per-visit figure normally. With a manual
+  // override (§9.7) the engine has no per-visit figure to give — it may have
+  // refused to price the job at all — so the hand-set price IS the per-visit
+  // price, which is the only reading that does not invent a number. The series
+  // then repeats at the price the admin quoted, no surcharge is recorded (none
+  // was applied), and the audit note below says so. Raised as Q-15 for Fola to
+  // confirm rather than assumed silently.
+  const subscriptionId = await createSubscriptionForBooking({
+    frequency: data.frequency,
+    scheduledStart,
+    customerId: user.id,
+    propertyId: property.id,
+    serviceTypeId: st.id,
+    perVisitGross: override ? grossPence : quote.escalate ? grossPence : quote.perVisitGross,
+    firstVisitGross: override ? grossPence : quote.escalate ? grossPence : quote.firstVisitGross,
+  });
+
   const job = await db.job.create({
     data: {
       customerId: user.id,
       propertyId: property.id,
       serviceTypeId: st.id,
       quoteId: quoteRow.id,
+      subscriptionId,
       status: "booked",
       scheduledStart,
       scheduledEnd,
@@ -191,7 +214,16 @@ export async function adminCreateBooking(input: z.input<typeof adminBookingSchem
   }
 
   await db.jobStatusEvent.create({
-    data: { jobId: job.id, toStatus: "booked", note: `Admin booking (${reference}, ${data.paymentMethod})` },
+    data: {
+      jobId: job.id,
+      toStatus: "booked",
+      note:
+        `Admin booking (${reference}, ${data.paymentMethod})` +
+        (subscriptionId
+          ? ` — first visit of a ${data.frequency} series (subscription ${subscriptionId}` +
+            `${override ? ", per-visit price set manually" : ""}).`
+          : ""),
+    },
   });
 
   // Optional Stripe payment link when configured and requested. Orphan-proof, the

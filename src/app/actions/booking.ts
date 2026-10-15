@@ -16,6 +16,7 @@ import { computeSlots, slotsByDate } from "@/lib/capacity";
 import { defaultRoster, availabilityConfig } from "@/config/availability";
 import { ROOM_KEYS } from "@/lib/pricing/rate-card";
 import { resolveAndApply } from "@/lib/discounts";
+import { createSubscriptionForBooking } from "@/lib/subscriptions";
 import { fromGross, fromNet, isVatRegistered, type MoneyBreakdown } from "@/lib/money";
 
 /**
@@ -368,12 +369,29 @@ async function persistBooking({
     ? new Date(scheduledStart.getTime() + quote.elapsedMinutes * 60 * 1000)
     : null;
 
+  // Recurring booking → a Subscription, and the booked slot becomes its FIRST job
+  // (§6.2, PRD §16.1 gap 1). Until this existed, choosing "weekly" wrote the word
+  // "weekly" into Job.notes and nothing else: no Subscription row, so the daily
+  // materialiser had nothing to generate from and pause / resume / cancel in the
+  // customer account had nothing to act on. A customer who asked for weekly got
+  // exactly one clean.
+  const subscriptionId = await createSubscriptionForBooking({
+    frequency: data.frequency,
+    scheduledStart,
+    customerId: user.id,
+    propertyId: property.id,
+    serviceTypeId: st.id,
+    perVisitGross: quote.perVisitGross,
+    firstVisitGross: quote.firstVisitGross,
+  });
+
   const job = await db.job.create({
     data: {
       customerId: user.id,
       propertyId: property.id,
       serviceTypeId: st.id,
       quoteId: quoteRow.id,
+      subscriptionId,
       status: "booked",
       scheduledStart,
       scheduledEnd,
@@ -388,7 +406,9 @@ async function persistBooking({
       ccrConsent: ccr,
       paymentStatus: "pending",
       source: "web",
-      notes: `Ref ${reference}. ${service.name}. ${data.frequency}.`,
+      notes: subscriptionId
+        ? `Ref ${reference}. ${service.name}. ${data.frequency} — first visit of the series.`
+        : `Ref ${reference}. ${service.name}. ${data.frequency}.`,
     },
   });
 
