@@ -83,18 +83,29 @@ export function BlackoutForm() {
   );
 }
 
+/**
+ * One blackout date.
+ *
+ * It reports the outcome of a removal **upward** rather than rendering it
+ * itself: a confirmation drawn inside the row is destroyed by the refresh that
+ * removes the row, so the message flashed and vanished. It matters here because
+ * that message is the one that says visits already held or moved stay as they
+ * are — the part an admin needs to read.
+ */
 export function BlackoutRow({
   id,
   date,
   reason,
   policy,
   past,
+  onRemoved,
 }: {
   id: string;
   date: string;
   reason: string | null;
   policy: "flag" | "shift";
   past?: boolean;
+  onRemoved?: (message: string) => void;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -103,8 +114,12 @@ export function BlackoutRow({
   const remove = () =>
     start(async () => {
       const res = await deleteBlackoutDate(id);
-      setMsg(res.message);
-      if (res.ok) router.refresh();
+      if (res.ok) {
+        onRemoved?.(res.message);
+        router.refresh();
+      } else {
+        setMsg(res.message);
+      }
     });
 
   return (
@@ -121,5 +136,42 @@ export function BlackoutRow({
       )}
       {msg && <p className="w-full text-xs text-ink-soft" role="status">{msg}</p>}
     </li>
+  );
+}
+
+/**
+ * The list of blackout dates, plus one place for a message about them.
+ *
+ * The status area lives here rather than in each row so a confirmation survives
+ * the row that caused it being removed — see `BlackoutRow`.
+ */
+export function BlackoutList({
+  rows,
+  past,
+  emptyMessage,
+}: {
+  rows: { id: string; date: string; reason: string | null; policy: "flag" | "shift" }[];
+  past?: boolean;
+  emptyMessage?: string;
+}) {
+  const [msg, setMsg] = useState<string | null>(null);
+
+  return (
+    <>
+      {msg && (
+        <p className="mt-2 rounded-lg bg-brand-tint/40 px-3 py-2 text-sm text-brand-ink" role="status">
+          {msg}
+        </p>
+      )}
+      {rows.length === 0 ? (
+        emptyMessage ? <p className="mt-2 text-sm text-ink-soft">{emptyMessage}</p> : null
+      ) : (
+        <ul className="mt-3 divide-y divide-line">
+          {rows.map((row) => (
+            <BlackoutRow key={row.id} {...row} past={past} onRemoved={setMsg} />
+          ))}
+        </ul>
+      )}
+    </>
   );
 }

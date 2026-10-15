@@ -11,6 +11,8 @@ import { parseClientCsv } from "@/lib/csv";
 import { requireRole, currentAdminActor } from "@/lib/auth";
 import { checkTransition, label as statusLabel } from "@/lib/job-status";
 import { localDateString } from "@/lib/timezone";
+import { checkAssign } from "@/lib/assignment";
+import { availabilityConfig } from "@/config/availability";
 import type { JobStatus } from "@prisma/client";
 import { createSubscriptionForBooking } from "@/lib/subscriptions";
 
@@ -435,4 +437,186 @@ export async function deleteBlackoutDate(id: string): Promise<{ ok: boolean; mes
       `${localDateString(row.date)} is bookable again. Visits already held or moved for it stay as they are — ` +
       "check the job board if any need putting back.",
   };
+}
+
+// ---------- Crew assignment (§7.4, §9.7, SETUP D2) ----------
+
+/**
+ * Put a crew on a job, in whichever mode is in force (D2).
+ *
+ * In `assign` mode this is a commitment. In `offer` mode it records an **offer**
+ * — the crew is not counted as cover until they accept, which is what keeps the
+ * Today view honest: a job with three outstanding offers and no acceptance has
+ * nobody going to it, and showing it as covered is how a morning arrives with an
+ * empty slot.
+ */
+export async function assignCrew(
+  jobId: string,
+  crewId: string,
+  options: { asLead?: boolean } = {},
+): Promise<{ ok: boolean; message: string }> {
+  const { id: actorId } = await requireRole([...OPS_ROLES]);
+  if (!hasDatabase) return { ok: false, message: "No database configured." };
+
+  const mode = availabilityConfig.assignmentMode;
+  const [job, crew, existing] = await Promise.all([
+    db.job.findUnique({ where: { id: jobId }, select: { id: true, status: true } }),
+    db.user.findFirst({ where: { id: crewId, role: "crew" }, select: { id: true, name: true, email: true } }),
+    db.jobAssignment.findMany({ where: { jobId } }),
+  ]);
+  if (!job) return { ok: false, message: "Job not found." };
+  if (!crew) return { ok: false, message: "That person is not on the crew roster." };
+
+  const verdict = checkAssign(existing, crewId, mode);
+  if (!verdict.ok) return { ok: false, message: verdict.reason! };
+
+  const who = crew.name ?? crew.email;
+  await db.$transaction(async (tx) => {
+    await tx.jobAssignment.create({
+      data: {
+        jobId,
+        crewId,
+        isLead: options.asLead ?? existing.length === 0,
+        // The offer is recorded as an offer. Leaving offeredAt null here would
+        // make an offer indistinguishable from an instruction, which is exactly
+        // the distinction `offer` mode exists to evidence (§14.6).
+        offeredAt: mode === "offer" ? new Date() : null,
+      },
+    });
+    if (options.asLead) {
+      await tx.jobAssignment.updateMany({
+        where: { jobId, crewId: { not: crewId } },
+        data: { isLead: false },
+      });
+    }
+    await tx.jobStatusEvent.create({
+      data: {
+        jobId,
+        toStatus: job.status,
+        actorId,
+        note: mode === "offer" ? `Offered to ${who}.` : `Assigned to ${who}.`,
+      },
+    });
+  });
+
+  return {
+    ok: true,
+    message: mode === "offer" ? `Offered to ${who} — awaiting their answer.` : `Assigned to ${who}.`,
+  };
+}
+
+/** Record a crew's answer to an offer (D2 `offer` mode). */
+export async function answerOffer(
+  jobId: string,
+  crewId: string,
+  answer: "accept" | "decline",
+): Promise<{ ok: boolean; message: string }> {
+  const { id: actorId } = await requireRole([...OPS_ROLES]);
+  if (!hasDatabase) return { ok: false, message: "No database configured." };
+
+  const assignment = await db.jobAssignment.findFirst({ where: { jobId, crewId } });
+  if (!assignment) return { ok: false, message: "There is no offer to answer on that job." };
+
+  const job = await db.job.findUnique({ where: { id: jobId }, select: { status: true } });
+  const now = new Date();
+  await db.$transaction(async (tx) => {
+    await tx.jobAssignment.update({
+      where: { id: assignment.id },
+      data: answer === "accept" ? { acceptedAt: now, declinedAt: null } : { declinedAt: now },
+    });
+    await tx.jobStatusEvent.create({
+      data: {
+        jobId,
+        toStatus: job?.status ?? "booked",
+        actorId,
+        note: answer === "accept" ? "Crew accepted the job." : "Crew declined the job — it needs covering.",
+      },
+    });
+  });
+
+  return {
+    ok: true,
+    message:
+      answer === "accept"
+        ? "Accepted — they are covering it."
+        : "Declined. The job is uncovered again and will show as unassigned.",
+  };
+}
+
+/** Take a crew off a job. The removal is logged — who was going, and is not now. */
+export async function unassignCrew(jobId: string, crewId: string): Promise<{ ok: boolean; message: string }> {
+  const { id: actorId } = await requireRole([...OPS_ROLES]);
+  if (!hasDatabase) return { ok: false, message: "No database configured." };
+
+  const assignment = await db.jobAssignment.findFirst({
+    where: { jobId, crewId },
+    include: { crew: { select: { name: true, email: true } } },
+  });
+  if (!assignment) return { ok: false, message: "They are not on that job." };
+
+  const job = await db.job.findUnique({ where: { id: jobId }, select: { status: true } });
+  await db.$transaction(async (tx) => {
+    await tx.jobAssignment.delete({ where: { id: assignment.id } });
+    await tx.jobStatusEvent.create({
+      data: {
+        jobId,
+        toStatus: job?.status ?? "booked",
+        actorId,
+        note: `Removed ${assignment.crew?.name ?? assignment.crew?.email ?? "a crew member"} from the job.`,
+      },
+    });
+  });
+  return { ok: true, message: "Removed. The job needs covering again if nobody else is on it." };
+}
+
+// ---------- Capacity controls (§7.4) ----------
+
+const capacitySchema = z.object({
+  /** A London date (YYYY-MM-DD), or omitted for the standing default. */
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().or(z.literal("")),
+  /** Blank clears the cap. */
+  dailyCap: z.coerce.number().int().min(0).max(100).optional(),
+  overrideCap: z.boolean().default(false),
+  reason: z.string().trim().max(200).optional().or(z.literal("")),
+});
+
+/**
+ * Set the daily cap, or override it (§7.4).
+ *
+ * The cap is the fallback for early operation when the roster is small: it stops
+ * the wizard offering a day's worth of work to two crews. The override is for the
+ * opposite case — squeezing in urgent work the cap would refuse. Both are stored
+ * with a reason, because a cap someone set for a reason should be legible to the
+ * next person rather than looking like a bug in availability.
+ */
+export async function setCapacity(
+  input: z.input<typeof capacitySchema>,
+): Promise<{ ok: boolean; message: string }> {
+  const { id: actorId } = await requireRole([...OPS_ROLES]);
+  const parsed = capacitySchema.safeParse(input);
+  if (!parsed.success) return { ok: false, message: parsed.error.issues[0]?.message ?? "Invalid input" };
+  if (!hasDatabase) return { ok: false, message: "No database configured." };
+
+  const { date, dailyCap, overrideCap, reason } = parsed.data;
+  const when = date ? new Date(`${date}T00:00:00Z`) : null;
+
+  const existing = when
+    ? await db.capacitySetting.findUnique({ where: { date: when } })
+    : await db.capacitySetting.findFirst({ where: { date: null } });
+
+  if (existing) {
+    await db.capacitySetting.update({
+      where: { id: existing.id },
+      data: { dailyCap: dailyCap ?? null, overrideCap, reason: reason || null, setBy: actorId },
+    });
+  } else {
+    await db.capacitySetting.create({
+      data: { date: when, dailyCap: dailyCap ?? null, overrideCap, reason: reason || null, setBy: actorId },
+    });
+  }
+
+  const scope = when ? localDateString(when) : "every day by default";
+  if (overrideCap) return { ok: true, message: `Cap overridden for ${scope} — availability is roster-limited only.` };
+  if (dailyCap == null) return { ok: true, message: `No cap for ${scope} — availability is roster-limited.` };
+  return { ok: true, message: `Cap of ${dailyCap} job${dailyCap === 1 ? "" : "s"} for ${scope}.` };
 }

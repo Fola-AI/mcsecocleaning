@@ -32,7 +32,32 @@ export interface ExistingJob {
   crewId: string;
   start: Date;
   end: Date;
+  /**
+   * Postcode district (outward code, e.g. "SW4"). Used for the §7.5 travel
+   * buffer: 45 minutes between districts, 30 within one. Optional, so a caller
+   * that does not know the district gets the flat buffer it always had.
+   */
+  district?: string;
+  /**
+   * The §4 patch this job sits in. A crew's day never spans two patches — see
+   * `crossPatchDay` below for why that is arithmetic, not policy.
+   */
+  patchGroup?: string;
 }
+
+/** §7.5 travel buffers. "A crew finishing in Clapham at 12:00 cannot start in
+ *  Peckham at 12:30." Naive distance-free buffering, which the PRD accepts. */
+export interface TravelBuffers {
+  /** Between two different postcode districts. */
+  crossDistrictMinutes: number;
+  /** Within one district. */
+  withinDistrictMinutes: number;
+}
+
+export const DEFAULT_TRAVEL_BUFFERS: TravelBuffers = {
+  crossDistrictMinutes: 45,
+  withinDistrictMinutes: 30,
+};
 
 export interface SlotQuery {
   from: Date;
@@ -40,8 +65,24 @@ export interface SlotQuery {
   durationMinutes: number;
   crews: CrewAvailability[];
   existingJobs?: ExistingJob[];
-  /** Naive travel buffer applied around each existing job (§6.4). */
+  /**
+   * Flat travel buffer applied around each existing job (§6.4). Kept for callers
+   * that know nothing about districts; `travelBuffers` supersedes it when the
+   * job being placed has a district.
+   */
   travelBufferMinutes?: number;
+  /**
+   * §7.5 buffers, used when both the candidate job and the existing job know
+   * their district. Defaults to 45 cross-district / 30 within.
+   */
+  travelBuffers?: TravelBuffers;
+  /** The district of the job being placed, e.g. "SW4". */
+  district?: string;
+  /**
+   * The §4 patch of the job being placed. When set, a crew that already has work
+   * in a DIFFERENT patch that day offers no slots that day.
+   */
+  patchGroup?: string;
   slotGranularityMinutes?: number;
   /** Earliest bookable time measured from `now`. */
   leadTimeHours?: number;
@@ -128,6 +169,46 @@ function weekdayOfLocalDate(dateStr: string): number {
  * Compute bookable slots. Returns individual crew slots; use
  * `distinctStartTimes` to collapse to the times a customer can pick.
  */
+/**
+ * The buffer to leave around an existing job (§7.5).
+ *
+ * Falls back to the flat buffer whenever either end does not know its district:
+ * guessing "cross-district" would quietly shrink the day for every caller that
+ * has not been updated, and guessing "within" would offer a slot nobody can
+ * reach. The flat value is what those callers already had.
+ */
+export function bufferFor(
+  candidateDistrict: string | undefined,
+  existingDistrict: string | undefined,
+  buffers: TravelBuffers,
+  flatFallbackMinutes: number,
+): number {
+  if (!candidateDistrict || !existingDistrict) return flatFallbackMinutes;
+  return candidateDistrict.toUpperCase() === existingDistrict.toUpperCase()
+    ? buffers.withinDistrictMinutes
+    : buffers.crossDistrictMinutes;
+}
+
+/**
+ * Does giving this crew a job in `patchGroup` on this local date make their day
+ * span two patches (§4)?
+ */
+export function crossPatchDay(
+  crewId: string,
+  localDate: string,
+  patchGroup: string,
+  existingJobs: ExistingJob[],
+  timeZone: string = LONDON_TZ,
+): boolean {
+  return existingJobs.some(
+    (job) =>
+      job.crewId === crewId &&
+      job.patchGroup != null &&
+      job.patchGroup !== patchGroup &&
+      localDateString(job.start, timeZone) === localDate,
+  );
+}
+
 export function computeSlots(query: SlotQuery): Slot[] {
   const {
     from,
@@ -136,6 +217,9 @@ export function computeSlots(query: SlotQuery): Slot[] {
     crews,
     existingJobs = [],
     travelBufferMinutes = 30,
+    travelBuffers = DEFAULT_TRAVEL_BUFFERS,
+    district,
+    patchGroup,
     slotGranularityMinutes = 30,
     leadTimeHours = 24,
     now = new Date(),
@@ -160,6 +244,16 @@ export function computeSlots(query: SlotQuery): Slot[] {
 
     for (const crew of crews) {
       if (dayCapReached()) break;
+
+      // §4, the Bromley rule. A crew whose day already contains work in another
+      // patch offers nothing here. Bromley is a separate patch precisely because
+      // the §7.5 travel model cannot absorb a crew crossing between it and the
+      // core cluster mid-day — so this is arithmetic, not preference, and it
+      // belongs in the engine rather than in a scheduler's head.
+      if (patchGroup && crossPatchDay(crew.crewId, dateStr, patchGroup, existingJobs, timeZone)) {
+        continue;
+      }
+
       const windows = crew.workingHours[weekday] ?? [];
       for (const w of windows) {
         const [sh, sm] = w.start.split(":").map(Number);
@@ -172,10 +266,13 @@ export function computeSlots(query: SlotQuery): Slot[] {
         const busy: Interval[] = [
           ...existingJobs
             .filter((j) => j.crewId === crew.crewId)
-            .map((j) => ({
-              start: new Date(j.start.getTime() - travelBufferMinutes * MIN),
-              end: new Date(j.end.getTime() + travelBufferMinutes * MIN),
-            })),
+            .map((j) => {
+              const buffer = bufferFor(district, j.district, travelBuffers, travelBufferMinutes);
+              return {
+                start: new Date(j.start.getTime() - buffer * MIN),
+                end: new Date(j.end.getTime() + buffer * MIN),
+              };
+            }),
           ...(crew.unavailability ?? []),
         ];
 

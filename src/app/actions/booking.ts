@@ -30,41 +30,42 @@ import { fromGross, fromNet, isVatRegistered, type MoneyBreakdown } from "@/lib/
 
 // ---------- Slot availability ----------
 
-export async function getSlots(durationMinutes: number): Promise<Record<string, string[]>> {
-  const now = new Date();
-  const to = new Date(now.getTime() + availabilityConfig.bookingHorizonDays * 24 * 60 * 60 * 1000);
-
-  // Existing bookings reduce capacity when a DB is present.
-  let existingJobs: { crewId: string; start: Date; end: Date }[] = [];
-  if (hasDatabase) {
-    try {
-      const jobs = await db.job.findMany({
-        where: { scheduledStart: { gte: now, lte: to }, status: { in: ["scheduled", "in_progress", "booked", "payment_authorised"] } },
-        select: { scheduledStart: true, scheduledEnd: true, assignments: { select: { crewId: true } } },
-      });
-      existingJobs = jobs.flatMap((j) =>
-        j.scheduledStart && j.scheduledEnd
-          ? j.assignments.map((a) => ({ crewId: a.crewId, start: j.scheduledStart!, end: j.scheduledEnd! }))
-          : []
-      );
-    } catch (e) {
-      console.error("[booking] slot query failed; using empty existing jobs", e);
-    }
+export async function getSlots(durationMinutes: number, postcode?: string): Promise<Record<string, string[]>> {
+  // No database: fall back to the config roster through the same engine, so the
+  // wizard still works in a DB-less environment (and so this action has one code
+  // path to reason about rather than two).
+  if (!hasDatabase) {
+    const now = new Date();
+    const to = new Date(now.getTime() + availabilityConfig.bookingHorizonDays * 24 * 60 * 60 * 1000);
+    return slotsByDate(
+      computeSlots({
+        from: now,
+        to,
+        durationMinutes,
+        crews: defaultRoster,
+        travelBufferMinutes: availabilityConfig.travelBufferMinutes,
+        slotGranularityMinutes: availabilityConfig.slotGranularityMinutes,
+        leadTimeHours: availabilityConfig.leadTimeHours,
+        now,
+        dailyCap: availabilityConfig.dailyCap,
+      }),
+    );
   }
 
-  const slots = computeSlots({
-    from: now,
-    to,
-    durationMinutes,
-    crews: defaultRoster,
-    existingJobs,
-    travelBufferMinutes: availabilityConfig.travelBufferMinutes,
-    slotGranularityMinutes: availabilityConfig.slotGranularityMinutes,
-    leadTimeHours: availabilityConfig.leadTimeHours,
-    now,
-    dailyCap: availabilityConfig.dailyCap,
-  });
-  return slotsByDate(slots);
+  try {
+    // The SlotAvailability service (§7.4) is the only source of bookable slots:
+    // real roster, real time off, real diary, §7.5 travel buffers and the §4
+    // patch rule. The postcode is what lets the last two apply.
+    const { slotAvailability } = await import("@/lib/slot-availability");
+    const availability = await slotAvailability({ durationMinutes, postcode });
+    return availability.byDate;
+  } catch (e) {
+    // A failure here must not take the wizard down — but it must not invent
+    // availability either. An empty calendar sends the customer to the contact
+    // route, which is recoverable; a made-up slot is a crew who never turns up.
+    console.error("[booking] slot availability failed; offering none", e);
+    return {};
+  }
 }
 
 // ---------- Create booking ----------

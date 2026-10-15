@@ -32,4 +32,16 @@ export const availabilityConfig = {
   bookingHorizonDays: 21,
   /** Fallback daily cap in early operation (§6.3). */
   dailyCap: 8,
+  /**
+   * How crews get work (SETUP **D2**, §14.6). `assign` = the system assigns it;
+   * `offer` = crews are offered work they may decline.
+   *
+   * D2 is deliberately unanswered — both modes are built and tested, and the
+   * production value is chosen before launch. It is here rather than in an env
+   * var because it follows from employment status, which is a decision with a
+   * paper trail, not a deployment setting.
+   *
+   * TODO(business-input): set to "assign" or "offer" once D2 is answered.
+   */
+  assignmentMode: "assign" as "assign" | "offer",
 } as const;

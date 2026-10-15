@@ -407,6 +407,13 @@ model JobAssignment {
   crew       User     @relation(fields: [crewId], references: [id])
   isLead     Boolean  @default(false)
   assignedAt DateTime @default(now())
+  // Offer mode (SETUP D2): genuinely self-employed crews are OFFERED work they
+  // may decline, which is a different legal relationship from being assigned it.
+  // The offer and the answer are both recorded — "we offered it and they said no"
+  // is the evidence that the relationship is what we say it is.
+  offeredAt  DateTime?
+  acceptedAt DateTime?
+  declinedAt DateTime?
 
   @@unique([jobId, crewId])
   @@index([crewId])
@@ -681,6 +688,11 @@ model CrewProfile {
   payRate        Int // pence per hour / per job, or percentage points
   workingHours   Json? // { mon: [...], tue: [...] }
   dbsCheckedAt   DateTime?
+  // Expiry dates, not just "checked" dates (§9.7): a DBS certificate from 2024
+  // tells an admin nothing on its own. These are what a warning can key off, and
+  // what stops an expired check going unnoticed for a year.
+  dbsExpiresAt         DateTime?
+  insuranceExpiresAt   DateTime?
   startDate      DateTime?
   unavailability CrewUnavailability[]
 }
@@ -857,4 +869,32 @@ model VerificationToken {
   expires    DateTime
 
   @@unique([identifier, token])
+}
+
+/**
+ * Capacity controls (§7.4).
+ *
+ * "Admin MUST be able to override capacity manually and to set a simple daily
+ * cap as a fallback in early operation when the roster is small." Both have to
+ * survive a restart, so they are rows rather than environment variables — and a
+ * cap that someone set for a reason should be visible to the next person, with
+ * the reason attached.
+ *
+ * One row per London date, plus one row with a null date as the standing
+ * default. A date with no row inherits the default; a date with a row overrides
+ * it, which is how "we are short-handed on Friday" is expressed.
+ */
+model CapacitySetting {
+  id        String   @id @default(cuid())
+  /** The London date this applies to, at UTC midnight. Null = the standing default. */
+  date      DateTime?
+  /** Maximum jobs offered that day. Null = no cap. */
+  dailyCap  Int?
+  /** Ignore the cap entirely — for squeezing in urgent work (§7.4). */
+  overrideCap Boolean @default(false)
+  reason    String?
+  setBy     String?
+  updatedAt DateTime @updatedAt
+
+  @@unique([date])
 }

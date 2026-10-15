@@ -174,6 +174,17 @@ async function main(): Promise<void> {
               ...(index === 2 ? { 6: [{ start: "09:00", end: "16:00" }] } : {}),
             },
             dbsCheckedAt: new Date(Date.UTC(2026, 5, 1 + index)),
+            // One of each compliance state, so the roster screen's warnings are
+            // exercised rather than permanently green: valid, expiring inside the
+            // 60-day window, and one left unrecorded — which is the state that
+            // looks fine and means nobody has checked.
+            dbsExpiresAt:
+              index === 0
+                ? new Date(Date.UTC(2028, 5, 1))
+                : index === 1
+                  ? new Date(Date.now() + 21 * 86_400_000)
+                  : null,
+            insuranceExpiresAt: index === 2 ? new Date(Date.now() - 5 * 86_400_000) : new Date(Date.UTC(2027, 11, 31)),
             startDate: new Date(Date.UTC(2026, 4, 1)),
           },
         },

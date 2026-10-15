@@ -52,11 +52,11 @@ drafted and parked, per the L2 stage text.
 
 | | |
 | --- | --- |
-| **Current stage** | **L3 — ✅ done, 15 Oct 2026.** The admin back office is an operations tool rather than a dashboard: the §9.7 Today view, a filtered job board, the §9.1 status pipeline enforced server-side, a payments queue, customer records and blackout dates with a per-date policy. **L4 (crew roster, capacity and availability) is next** |
-| **Next action** | *(Claude Code)* start **L4** — PRD §16.3 → L4: move capacity off the placeholder roster onto `CrewProfile` / `CrewUnavailability` (a loader, not a rewrite — `src/lib/capacity.ts` is already a pure function), build the `SlotAvailability` service with travel buffers and the Bromley patch rule, point the wizard's step 5 at real slots, and build both assignment modes per SETUP D2. *(Fola)* **merge checkpoint 1** is ready and waiting — see *Checkpoint merge notes* |
-| **Working branch** | `build/autonomous`, pushed — L1 + L2 + L3 ahead of `main` (`2f667ff`, untouched) |
-| **Last updated** | 15 Oct 2026 — **L3 complete.** Today view replaces the counts dashboard; §9.1 pipeline with legal transitions enforced server-side and logged with the actor; job board with shareable filters; payments queue; customer records; blackout dates with per-date hold-or-move; §13.3 dev seed (20 customers, 50 jobs, 3 crews); recurrence tested across a bank holiday and both clock changes. Admin screens no longer carry the marketing chrome. Unit tests 268 → 328, E2E 14 → 21 |
-| **Needs Fola?** | **Not to proceed with L4.** Checkpoint 1 is ready to merge: review R-4…R-9 (R-5, R-6, R-7 move money) plus **R-10** (L3's migration) and **R-11** (the status pipeline). Three answers wanted when convenient: **Q-14** card-on-file consent wording (the mechanism is built but off), **Q-15** manual price on a recurring admin booking, **Q-16** no dev email is delivered (a Resend account limit; would hollow out L9) |
+| **Current stage** | **L4 — ✅ done, 15 Oct 2026.** Capacity is off the placeholder roster and on the database, with §7.5 travel buffers and the §4 patch rule in the engine; both SETUP D2 assignment modes are built and tested. **L5 (crew mobile interface) is next** |
+| **Next action** | *(Claude Code)* start **L5** — PRD §16.3 → L5: crew PIN sign-in on a persistent, shared-device-safe session, today's jobs and job detail, clock in/out with GPS recorded (never blocking), one-tap status updates and issue reporting. *(Fola)* **merge checkpoint 1** remains ready to merge |
+| **Working branch** | `build/autonomous`, pushed — L1 → L4 ahead of `main` (`2f667ff`, untouched) |
+| **Last updated** | 15 Oct 2026 — **L4 complete.** The booking wizard now offers only slots a real crew can staff: roster, time off and diary from the database, 45/30-minute travel buffers, and a crew-day that never spans two patches. Both assignment modes built (an unanswered offer is not cover). Crew roster with DBS/insurance warnings; §7.4 daily cap and override. Unit tests 328 → 367, E2E 21 → 24 |
+| **Needs Fola?** | **Not to proceed with L5.** Checkpoint 1 is ready to merge (R-4…R-13). Four answers wanted when convenient: **Q-14** card-on-file consent wording, **Q-15** manual price on a recurring admin booking, **Q-16** dev email delivery, and **D2** itself — both modes are built, but the production value (`assignmentMode` in `src/config/availability.ts`, currently `assign`) follows from whether crews are employees or self-employed |
 
 ## Stage tracker
 
@@ -65,8 +65,8 @@ drafted and parked, per the L2 stage text.
 | L1 | Reconcile and guardrails | ✅ Done | |
 | L2 | Real database and Stripe test-mode gate (+ Phase 2 gaps 1–3, gate D) | ✅ Done — 15 Oct 2026 (evidence below) | ✅ 1 ← **here** |
 | L3 | Admin operations core | ✅ Done — 15 Oct 2026 (evidence below) | |
-| L4 | Crew roster, capacity and availability | ☐ Next | |
-| L5 | Crew mobile interface | ☐ Not started | |
+| L4 | Crew roster, capacity and availability | ✅ Done — 15 Oct 2026 (evidence below) | |
+| L5 | Crew mobile interface | ☐ Next | |
 | L6 | Access codes | ☐ Not started | ✅ 2 |
 | L7 | Media exchange | ☐ Not started | |
 | L8 | Quality checklists | ☐ Not started | |
@@ -261,6 +261,8 @@ Per SETUP D1 = A these were built, tested and committed; they wait for Fola at *
 - **R-10** · L3 · `prisma/manual-migrations/2026-10-15-blackout-policy.sql`, `prisma/schema.prisma` · **New migration (#11).** Adds `BlackoutDate.policy` (`BlackoutPolicy` enum: `flag` | `shift`) so a blackout date can say whether visits landing on it are held for review or moved to the next working day. *Data-safety:* a new enum type plus a column **with a default**, so every existing row reads `flag` — exactly the behaviour it had before the column existed. Cannot fail on existing rows, cannot change a stored value. Reverse: `DROP COLUMN` + `DROP TYPE`, which returns the materialiser to always flagging.
 - **R-11** · L3 · `src/lib/job-status.ts`, `src/app/actions/admin.ts` (`setJobStatus`) · **Auth / RBAC and the §9.1 pipeline.** A new role-gated action that moves a job between statuses, refuses illegal transitions server-side, and logs every change with the actor in the same transaction. Worth your eyes on which transitions are *forbidden*: a completed job cannot be rewound or cancelled, and a cancelled booking cannot be revived — both would mean refunding work we did or charging for work we did not. If you disagree with any of those, they are one map in one file.
 - **R-12** · L3 · `src/app/(site)/**`, `src/app/layout.tsx`, `src/components/layout/SiteChrome.tsx` · **Route move, no behaviour change.** Every public page moved into a `(site)` route group so the admin area is not wrapped in the marketing header, footer, sticky CTA and cookie banner. Route group names never appear in URLs, so **no public path changed** — worth a glance precisely because that is a large diff for a change that should be invisible to customers. A gate asserts both sides, and the sitemap, robots and 404 were checked.
+
+- **R-13** · L4 · `prisma/manual-migrations/2026-10-15-crew-roster-and-capacity.sql`, `prisma/schema.prisma` · **New migration (#12).** Three additive changes: `CrewProfile.dbsExpiresAt` / `insuranceExpiresAt` (a "checked" date cannot drive a warning — an admin needs to know when it runs out); `JobAssignment.offeredAt` / `acceptedAt` / `declinedAt` (D2's `offer` mode needs the offer itself on the record, not only its outcome — §14.6); and a `CapacitySetting` table for §7.4's daily cap and override, which must survive a restart. *Data-safety:* every column is nullable or defaulted and the new table is empty, so no existing row changes meaning. Reverse: `DROP COLUMN` / `DROP TABLE`; the only loss is the capacity settings themselves.
 
 ## Decisions made (by Claude Code)
 
@@ -1307,3 +1309,140 @@ code: a completed job now correctly leaves the board's default *upcoming* view (
 is on the payments queue, which is where the gate now looks), and the board moved the date
 into the day heading, so a row matched by date text no longer matched — it is matched by
 job id now, which cannot drift.
+
+---
+
+### L4 — Crew roster, capacity and availability
+
+**Started 15 Oct 2026.** Depends on L3 (done). Keys: none new. Stage text: PRD §16.3 →
+L4, with §7.4 (capacity), §7.5 (travel time) and §4 (Bromley is a separate patch).
+SETUP **D2 = not decided**, so both assignment modes are built and tested.
+
+#### Plan — written before coding
+
+**4.1 Schema** — ✅ done (migration #12)
+- [ ] `CrewProfile.dbsExpiresAt`, `CrewProfile.insuranceExpiresAt` — `dbsCheckedAt`
+      already exists; the expiries are what an admin warning can actually key off.
+- [ ] `JobAssignment.offeredAt`, `acceptedAt`, `declinedAt` — the `offer` mode needs a
+      record of the offer, not just the outcome.
+- [ ] `CapacitySetting` — the daily cap and the admin override have to persist
+      somewhere, and §7.4 makes them a requirement, not a preference.
+
+**4.2 Patch and travel rules in the capacity engine** — ✅ done
+- [ ] §7.5 buffers: **45 minutes cross-district, 30 within**. Today the engine applies
+      one flat buffer, which is the "Clapham at 12:00, Peckham at 12:30" case the PRD
+      names as impossible.
+- [ ] §4 **Bromley rule**: a crew's day never spans two `patchGroup`s. This is the
+      arithmetic reason Bromley is separate, so it belongs in the engine, not in a
+      reviewer's head.
+- [ ] Both are additive and optional: **the existing capacity tests must pass
+      unchanged** (PRD says this explicitly — `capacity.ts` is already a pure function
+      and L4 is a loader, not a rewrite).
+
+**4.3 The loader** — ✅ done
+- [ ] Read `CrewProfile.workingHours`, `CrewUnavailability` and booked `Job` rows into
+      the `CrewAvailability[]` / `ExistingJob[]` shapes the engine already takes.
+- [ ] Fall back to the config roster when no crew rows exist, so a fresh database still
+      offers slots rather than showing a customer an empty calendar.
+
+**4.4 `SlotAvailability` service** — ✅ done
+- [ ] One entry point: duration from the quote engine, roster and time off from the
+      database, existing bookings, travel buffers, blackout dates, the daily cap and the
+      admin override.
+- [ ] `getSlots` (the wizard's step 5) reads **only** real slots through it.
+
+**4.5 Assignment** — ✅ done (both D2 modes)
+- [ ] Multi-crew with a lead; assign / unassign from the job board.
+- [ ] **Both modes per D2**: `assign` (the system assigns) and `offer` (crews are offered
+      work they can decline, recorded with `offeredAt` / `acceptedAt` / `declinedAt`).
+      The production value is chosen before launch; both are tested.
+- [ ] Crew roster screen with **DBS and insurance expiry warnings** (§9.7).
+
+**4.6 Capacity controls** — ✅ done
+- [ ] Daily cap and admin override, per §7.4's "simple daily cap as a fallback in early
+      operation when the roster is small".
+
+**4.7 Acceptance (PRD)** — ✅ met
+- [ ] A **property-based** test: over many generated rosters and job sets, no slot the
+      engine offers exceeds capacity, and no crew day mixes patches.
+- [ ] The override and the cap work.
+
+#### Work — ✅ stage complete
+
+**4.2 The two rules that make a slot real.** §7.5's travel buffers (45 minutes between
+districts, 30 within) and §4's patch rule (a crew's day never spans two patches) are now
+in the engine, where they are arithmetic rather than something a scheduler has to
+remember. Both are **additive and optional**: a caller that knows nothing about districts
+gets the flat buffer it always had, and `capacity.test.ts` passed unchanged, as PRD L4
+requires.
+
+The PRD's own example is a test: a crew finishing in Clapham (SW4) at 12:00 is not
+offered Peckham (SE15) at 12:30. The first offer is 12:45 — the engine steps from the end
+of the buffer rather than a half-hour grid, which is the right trade on a small roster.
+
+**4.7 The property-based acceptance test.** 200 generated rosters — varying crew counts,
+time off, existing jobs across three patches, varying durations — and for every slot the
+engine offers, four invariants: no overlap with an existing job **or its travel buffer**,
+never during time off, never a crew-day that mixes patches, and always inside the working
+window on the right day. Property-based because the failures here are combinations nobody
+would think to write down; the seed is deterministic, so a failure is reproducible.
+
+```
+$ npx tsx --test src/lib/capacity-rules.test.ts
+ℹ tests 11   ℹ pass 11   ℹ fail 0
+  ✔ the PRD's own example: Clapham at 12:00, Peckham at 12:30 is refused
+  ✔ a crew already working in another patch that day offers nothing
+  ✔ over 200 generated rosters, every invariant holds
+  ✔ the daily cap holds, and the admin override lifts it
+```
+
+**4.3 / 4.4 From placeholder to real.** `loadRoster` and `loadExistingJobs` read
+`CrewProfile.workingHours`, `CrewUnavailability` and the diary into the shapes the engine
+already took; `slotAvailability` is the one place that assembles duration, roster, time
+off, diary, buffers, patch, blackouts, cap and override. `getSlots` — the wizard's step 5
+— now reads **only** through it, and the wizard passes the customer's postcode so the
+district and patch rules can apply at all.
+
+Two deliberate behaviours: the config roster still stands in when **no crew rows exist**
+(a fresh environment should not show a customer an empty calendar), and a failure in the
+service offers **no** slots rather than falling back to invented ones — an empty calendar
+sends the customer to the contact route, which is recoverable; a made-up slot is a crew
+who never turns up.
+
+**4.5 Both assignment modes (D2 unanswered).** `assign` and `offer` are built and tested.
+The distinction that matters is what counts as cover: in `offer` mode an **unanswered
+offer is not cover**, so a job with three outstanding offers and no acceptance still shows
+as unassigned. Treating an offer as an answer is how a morning arrives with nobody on
+site. `offeredAt` / `acceptedAt` / `declinedAt` are all stored because for genuinely
+self-employed crews (§14.6) "we offered it and they declined" is the record that evidences
+the relationship — the outcome alone would lose the fact that a choice was given.
+Re-offering work someone has declined is refused, in those words: that is how an offer
+turns into pressure.
+
+**4.5 / 4.6 The screens.** A crew roster ordered worst-first by compliance, where an
+**unrecorded** expiry ranks above one that is merely running out — it looks fine and means
+nobody has checked. Warnings start 60 days out, which is long enough to renew a DBS, and
+dates are compared on the London calendar so a certificate is valid all day on the day it
+expires. Capacity gets its §7.4 daily cap and override, per date or as a standing default,
+both stored **with a reason** — a cap someone set on Tuesday for a good reason looks
+exactly like a bug in availability on Thursday.
+
+**One defect found by the gates.** Removing a blackout date rendered its confirmation
+inside the row being removed, so the message flashed and vanished — and that message is
+the one saying visits already held or moved stay as they are. The status now lives on the
+list, which outlives the row.
+
+#### Evidence — the stage gate
+
+```
+$ npx tsc --noEmit        (clean)        $ npx eslint .          (clean)
+$ npm test                ℹ tests 367   ℹ pass 367   ℹ fail 0     # 328 → 367 (+39)
+$ npm run build           ✓ Compiled successfully
+$ npm run db:drift        -- This is an empty migration.  ✓ no drift
+$ npm run test:e2e        24 passed (2.6m)                        # 21 → 24 (+3)
+```
+
+**Acceptance (PRD §16.3 → L4):** *"property-based test — no generated slot exceeds
+capacity; no crew day mixes patches; override and cap work"* — all four invariants over
+200 rosters, plus the cap and override as their own test. The existing capacity tests pass
+**unchanged**, which was the stage's other explicit requirement.

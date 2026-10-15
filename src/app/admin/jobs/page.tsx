@@ -11,6 +11,8 @@ import { AdminShell } from "@/components/admin/AdminShell";
 import { JobCaptureControl } from "@/components/admin/JobCaptureControl";
 import { JobPaymentLinkControl } from "@/components/admin/JobPaymentLinkControl";
 import { JobStatusControl } from "@/components/admin/JobStatusControl";
+import { JobCrewControl } from "@/components/admin/JobCrewControl";
+import { availabilityConfig } from "@/config/availability";
 import { CANCELLABLE_STATUSES, cancelConfirmText, cancellationBlock } from "@/lib/cancellation";
 import { label as statusLabel } from "@/lib/job-status";
 import { VIEWS, describeFilter, isUnfiltered, jobWhere, parseJobFilter } from "@/lib/job-filters";
@@ -23,7 +25,10 @@ const JOB_INCLUDE = {
   serviceType: { select: { name: true } },
   property: { select: { postcode: true } },
   subscription: { select: { id: true, createdAt: true, recurrenceRule: true } },
-  assignments: { include: { crew: { select: { id: true, name: true, email: true } } } },
+  assignments: {
+    include: { crew: { select: { id: true, name: true, email: true } } },
+    orderBy: { assignedAt: "asc" as const },
+  },
   payments: {
     where: { type: "charge" },
     select: { status: true, gross: true, stripeCheckoutSessionId: true },
@@ -159,7 +164,7 @@ export default async function AdminJobsPage({
                 {dayJobs.length} {dayJobs.length === 1 ? "job" : "jobs"}
               </span>
             </h2>
-            <JobTable jobs={dayJobs} now={now} />
+            <JobTable jobs={dayJobs} now={now} crews={crews} />
           </section>
         ))}
 
@@ -169,7 +174,7 @@ export default async function AdminJobsPage({
               No date yet
               <span className="ml-2 font-normal text-ink-soft">{undated.length}</span>
             </h2>
-            <JobTable jobs={undated} now={now} />
+            <JobTable jobs={undated} now={now} crews={crews} />
           </section>
         )}
       </div>
@@ -185,7 +190,15 @@ export default async function AdminJobsPage({
  */
 type JobRow = Prisma.JobGetPayload<{ include: typeof JOB_INCLUDE }>;
 
-function JobTable({ jobs, now }: { jobs: JobRow[]; now: Date }) {
+function JobTable({
+  jobs,
+  now,
+  crews,
+}: {
+  jobs: JobRow[];
+  now: Date;
+  crews: { id: string; name: string | null; email: string }[];
+}) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-left text-sm">
@@ -217,10 +230,20 @@ function JobTable({ jobs, now }: { jobs: JobRow[]; now: Date }) {
                   </span>
                 )}
               </td>
-              <td className="py-3 pr-4 text-xs">
-                {j.assignments.length > 0
-                  ? j.assignments.map((a) => a.crew?.name ?? a.crew?.email).join(", ")
-                  : <span className="text-accent-strong">unassigned</span>}
+              <td className="py-3 pr-4">
+                <JobCrewControl
+                  jobId={j.id}
+                  mode={availabilityConfig.assignmentMode}
+                  assignments={j.assignments.map((a) => ({
+                    crewId: a.crewId,
+                    isLead: a.isLead,
+                    offeredAt: a.offeredAt,
+                    acceptedAt: a.acceptedAt,
+                    declinedAt: a.declinedAt,
+                    name: a.crew?.name ?? a.crew?.email ?? "crew",
+                  }))}
+                  crews={crews.map((c) => ({ id: c.id, name: c.name ?? c.email }))}
+                />
               </td>
               <td className="py-3 pr-4">{statusLabel(j.status)}</td>
               <td className="py-3 pr-4">

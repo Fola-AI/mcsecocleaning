@@ -195,7 +195,17 @@ export function BookingWizard({
           {step === 2 && <StepProperty state={state} set={set} />}
           {step === 3 && priced && <StepFrequency state={state} set={set} quote={priced} addOnSlugs={effectiveAddOnSlugs} />}
           {step === 4 && <StepAddOns state={state} set={set} addOns={applicableAddOns} />}
-          {step === 5 && <StepSlot state={state} set={set} durationMinutes={priced ? priced.elapsedMinutes : 120} />}
+          {step === 5 && (
+            <StepSlot
+              state={state}
+              set={set}
+              durationMinutes={priced ? priced.elapsedMinutes : 120}
+              // The postcode is what lets the slot service apply the §7.5 travel
+              // buffers and the §4 patch rule — without it a customer can be
+              // offered a slot no crew can physically reach.
+              postcode={state.postcode}
+            />
+          )}
           {step === 6 && <StepAccess state={state} set={set} />}
           {step === 7 && priced && <StepDetails state={state} set={set} quote={priced} result={result} />}
         </div>
@@ -430,18 +440,23 @@ function StepAddOns({ state, set, addOns }: StepProps & { addOns: AddOn[] }) {
   );
 }
 
-function StepSlot({ state, set, durationMinutes }: StepProps & { durationMinutes: number }) {
+function StepSlot({
+  state,
+  set,
+  durationMinutes,
+  postcode,
+}: StepProps & { durationMinutes: number; postcode: string }) {
   const [slotData, setSlotData] = useState<{ forDuration: number; slots: Record<string, string[]> } | null>(null);
 
   useEffect(() => {
     let active = true;
-    getSlots(durationMinutes).then((s) => {
+    getSlots(durationMinutes, postcode).then((s) => {
       if (active) setSlotData({ forDuration: durationMinutes, slots: s });
     });
     return () => {
       active = false;
     };
-  }, [durationMinutes]);
+  }, [durationMinutes, postcode]);
 
   const loading = !slotData || slotData.forDuration !== durationMinutes;
   const slots = slotData?.slots ?? null;

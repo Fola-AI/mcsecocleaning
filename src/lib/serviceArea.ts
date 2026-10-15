@@ -21,6 +21,8 @@ export interface AreaCheckResult {
   outward: string | null;
   areaSlug?: string;
   areaName?: string;
+  /** The §4 patch the area belongs to — capacity's Bromley rule keys off it. */
+  patchGroup?: "core" | "bromley" | "phase_two_west";
 }
 
 /** All served outward codes, from active areas. */
@@ -42,5 +44,17 @@ export function checkServiceArea(postcode: string): AreaCheckResult {
     outward,
     areaSlug: match?.slug,
     areaName: match?.name,
+    patchGroup: match?.patchGroup,
   };
+}
+
+/**
+ * The §4 patch a postcode belongs to, or null if we do not cover it.
+ *
+ * Capacity needs this (§7.5): a crew's day never spans two patches, and Bromley
+ * is a separate patch for that arithmetic reason rather than an administrative
+ * one.
+ */
+export function patchGroupFor(postcode: string): string | null {
+  return checkServiceArea(postcode).patchGroup ?? null;
 }

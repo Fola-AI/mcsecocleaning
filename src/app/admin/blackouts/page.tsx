@@ -4,7 +4,7 @@ import { requireRole } from "@/lib/auth";
 import { db, hasDatabase } from "@/lib/db";
 import { localDateString } from "@/lib/timezone";
 import { AdminShell } from "@/components/admin/AdminShell";
-import { BlackoutForm, BlackoutRow } from "@/components/admin/BlackoutControls";
+import { BlackoutForm, BlackoutList } from "@/components/admin/BlackoutControls";
 
 export const metadata: Metadata = { title: "Blackout dates", robots: { index: false, follow: false } };
 
@@ -45,21 +45,15 @@ export default async function AdminBlackoutsPage() {
 
       <section className="mt-8">
         <h2 className="font-bold">Upcoming</h2>
-        {upcoming.length === 0 ? (
-          <p className="mt-2 text-sm text-ink-soft">No blackout dates ahead. Bank holidays are not added automatically.</p>
-        ) : (
-          <ul className="mt-3 divide-y divide-line">
-            {upcoming.map((row) => (
-              <BlackoutRow
-                key={row.id}
-                id={row.id}
-                date={localDateString(row.date)}
-                reason={row.reason}
-                policy={row.policy}
-              />
-            ))}
-          </ul>
-        )}
+        <BlackoutList
+          rows={upcoming.map((row) => ({
+            id: row.id,
+            date: localDateString(row.date),
+            reason: row.reason,
+            policy: row.policy,
+          }))}
+          emptyMessage="No blackout dates ahead. Bank holidays are not added automatically."
+        />
       </section>
 
       {past.length > 0 && (
@@ -68,18 +62,15 @@ export default async function AdminBlackoutsPage() {
           <p className="mt-1 text-sm text-ink-soft">
             Kept, because they explain the gaps in last year&apos;s schedule.
           </p>
-          <ul className="mt-3 divide-y divide-line">
-            {past.slice(-20).map((row) => (
-              <BlackoutRow
-                key={row.id}
-                id={row.id}
-                date={localDateString(row.date)}
-                reason={row.reason}
-                policy={row.policy}
-                past
-              />
-            ))}
-          </ul>
+          <BlackoutList
+            rows={past.slice(-20).map((row) => ({
+              id: row.id,
+              date: localDateString(row.date),
+              reason: row.reason,
+              policy: row.policy,
+            }))}
+            past
+          />
         </section>
       )}
     </AdminShell>
