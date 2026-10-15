@@ -1124,3 +1124,74 @@ specs, against the pre-L1 baseline of 126 / 18 / 0.
    instruction** — nothing in this session acted on it. Noted only because text shaped
    like an instruction turning up in tool output is worth someone knowing about.
 
+
+---
+
+### L3 — Admin operations core
+
+**Started 15 Oct 2026.** Depends on L2 (done). Keys: none new. Stage text: PRD §16.3 →
+L3, with §9.1 (the status pipeline), §9.7 (Today view and the back office) and §13.3
+(seed realistic data early — "admin views look fine empty and fall apart in use").
+
+#### Plan — written before coding
+
+**3.1 The status pipeline, server-enforced** (`src/lib/job-status.ts`, `src/app/actions/admin.ts`)
+- [ ] The §9.1 pipeline as a pure legal-transition map with a reason per refusal, unit
+      tested: `draft → booked → payment_authorised → scheduled → in_progress →
+      completed → awaiting_feedback → closed`, plus `cancelled`, `on_hold` and
+      `no_access` and the transitions in and out of them.
+- [ ] A role-gated action that applies a transition, refuses an illegal one **server-side**
+      (hidden UI is not access control), and writes `JobStatusEvent` with actor,
+      timestamp and note on every change.
+- [ ] `no_access` is the one that costs money — it triggers the §8 lockout fee — so it
+      records the attendance rather than quietly parking the job.
+
+**3.2 Today view replaces the counts dashboard** (`src/app/admin/page.tsx`, `src/lib/today.ts`)
+- [ ] The §9.7 screen: today's jobs with status, anything unassigned, anything overdue
+      for check-in, failed payments. Nothing else. The agent's approval inbox (§11) gets
+      its slot, rendered empty and labelled as post-launch.
+- [ ] The bucketing is a pure function over rows, unit tested — including "overdue for
+      check-in", which is a time comparison in Europe/London and so the kind of thing
+      that is right in October and wrong in April.
+- [ ] The stale line about an "interim access code" goes with the old page.
+
+**3.3 Job board with filters** (`src/app/admin/jobs`)
+- [ ] List and week views, filters on status, date, patch, crew and unassigned.
+- [ ] Per-row status control driven by 3.1, so the only transitions offered are legal
+      ones and the server re-checks anyway.
+
+**3.4 Failed-payment queue** (`src/app/admin/payments`)
+- [ ] A visible queue, not an email: every job with a failed or outstanding charge, with
+      the recovery actions already built (retry capture, payment request, payment link)
+      and the reason the last attempt failed.
+
+**3.5 Customer records** (`src/app/admin/customers`)
+- [ ] List and detail: properties, jobs, subscriptions, payments, consent state.
+
+**3.6 Blackout dates** (`src/app/admin/blackouts`, migration)
+- [ ] Admin CRUD, and a **per-date policy**: flag the affected visits for review, or
+      shift them. The materialiser already flags; shifting needs the policy stored, so
+      `BlackoutDate.policy` is an additive migration (→ *Review queue*).
+- [ ] Affected materialised jobs are never silently generated — that is the property
+      under test.
+
+**3.7 Realistic seed data, dev only** (`prisma/seed-dev.ts`)
+- [ ] §13.3: 20 customers, 50 jobs across every status, 3 crews, both patch groups.
+- [ ] Refuses to run when `APP_ENV=production`, on top of the dev-db host guard, and
+      nothing it creates is rendered on a public route.
+
+**3.8 Recurrence across the hard boundaries** (`src/lib/recurrence.test.ts`)
+- [ ] §13.4: a series across a **bank holiday** and across **both** clock changes,
+      asserting the London wall-clock time holds and the blackout is flagged, not skipped.
+
+**3.9 Confirm rather than rebuild**
+- [ ] Discount codes (§10.2), admin-created bookings with payment link / invoice (no cash
+      on any path), CSV client import — all exist; confirm with tests and leave alone.
+
+**Acceptance (PRD):** the Today view answers "what is the state of today" from seeded
+data in one screen; illegal transitions are rejected; the recurrence tests pass across
+the boundaries.
+
+#### Work
+
+*(ticked as each item lands, with commit hashes)*
