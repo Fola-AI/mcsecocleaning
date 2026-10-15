@@ -681,4 +681,77 @@ from §16.1 and gate D. SETUP **D7 = A**, so gap 2 is built, not parked.
 
 #### Work
 
-*(ticked as each item lands, with commit hashes)*
+**2.1 Database baseline and migrations — ✅ done.**
+
+- [x] Baseline captured as `prisma/baseline/schema.prisma` (`git show 21c895c:prisma/schema.prisma`,
+      33 models, no `ServiceArea.patchGroup`) with a header explaining why a current-schema
+      `db push` would prove nothing. `npm run db:baseline` applies it.
+- [x] `npm run db:migrate:manual` applies all nine files in filename order, `-1` except the
+      three `ALTER TYPE … ADD VALUE` files. `scripts/db-migrate-manual.ts` + 9 unit tests.
+- [x] `npm run db:drift` — the gate, asserted rather than eyeballed.
+- [x] Seeded.
+
+**Evidence.**
+
+```
+$ npx tsx scripts/assert-dev-db.ts
+✓ dev database confirmed (ep-red-scene-zamnwn4a.c-2.eu-west-2.aws.neon.tech) — proceeding.
+
+$ npm run db:baseline
+Prisma schema loaded from prisma/baseline/schema.prisma
+Datasource "db": PostgreSQL database "neondb", schema "public" at "ep-red-scene-…"
+🚀  Your database is now in sync with your Prisma schema. Done in 6.60s
+
+$ npm run db:migrate:manual
+Applying 9 manual migration(s) to the dev database, in filename order:
+→ #1 2026-09-19-service-area-patch-group.sql          -1 (single transaction)      ✓ applied
+→ #2 2026-09-20-lead-converted-quote-and-domestic-sales.sql  no -1 (ADD VALUE)     ✓ applied
+→ #3 2026-09-20-quote-manual-override.sql             -1 (single transaction)      ✓ applied
+→ #4 2026-09-24-payments-reconciliation-webhook-status.sql   -1                    ✓ applied
+→ #5 2026-09-27-payment-status-part-paid.sql          no -1 (ADD VALUE)            ✓ applied
+→ #6 2026-09-28-authjs-tables.sql                     -1 (single transaction)      ✓ applied
+→ #7 2026-09-30-payment-checkout-session-id.sql       -1 (single transaction)      ✓ applied
+→ #8 2026-09-30-payment-status-released.sql           no -1 (ADD VALUE)            ✓ applied
+→ #9 2026-09-30-user-stripe-customer-id.sql           -1 (single transaction)      ✓ applied
+
+$ npm run db:drift      # THE gate — the nine migrations and schema.prisma agree
+-- This is an empty migration.
+✓ no drift — the dev database matches prisma/schema.prisma.
+
+$ npm run db:seed
+✓ dev database confirmed (ep-red-scene-…) — proceeding.
+Seed complete.
+
+$ psql "$DIRECT_URL" -At -c "…"      # what landed
+36 tables · User:1 (owner) · ServiceType:6 · ServiceArea:18 · AddOn:20 · LocationPage:2
+PaymentStatus enum: pending, authorised, part_paid, captured, released, failed, refunded
+```
+
+`ServiceArea` holding 18 rows for 10 area slugs is correct, not duplication: the unique
+key is `postcodeDistrict`, and one area spans several districts (Kensington & Chelsea has
+seven). Re-running the seed leaves the counts unchanged, so the upserts are idempotent.
+
+**Two things the run itself found** — neither visible until there was a database:
+
+1. **`prisma/seed.ts` could never have run through `npm run db:seed`.** L1 added the guard
+   call inside the seed (D-5) but the seed loads no env file, and `npm run db:seed` runs
+   `tsx prisma/seed.ts` as its own process, which does not pass through `prisma.config.ts`.
+   So `DEV_DB_HOST` and `DATABASE_URL` were both unset there: the guard refused, correctly,
+   and the seed could not run at all. Fixed by `scripts/load-env.ts`, a side-effect module
+   imported first (`.env.local` then `.env`, the order and reason documented in R-1).
+   It is a module rather than a few inline lines because ES imports are evaluated before
+   the importing file's body, so inline loading reads in the right order without running
+   in it. `scripts/db-migrate-manual.ts` and `scripts/check-drift.ts` use it too.
+2. **Four of the nine migrations are one-shot** (`CREATE TYPE` / `CREATE TABLE` unguarded):
+   #1, #3, #4 and #6. They are left exactly as they are — they may already have been applied
+   to Fola's Neon `gate` branch, and editing SQL that has run somewhere is how a database and
+   its migration set quietly stop matching. Instead the split is pinned by a test, so the
+   supported sequence stays *baseline once, then apply once*: the L2 fix loop resets `dev` to
+   the baseline and re-runs the whole set rather than re-running it over a migrated database.
+
+```
+$ npx tsc --noEmit        (clean)      $ npx eslint .            (clean)
+$ npm test                ℹ tests 203  ℹ pass 203  ℹ fail 0      # 190 → 203 (+13)
+$ npm run build           ✓ 38 routes — first build against a real database
+```
+
