@@ -45,6 +45,20 @@ export type BookingIntentKind = "deposit" | "balance" | "full";
 
 export interface BookingIntentInput {
   amountPence: number;
+  /**
+   * How the deposit saves the card (D7 = A, §16.1 gap 2):
+   *  - "on_session"  — the card is reused in this same session (the balance is
+   *    authorised moments later with the customer present). The original
+   *    behaviour, and all that was needed while nothing charged a card later.
+   *  - "off_session" — the card may be charged when the customer is NOT present,
+   *    which is what a job more than ~6 days out and every recurring visit need.
+   *    Stripe requires the stronger value to be set at the time the customer
+   *    authorises, so it cannot be upgraded afterwards: a card saved
+   *    "on_session" and charged off-session is far more likely to be refused by
+   *    the bank for want of a mandate.
+   * Defaults to "on_session" so existing behaviour is unchanged where it applies.
+   */
+  saveCardFor?: "on_session" | "off_session";
   /** The booking's Stripe Customer. Required for deposit + balance (card reuse). */
   customerId?: string;
   jobId?: string;
@@ -83,7 +97,12 @@ export function bookingIntentParams(kind: BookingIntentKind, p: BookingIntentInp
   };
   if (kind === "deposit") {
     // Captured at booking, not held — confirming client-side takes the money.
-    return { ...base, capture_method: "automatic", setup_future_usage: "on_session", payment_method_types: ["card"] };
+    return {
+      ...base,
+      capture_method: "automatic",
+      setup_future_usage: p.saveCardFor ?? "on_session",
+      payment_method_types: ["card"],
+    };
   }
   if (kind === "balance") {
     return { ...base, capture_method: "manual", payment_method_types: ["card"] };
@@ -290,4 +309,136 @@ export async function createCheckoutUrl(params: {
     params.idempotencyKey ? { idempotencyKey: params.idempotencyKey } : undefined
   );
   return { url: session.url, sessionId: session.id };
+}
+
+/**
+ * Save a card for later off-session charges, taking no money now (D7 = A,
+ * §16.1 gap 2).
+ *
+ * Used for a booking that will be charged on completion but takes no payment at
+ * booking: a one-off more than ~6 days ahead (no deposit, so there is no
+ * PaymentIntent to piggy-back the card save onto) and the first visit of a
+ * recurring series priced below the deposit threshold. A large job needs none of
+ * this — its deposit intent saves the card as it takes the money.
+ *
+ * `usage: "off_session"` is what makes the later charge a card-on-file charge
+ * the bank recognises rather than an unmandated one; the customer confirms it in
+ * the browser, which is where any 3-D Secure challenge happens — doing it now,
+ * while they are present, is the whole reason this is a SetupIntent and not a
+ * surprise charge later.
+ */
+export async function saveCardForLater(params: {
+  customerId: string;
+  jobId?: string;
+  customerEmail?: string;
+  /** Stable key so a retried booking submit does not create a second SetupIntent. */
+  idempotencyKey?: string;
+}): Promise<{ clientSecret: string | null; setupIntentId: string } | null> {
+  const stripe = getStripe();
+  if (!stripe) return null;
+  const intent = await stripe.setupIntents.create(
+    {
+      customer: params.customerId,
+      usage: "off_session",
+      payment_method_types: ["card"],
+      metadata: { jobId: params.jobId ?? "", kind: "card-on-file" },
+    },
+    params.idempotencyKey ? { idempotencyKey: params.idempotencyKey } : undefined,
+  );
+  return { clientSecret: intent.client_secret, setupIntentId: intent.id };
+}
+
+/** Why an off-session charge did not go through — the admin needs the difference. */
+export type OffSessionFailure =
+  /** The bank wants the customer to confirm. Only they can finish it. */
+  | "authentication_required"
+  /** Declined, expired, insufficient funds — a different card is needed. */
+  | "declined"
+  /** No saved card to charge. */
+  | "no_card_on_file"
+  | "stripe_not_configured"
+  | "unknown";
+
+export interface OffSessionResult {
+  ok: boolean;
+  paymentIntentId?: string;
+  chargeId?: string | null;
+  failure?: OffSessionFailure;
+  message?: string;
+}
+
+/**
+ * Charge a saved card while the customer is away (D7 = A).
+ *
+ * `off_session: true` tells Stripe the customer is not there, so it uses the
+ * mandate from the SetupIntent (or the deposit's `setup_future_usage`) instead
+ * of asking for authentication. When the bank insists anyway, Stripe raises
+ * `authentication_required` — which is NOT a decline, and the caller must treat
+ * it differently: the customer can still pay, they just have to do it
+ * themselves, which is exactly what the existing payment-request path is for.
+ *
+ * `confirm: true` with automatic capture takes the money in one call. There is
+ * no hold to expire, which is the point.
+ */
+export async function chargeSavedCard(params: {
+  customerId: string;
+  paymentMethodId: string;
+  amountPence: number;
+  description: string;
+  jobId?: string;
+  paymentId?: string;
+  customerEmail?: string;
+  /** Stable key — a repeated completion must never charge the card twice. */
+  idempotencyKey: string;
+}): Promise<OffSessionResult> {
+  const stripe = getStripe();
+  if (!stripe) return { ok: false, failure: "stripe_not_configured", message: "Stripe is not configured." };
+
+  try {
+    const intent = await stripe.paymentIntents.create(
+      {
+        amount: params.amountPence,
+        currency: "gbp",
+        customer: params.customerId,
+        payment_method: params.paymentMethodId,
+        off_session: true,
+        confirm: true,
+        capture_method: "automatic",
+        description: params.description,
+        receipt_email: params.customerEmail,
+        metadata: { jobId: params.jobId ?? "", paymentId: params.paymentId ?? "", kind: "card-on-file" },
+      },
+      { idempotencyKey: params.idempotencyKey },
+    );
+    const chargeId = typeof intent.latest_charge === "string" ? intent.latest_charge : null;
+    return { ok: intent.status === "succeeded", paymentIntentId: intent.id, chargeId };
+  } catch (err) {
+    return { ok: false, ...classifyOffSessionError(err) };
+  }
+}
+
+/**
+ * Pure classifier for a failed off-session charge, so the branch the admin UI
+ * depends on is unit-tested without Stripe. Stripe reports the "please
+ * authenticate" case as a card error with code `authentication_required`, and
+ * the PaymentIntent travels on the error — which is why it is a separate branch
+ * rather than another decline.
+ */
+export function classifyOffSessionError(err: unknown): { failure: OffSessionFailure; message: string } {
+  const e = err as { code?: string; decline_code?: string; type?: string; message?: string };
+  const message = e?.message ?? String(err);
+  if (e?.code === "authentication_required") return { failure: "authentication_required", message };
+  if (e?.type === "StripeCardError" || e?.code === "card_declined" || e?.decline_code) {
+    return { failure: "declined", message };
+  }
+  return { failure: "unknown", message };
+}
+
+/** The customer's saved card, if Stripe still holds one (fallback when our stored
+ *  id is missing — e.g. a subscription created before the id was recorded). */
+export async function savedCardFor(customerId: string): Promise<string | null> {
+  const stripe = getStripe();
+  if (!stripe) return null;
+  const methods = await stripe.paymentMethods.list({ customer: customerId, type: "card", limit: 1 });
+  return methods.data[0]?.id ?? null;
 }

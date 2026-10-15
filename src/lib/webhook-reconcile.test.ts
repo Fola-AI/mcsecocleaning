@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import type Stripe from "stripe";
 import {
@@ -9,6 +9,8 @@ import {
   paymentIdsFromMetadata,
   rechargeRowsWhere,
   refundedUpdate,
+  savedCardFromEvent,
+  savesCardForLater,
   succeededUpdate,
 } from "@/lib/webhook-reconcile";
 
@@ -113,4 +115,53 @@ test("canceled intent: released only for our own booking cancellation", () => {
     assert.equal(canceledStatus({ cancellation_reason: reason }), "failed", reason);
   }
   assert.equal(canceledStatus({ cancellation_reason: null }), "failed");
+});
+
+// ── Card on file (SETUP D7 = A, PRD §16.1 gap 2) ──────────────────────────────
+
+describe("savedCardFromEvent", () => {
+  test("reads the customer and payment method from a SetupIntent", () => {
+    assert.deepEqual(savedCardFromEvent({ customer: "cus_1", payment_method: "pm_1" }), {
+      customerId: "cus_1",
+      paymentMethodId: "pm_1",
+    });
+  });
+
+  test("handles expanded objects as well as ids", () => {
+    assert.deepEqual(savedCardFromEvent({ customer: { id: "cus_2" }, payment_method: { id: "pm_2" } }), {
+      customerId: "cus_2",
+      paymentMethodId: "pm_2",
+    });
+  });
+
+  test("an event with no card to save is null, not a partial write", () => {
+    assert.equal(savedCardFromEvent({ customer: "cus_1", payment_method: null }), null);
+    assert.equal(savedCardFromEvent({ customer: null, payment_method: "pm_1" }), null);
+    assert.equal(savedCardFromEvent({}), null);
+  });
+});
+
+describe("savesCardForLater", () => {
+  test("a deposit saved for off-session use does", () => {
+    assert.equal(savesCardForLater({ metadata: { kind: "deposit" }, setup_future_usage: "off_session" }), true);
+  });
+
+  test("the old on-session deposit does not — it was never a card-on-file mandate", () => {
+    assert.equal(savesCardForLater({ metadata: { kind: "deposit" }, setup_future_usage: "on_session" }), false);
+  });
+
+  test("an off-session charge does not re-stamp the card", () => {
+    // Otherwise every completion charge would rewrite the stored handle with the
+    // one it just used — harmless today, but it would quietly mask a card the
+    // customer had replaced in the meantime.
+    assert.equal(
+      savesCardForLater({ metadata: { kind: "card-on-file" }, setup_future_usage: "off_session" }),
+      false,
+    );
+  });
+
+  test("an ordinary authorisation saves nothing", () => {
+    assert.equal(savesCardForLater({ metadata: {}, setup_future_usage: null }), false);
+    assert.equal(savesCardForLater({}), false);
+  });
 });

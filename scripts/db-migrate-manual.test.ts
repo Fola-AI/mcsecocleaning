@@ -51,8 +51,12 @@ describe("needsSingleTransaction", () => {
 describe("migrationFiles", () => {
   const files = migrationFiles();
 
-  test("finds the nine migrations on the branch", () => {
-    assert.equal(files.length, 9);
+  test("finds the migration set", () => {
+    // Nine came from Phase 1–2; L2 added the card-on-file column. The count is a
+    // lower bound on purpose — a new migration should not fail this test, only the
+    // behavioural assertions below (transaction mode, and re-runnability), which
+    // is where a new file actually needs a decision made about it.
+    assert.ok(files.length >= 10, `expected at least 10 migrations, found ${files.length}`);
   });
 
   test("filename order is chronological order", () => {

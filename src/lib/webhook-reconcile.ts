@@ -110,3 +110,42 @@ export function canceledStatus(pi: Pick<Stripe.PaymentIntent, "cancellation_reas
 export function chargePaymentIntentId(charge: Pick<Stripe.Charge, "payment_intent">): string | null {
   return idOf(charge.payment_intent);
 }
+
+/**
+ * The saved card to record against a customer, from an event that saved one
+ * (SETUP D7 = A, §16.1 gap 2).
+ *
+ * Two events can save a card: the `SetupIntent` a card-on-file booking confirms,
+ * and the deposit `PaymentIntent` of a large job (which saves the card as it
+ * takes the money). Both carry the Stripe Customer and the PaymentMethod, which
+ * is all that is needed — and both are read server-side from the signed event,
+ * never from the client.
+ *
+ * Returns null when the event saved nothing reusable, so the caller can treat
+ * "not a card-saving event" and "a card-saving event with nothing on it" the
+ * same way: do nothing.
+ */
+export function savedCardFromEvent(
+  object: { customer?: string | { id: string } | null; payment_method?: string | { id: string } | null },
+): { customerId: string; paymentMethodId: string } | null {
+  const customerId = typeof object.customer === "string" ? object.customer : object.customer?.id;
+  const paymentMethodId =
+    typeof object.payment_method === "string" ? object.payment_method : object.payment_method?.id;
+  if (!customerId || !paymentMethodId) return null;
+  return { customerId, paymentMethodId };
+}
+
+/**
+ * Does this PaymentIntent's metadata mark it as one that saved the card for later
+ * off-session use? Only the deposit does among /book intents (`kind: "deposit"`),
+ * and only when it was created with `setup_future_usage: "off_session"` — which
+ * the booking flow does solely for a card-on-file booking. The off-session
+ * charges themselves carry `kind: "card-on-file"` and must NOT re-stamp the card,
+ * so they are excluded by name.
+ */
+export function savesCardForLater(
+  pi: { metadata?: Stripe.Metadata | null; setup_future_usage?: string | null },
+): boolean {
+  if (pi.metadata?.kind === "card-on-file") return false;
+  return pi.setup_future_usage === "off_session";
+}

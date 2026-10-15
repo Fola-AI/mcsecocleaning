@@ -4,6 +4,7 @@ import { db, hasDatabase } from "@/lib/db";
 import { requireRole } from "@/lib/auth";
 import { recomputeJobPaymentStatus } from "@/lib/payments";
 import { outstandingSummary } from "@/lib/outstanding";
+import { cardOnFileEnabled } from "@/lib/collection";
 import { cancellationBlock, cancelOutcome } from "@/lib/cancellation";
 import { formatPence, priceFromRateCard } from "@/lib/money";
 import { sendEmail } from "@/lib/email";
@@ -97,10 +98,27 @@ async function attemptCapture(jobId: string, finalTotalPence?: number): Promise<
   if (!authorised) {
     const pending = charges.find((c) => c.status === "pending");
     if (pending) {
+      // Card on file (SETUP D7 = A, §16.1 gap 2): a job booked more than ~6 days
+      // ahead, and every recurring visit, has no authorisation by design — the
+      // hold would have lapsed. Charge the saved card off-session instead. This is
+      // the path that used to fall through to a manual "please pay" email.
+      const offSession = await chargeFromCardOnFile(jobId, pending.id, finalTotalPence);
+      if (offSession) return offSession;
       return {
         ok: false, retryable: false, needsRecharge: true,
         message: `the balance of ${formatPence(pending.gross)} was never authorised (payment wasn't completed at booking). Retrying won't help — send a new payment request for the balance.`,
       };
+    }
+
+    // A materialised recurring visit has no Payment row at all until it completes:
+    // the materialiser creates jobs, never charges (schedule ≠ billing, §6.2). So
+    // the row is created here, at completion, and charged off-session.
+    if (charges.length === 0 && alreadyCaptured === 0) {
+      const created = await openChargeForRecurringVisit(jobId, finalTotalPence);
+      if (created) {
+        const offSession = await chargeFromCardOnFile(jobId, created.id, finalTotalPence);
+        if (offSession) return offSession;
+      }
     }
     if (alreadyCaptured > 0) {
       return { ok: true, retryable: false, needsRecharge: false, message: "already captured — nothing outstanding." };
@@ -300,6 +318,150 @@ export async function rechargeOutstanding(jobId: string): Promise<{ ok: boolean;
   });
 
   return { ok: true, message: `Payment request (sign-in link) sent to ${res.customerEmail}.` };
+}
+
+/**
+ * Charge a job's outstanding amount from the customer's saved card (D7 = A).
+ *
+ * Returns `null` when card-on-file does not apply — no saved card, or the
+ * mechanism is switched off because the consent wording is unapproved (Q-14) —
+ * so the caller falls back to the payment-request path exactly as before. That
+ * fallback is why this returns null rather than an error outcome: "we don't do
+ * this here" and "we tried and it failed" must not read the same.
+ *
+ * On failure the Payment row is marked `failed` and the job is LEFT ALONE: the
+ * clean happened, the money is a separate matter (§6.2, schedule ≠ billing). An
+ * `authentication_required` failure gets its own message, because it is not a
+ * decline — the customer's bank wants them to confirm, which they can still do
+ * from the payment request, and telling an admin "declined" would send them
+ * chasing a new card for no reason.
+ */
+async function chargeFromCardOnFile(
+  jobId: string,
+  paymentId: string,
+  finalTotalPence?: number,
+): Promise<CaptureOutcome | null> {
+  if (!cardOnFileEnabled()) return null;
+
+  const payment = await db.payment.findUnique({ where: { id: paymentId } });
+  if (!payment || payment.status === "captured") return null;
+
+  const job = await db.job.findUnique({
+    where: { id: jobId },
+    include: { customer: true, serviceType: true },
+  });
+  if (!job?.customer?.stripeCustomerId) return null;
+
+  const { chargeSavedCard, savedCardFor } = await import("@/lib/stripe");
+  // Our stored handle first; Stripe's own list is the fallback for a customer
+  // whose card was saved before the column existed.
+  const paymentMethodId =
+    job.customer.stripeDefaultPaymentMethodId ?? (await savedCardFor(job.customer.stripeCustomerId));
+  if (!paymentMethodId) return null;
+
+  // The amount: the admin's adjusted total when one was given (minus anything
+  // already captured), otherwise what the row says is owed. Recomputed through the
+  // money layer, never by scaling (CLAUDE.md → Money rules).
+  const alreadyCaptured = (
+    await db.payment.findMany({ where: { jobId, type: "charge", status: "captured" } })
+  ).reduce((sum, c) => sum + c.gross, 0);
+  const amount = finalTotalPence != null ? finalTotalPence - alreadyCaptured : payment.gross;
+  if (amount <= 0) return null;
+
+  if (amount !== payment.gross) {
+    const adj = priceFromRateCard(amount);
+    await db.payment.update({
+      where: { id: payment.id },
+      data: { gross: amount, net: adj.net, vatAmount: adj.vatAmount },
+    });
+  }
+
+  const result = await chargeSavedCard({
+    customerId: job.customer.stripeCustomerId,
+    paymentMethodId,
+    amountPence: amount,
+    description: `${job.serviceType?.name ?? "Clean"} ${localDateString(job.scheduledStart ?? new Date())}`,
+    jobId,
+    paymentId: payment.id,
+    customerEmail: job.customer.email,
+    // One key per (payment row, amount): a repeated completion returns Stripe's
+    // original charge instead of taking the money twice.
+    idempotencyKey: `card-on-file-${payment.id}-${amount}`,
+  });
+
+  if (result.ok) {
+    await db.$transaction(async (tx) => {
+      await tx.payment.update({
+        where: { id: payment.id },
+        data: {
+          status: "captured",
+          capturedAt: new Date(),
+          stripePaymentIntentId: result.paymentIntentId ?? null,
+          stripeChargeId: result.chargeId ?? null,
+        },
+      });
+      await tx.jobStatusEvent.create({
+        data: {
+          jobId,
+          toStatus: job.status,
+          note: `Charged ${formatPence(amount)} off-session from the card on file (${result.paymentIntentId ?? "no intent id"}).`,
+        },
+      });
+      await recomputeJobPaymentStatus(tx, jobId);
+    });
+    return {
+      ok: true, retryable: false, needsRecharge: false,
+      message: `charged ${formatPence(amount)} to the card on file.`,
+    };
+  }
+
+  // Failed. Mark the row and flag it for admin; never touch the job.
+  await db.$transaction(async (tx) => {
+    await tx.payment.update({ where: { id: payment.id }, data: { status: "failed" } });
+    await tx.jobStatusEvent.create({
+      data: {
+        jobId,
+        toStatus: job.status,
+        note: `Card-on-file charge of ${formatPence(amount)} failed (${result.failure}): ${result.message ?? "no detail"}. Job unchanged; needs a payment request.`,
+      },
+    });
+    await recomputeJobPaymentStatus(tx, jobId);
+  });
+
+  if (result.failure === "authentication_required") {
+    return {
+      ok: false, retryable: false, needsRecharge: true,
+      message: `the customer's bank asked them to confirm the payment, so it can't be taken automatically. Send a payment request — they can confirm it themselves.`,
+    };
+  }
+  return {
+    ok: false, retryable: false, needsRecharge: true,
+    message: `the card on file was declined (${result.message ?? result.failure}). Send a payment request so they can pay with another card.`,
+  };
+}
+
+/**
+ * Create the charge row for a completed recurring visit (D7 = A).
+ *
+ * The materialiser deliberately creates no Payment rows — it generates the
+ * schedule and nothing else — so visit 2 onward arrives at completion with
+ * nothing to charge against. The row is created here from the job's own stored
+ * price (or the admin's adjusted total), which is the price the subscription was
+ * sold at, never a fresh quote.
+ */
+async function openChargeForRecurringVisit(
+  jobId: string,
+  finalTotalPence?: number,
+): Promise<{ id: string } | null> {
+  const job = await db.job.findUnique({ where: { id: jobId } });
+  if (!job?.subscriptionId) return null; // only a subscription visit
+  const amount = finalTotalPence ?? job.gross;
+  if (amount <= 0) return null;
+  const m = priceFromRateCard(amount);
+  return db.payment.create({
+    data: { jobId, type: "charge", net: m.net, vatAmount: m.vatAmount, gross: amount, status: "pending" },
+    select: { id: true },
+  });
 }
 
 /**

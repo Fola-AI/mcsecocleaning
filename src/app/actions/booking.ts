@@ -17,6 +17,8 @@ import { defaultRoster, availabilityConfig } from "@/config/availability";
 import { ROOM_KEYS } from "@/lib/pricing/rate-card";
 import { resolveAndApply } from "@/lib/discounts";
 import { createSubscriptionForBooking } from "@/lib/subscriptions";
+import { cardOnFileEnabled, collectionModeFor } from "@/lib/collection";
+import { isRecurringFrequency } from "@/lib/subscription-rule";
 import { fromGross, fromNet, isVatRegistered, type MoneyBreakdown } from "@/lib/money";
 
 /**
@@ -101,7 +103,12 @@ export type BookingInput = z.input<typeof bookingSchema>;
 /** A payment the client must confirm. A large job returns two (deposit + balance);
  *  every other job returns one (full). The Elements UI confirms each in turn. */
 export interface BookingPaymentIntent {
-  kind: "full" | "deposit" | "balance";
+  /**
+   * "setup" is a SetupIntent, not a charge: it saves the card for a later
+   * off-session charge and takes nothing now (SETUP D7 = A, §16.1 gap 2). The
+   * client confirms it with `stripe.confirmSetup` rather than `confirmPayment`.
+   */
+  kind: "full" | "deposit" | "balance" | "setup";
   clientSecret: string | null;
   amountPence: number;
 }
@@ -205,11 +212,25 @@ export async function createBooking(input: BookingInput): Promise<BookingResult>
   // to it, which is what lets the browser authorise the balance on the same card —
   // Stripe refuses to reuse a card that isn't saved to a Customer. If the Customer
   // can't be had, the catch below takes the no-card path like any Stripe failure.
+  //
+  // Collection mode (SETUP D7 = A, §16.1 gap 2). A hold lasts about seven days,
+  // but a slot can be 21 days out and a recurring series runs for months — so for
+  // those bookings the card is SAVED at booking and charged off-session on
+  // completion, instead of placing an authorisation that will have lapsed by the
+  // time the clean happens. While the card-on-file consent wording is unapproved
+  // (Q-14) the mode is always "authorise_now" and this changes nothing.
   let requiresPayment = false;
   const paymentIntents: BookingPaymentIntent[] = [];
+  const collectionMode = collectionModeFor({
+    scheduledStart: data.slotStartISO ? new Date(data.slotStartISO) : null,
+    isRecurring: isRecurringFrequency(data.frequency),
+    cardOnFileEnabled: cardOnFileEnabled(),
+  });
+  const cardOnFile = collectionMode === "card_on_file";
   if (jobId && userId && hasDatabase) {
     try {
-      const { stripeConfigured, authoriseBookingPayment, captureBookingDeposit } = await import("@/lib/stripe");
+      const { stripeConfigured, authoriseBookingPayment, captureBookingDeposit, saveCardForLater } =
+        await import("@/lib/stripe");
       if (stripeConfigured()) {
         const jid = jobId;
         const customerId = await ensureStripeCustomer(userId);
@@ -234,26 +255,63 @@ export async function createBooking(input: BookingInput): Promise<BookingResult>
             amountPence: depositPence, customerId, jobId: jid, paymentId: dep.id,
             idempotencyKey: `${reference}-deposit`, customerEmail: data.contact.email,
             description: `${service.name} deposit ${reference}`,
+            // Off-session when the balance will be charged later: Stripe needs the
+            // stronger mandate recorded at the moment the customer authorises, and
+            // it cannot be upgraded afterwards.
+            saveCardFor: cardOnFile ? "off_session" : "on_session",
           });
           if (depRes?.paymentIntentId) {
             await db.payment.update({ where: { id: dep.id }, data: { stripePaymentIntentId: depRes.paymentIntentId } });
             paymentIntents.push({ kind: "deposit", clientSecret: depRes.clientSecret, amountPence: depositPence });
           }
 
-          // Balance — authorised now, captured on completion.
+          // Balance. With the card on file it is NOT authorised now — the hold
+          // would expire before the clean. The Payment row is created pending and
+          // the deposit's saved card is charged off-session at completion, so the
+          // row is the record of what is still owed either way.
           const bal = await openPayment(balancePence);
-          const balRes = await authoriseBookingPayment({
-            kind: "balance", amountPence: balancePence, customerId, jobId: jid, paymentId: bal.id,
-            idempotencyKey: `${reference}-balance`, customerEmail: data.contact.email,
-            description: `${service.name} balance ${reference}`,
+          if (cardOnFile) {
+            await db.jobStatusEvent.create({
+              data: {
+                jobId: jid,
+                toStatus: "booked",
+                note: `Balance ${formatPence(balancePence)} to be charged on completion from the card saved at booking (card on file, D7=A).`,
+              },
+            });
+          } else {
+            const balRes = await authoriseBookingPayment({
+              kind: "balance", amountPence: balancePence, customerId, jobId: jid, paymentId: bal.id,
+              idempotencyKey: `${reference}-balance`, customerEmail: data.contact.email,
+              description: `${service.name} balance ${reference}`,
+            });
+            if (balRes?.paymentIntentId) {
+              // Stays 'pending' — the intent is only CREATED here; the card is
+              // authorised when the client confirms, and the webhook
+              // (amount_capturable_updated) is the sole authority that flips it to
+              // 'authorised'. Pre-stamping would read as held funds before any exist.
+              await db.payment.update({ where: { id: bal.id }, data: { stripePaymentIntentId: balRes.paymentIntentId } });
+              paymentIntents.push({ kind: "balance", clientSecret: balRes.clientSecret, amountPence: balancePence });
+            }
+          }
+        } else if (cardOnFile) {
+          // No deposit on this job, so nothing is taken at booking and there is no
+          // PaymentIntent to save the card on: a SetupIntent does it instead. The
+          // customer confirms it now, while they are present, so any 3-D Secure
+          // challenge happens here rather than failing an off-session charge later.
+          const payment = await openPayment(charge.gross);
+          const setup = await saveCardForLater({
+            customerId, jobId: jid, customerEmail: data.contact.email,
+            idempotencyKey: `${reference}-setup`,
           });
-          if (balRes?.paymentIntentId) {
-            // Stays 'pending' — the intent is only CREATED here; the card is
-            // authorised when the client confirms, and the webhook
-            // (amount_capturable_updated) is the sole authority that flips it to
-            // 'authorised'. Pre-stamping would read as held funds before any exist.
-            await db.payment.update({ where: { id: bal.id }, data: { stripePaymentIntentId: balRes.paymentIntentId } });
-            paymentIntents.push({ kind: "balance", clientSecret: balRes.clientSecret, amountPence: balancePence });
+          if (setup?.clientSecret) {
+            paymentIntents.push({ kind: "setup", clientSecret: setup.clientSecret, amountPence: charge.gross });
+            await db.jobStatusEvent.create({
+              data: {
+                jobId: jid,
+                toStatus: "booked",
+                note: `${formatPence(charge.gross)} to be charged on completion from the card saved at booking (card on file, D7=A). Payment row ${payment.id}.`,
+              },
+            });
           }
         } else {
           // Authorise the full amount.

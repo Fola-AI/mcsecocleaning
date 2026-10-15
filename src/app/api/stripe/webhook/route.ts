@@ -9,6 +9,8 @@ import {
   needsRefundLookup,
   rechargeRowsWhere,
   refundedUpdate,
+  savedCardFromEvent,
+  savesCardForLater,
   succeededUpdate,
 } from "@/lib/webhook-reconcile";
 
@@ -124,6 +126,15 @@ async function handleStripeEvent(tx: Prisma.TransactionClient, event: Stripe.Eve
       await recomputeJobForIntent(tx, pi.id);
       break;
     }
+    case "setup_intent.succeeded": {
+      // A card-on-file booking: the customer confirmed the SetupIntent, so there
+      // is now a card we may charge off-session when the job completes (D7 = A).
+      // Recording it here, from the signed event, is what makes the server the
+      // only authority on which card is on file.
+      const si = event.data.object as Stripe.SetupIntent;
+      await recordSavedCard(tx, savedCardFromEvent(si));
+      break;
+    }
     case "payment_intent.succeeded": {
       const pi = event.data.object as Stripe.PaymentIntent;
       const paymentId = pi.metadata?.paymentId || null;
@@ -143,6 +154,9 @@ async function handleStripeEvent(tx: Prisma.TransactionClient, event: Stripe.Eve
         await tx.payment.updateMany({ where: { stripePaymentIntentId: pi.id }, data });
       }
       await recomputeJobForIntent(tx, pi.id);
+      // A deposit created for a card-on-file booking saved the card as it took
+      // the money, so there is no SetupIntent for it — stamp it from here.
+      if (savesCardForLater(pi)) await recordSavedCard(tx, savedCardFromEvent(pi));
       break;
     }
     case "payment_intent.payment_failed": {
@@ -178,6 +192,25 @@ async function handleStripeEvent(tx: Prisma.TransactionClient, event: Stripe.Eve
       // Unhandled event types are still recorded (idempotency) and marked processed.
       break;
   }
+}
+
+/**
+ * Record the customer's saved card against their User row (D7 = A).
+ *
+ * Matched by `stripeCustomerId`, so an event for a Stripe Customer we do not
+ * know is a no-op rather than an error — `updateMany` is deliberate here for the
+ * same reason the Payment writes use it. Idempotent: a replayed event writes the
+ * same handle.
+ */
+async function recordSavedCard(
+  tx: Prisma.TransactionClient,
+  saved: { customerId: string; paymentMethodId: string } | null,
+): Promise<void> {
+  if (!saved) return;
+  await tx.user.updateMany({
+    where: { stripeCustomerId: saved.customerId },
+    data: { stripeDefaultPaymentMethodId: saved.paymentMethodId },
+  });
 }
 
 /** Resolve the linked Job from a PaymentIntent and recompute its status from the

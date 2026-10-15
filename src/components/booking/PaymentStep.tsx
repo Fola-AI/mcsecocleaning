@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
 import { getStripePromise } from "@/lib/stripe-browser";
 import { depositTerms, DEPOSIT_REFUND_NOTE } from "@/config/payments";
+import { CARD_ON_FILE_CONSENT } from "@/config/legal";
 import { formatPence } from "@/lib/money";
 import type { BookingPaymentIntent } from "@/app/actions/booking";
 
@@ -23,7 +24,9 @@ export function PaymentStep({ paymentIntents, reference }: { paymentIntents: Boo
   const deposit = paymentIntents.find((p) => p.kind === "deposit");
   const balance = paymentIntents.find((p) => p.kind === "balance");
   const full = paymentIntents.find((p) => p.kind === "full");
-  const primary = full ?? deposit;
+  // Card on file (D7 = A): a SetupIntent saves the card and takes nothing now.
+  const setup = paymentIntents.find((p) => p.kind === "setup");
+  const primary = full ?? deposit ?? setup;
   const isSplit = Boolean(deposit && balance);
 
   if (!stripePromise || !primary?.clientSecret) {
@@ -38,7 +41,9 @@ export function PaymentStep({ paymentIntents, reference }: { paymentIntents: Boo
     );
   }
 
-  const grossPence = isSplit ? (deposit!.amountPence + balance!.amountPence) : (full?.amountPence ?? 0);
+  const grossPence = isSplit
+    ? deposit!.amountPence + balance!.amountPence
+    : (full?.amountPence ?? setup?.amountPence ?? 0);
 
   return (
     <Elements stripe={stripePromise} options={{ clientSecret: primary.clientSecret, appearance: { theme: "stripe" } }}>
@@ -46,6 +51,7 @@ export function PaymentStep({ paymentIntents, reference }: { paymentIntents: Boo
         isSplit={isSplit}
         grossPence={grossPence}
         balanceClientSecret={balance?.clientSecret ?? null}
+        isSetup={Boolean(setup)}
         reference={reference}
       />
     </Elements>
@@ -58,11 +64,14 @@ function PaymentForm({
   isSplit,
   grossPence,
   balanceClientSecret,
+  isSetup,
   reference,
 }: {
   isSplit: boolean;
   grossPence: number;
   balanceClientSecret: string | null;
+  /** Card on file: confirm a SetupIntent and take nothing now (D7 = A). */
+  isSetup: boolean;
   reference: string;
 }) {
   const stripe = useStripe();
@@ -111,6 +120,20 @@ function PaymentForm({
     setError(null);
     setPhase("processing");
 
+    // Card on file: confirm the SetupIntent instead. No money moves now — the
+    // card is saved (with 3-D Secure handled here, while the customer is present)
+    // and charged off-session once the clean is complete.
+    if (isSetup) {
+      const { error: setupError } = await stripe.confirmSetup({ elements, redirect: "if_required" });
+      if (setupError) {
+        setError(setupError.message ?? "We couldn't save your card.");
+        setPhase("error");
+        return;
+      }
+      setPhase("done");
+      return;
+    }
+
     // Confirm the primary intent (deposit, or full) with the entered card.
     const { error, paymentIntent } = await stripe.confirmPayment({ elements, redirect: "if_required" });
     if (error) {
@@ -138,12 +161,14 @@ function PaymentForm({
     return (
       <div className="card mx-auto max-w-lg p-8 text-center">
         <div className="text-4xl" aria-hidden>🎉</div>
-        <h2 className="mt-3 text-2xl font-bold">Payment complete</h2>
+        <h2 className="mt-3 text-2xl font-bold">{isSetup ? "Booking confirmed" : "Payment complete"}</h2>
         <p className="mt-1 text-ink-soft">Reference <strong>{reference}</strong></p>
         <p className="mt-4 text-sm text-ink-soft">
-          {isSplit
-            ? "Your deposit is paid and the balance is authorised — we'll charge it on completion. We've emailed your confirmation."
-            : "Your card is authorised — we'll capture payment on completion. We've emailed your confirmation."}
+          {isSetup
+            ? "Your card is saved and nothing has been charged today — we'll take payment after your clean is finished. We've emailed your confirmation."
+            : isSplit
+              ? "Your deposit is paid and the balance is authorised — we'll charge it on completion. We've emailed your confirmation."
+              : "Your card is authorised — we'll capture payment on completion. We've emailed your confirmation."}
         </p>
       </div>
     );
@@ -171,12 +196,24 @@ function PaymentForm({
 
   return (
     <form onSubmit={onSubmit} className="card mx-auto max-w-lg p-6">
-      <h2 className="text-xl font-bold">{isSplit ? "Pay your deposit & authorise the balance" : "Confirm your payment"}</h2>
+      <h2 className="text-xl font-bold">
+        {isSetup ? "Save your card" : isSplit ? "Pay your deposit & authorise the balance" : "Confirm your payment"}
+      </h2>
       <p className="mt-1 text-sm text-ink-soft">Reference <strong>{reference}</strong></p>
 
       {terms && (
         <p className="mt-3 rounded-lg bg-brand-tint/50 px-3 py-2 text-sm text-brand-ink">
           {terms.sentence} {DEPOSIT_REFUND_NOTE}
+        </p>
+      )}
+
+      {/* Card on file: what the customer is agreeing to. The wording is legal
+          wording and is unapproved (Q-14) — this whole branch is only reachable
+          when CARD_ON_FILE_CONSENT.confirmed is true, or in a non-production
+          preview, so nothing unapproved reaches a real customer. */}
+      {isSetup && (
+        <p className="mt-3 rounded-lg bg-brand-tint/50 px-3 py-2 text-sm text-brand-ink">
+          {CARD_ON_FILE_CONSENT.text}
         </p>
       )}
 
@@ -194,12 +231,16 @@ function PaymentForm({
 
       <button type="submit" className="btn btn-primary mt-4 w-full" disabled={!stripe || busy}>
         {phase === "processing"
-          ? "Processing…"
+          ? isSetup
+            ? "Saving your card…"
+            : "Processing…"
           : phase === "authorising-balance"
             ? "Authorising balance…"
-            : isSplit
-              ? `Pay deposit ${formatPence(terms!.depositPence)}`
-              : "Pay now"}
+            : isSetup
+              ? `Save card & confirm booking (${formatPence(grossPence)} on completion)`
+              : isSplit
+                ? `Pay deposit ${formatPence(terms!.depositPence)}`
+                : "Pay now"}
       </button>
       <p className="mt-3 text-center text-xs text-ink-soft">Payments are processed securely by Stripe.</p>
     </form>

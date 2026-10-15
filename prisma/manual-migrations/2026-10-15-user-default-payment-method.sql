@@ -1,0 +1,20 @@
+-- Migration: User.stripeDefaultPaymentMethodId (SETUP D7 = A, PRD §8, §16.1 gap 2).
+--
+-- The card-on-file mechanism needs somewhere to record WHICH saved card to
+-- charge when a job completes more than ~6 days after it was booked, and for
+-- every recurring visit. The value is a Stripe PaymentMethod handle (`pm_…`) —
+-- never a card number, never anything sensitive on its own; without the Stripe
+-- account it is inert.
+--
+-- Written only by the Stripe webhook, from `setup_intent.succeeded` and from a
+-- deposit's `payment_intent.succeeded`, so the server is the only authority on
+-- what card is on file.
+--
+-- Additive and idempotent: nullable, no default, no backfill. Every existing row
+-- keeps NULL, which the code reads as "no card on file" and falls back to the
+-- existing payment-request path. Nothing is repriced and no job changes.
+--
+-- Data-safety: a nullable column with no default cannot fail on existing rows and
+-- cannot change any stored value. Reversing it is a DROP COLUMN, which loses only
+-- the handles — the cards themselves live at Stripe and are re-readable.
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "stripeDefaultPaymentMethodId" TEXT;
