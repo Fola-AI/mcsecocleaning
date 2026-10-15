@@ -2,7 +2,7 @@
 
 > **For Fola:** this is the one file to check. The top section shows where things stand and whether anything needs you. **For Claude Code:** this is the only status file you write. Update it after every completed item.
 
-## ✅ Stop cleared — 15 Oct 2026 · all nine L2 keys present, D7 answered
+## ✅ Stop cleared — 15 Oct 2026 · all nine L2 keys present, D7 answered (L2 then ran; see below)
 
 The 15 Oct stop (`.env.local` present but 7 of its 9 L2 keys empty) is **cleared**.
 Fola filled the six Neon/Stripe/Resend values and `DEV_EMAIL_REDIRECT`, and answered
@@ -52,31 +52,31 @@ drafted and parked, per the L2 stage text.
 
 | | |
 | --- | --- |
-| **Current stage** | **L2 — ⏳ in progress, started 15 Oct 2026.** The environment block is cleared: all nine L2 keys are present, Stripe is in test mode, the dev-db guard confirms its target, and SETUP D7 is answered (A) |
-| **Next action** | *(Claude Code)* work the L2 plan in order — baseline the Neon `dev` branch at the pre-migration-#1 schema, apply manual migrations #1–#9, empty drift check, seed, then Playwright gates A/B/C/D, the payment-link reissue, and the three Phase 2 gaps from the 9 Oct review (PRD §16.1). The L2 checklist with per-item state is in the **L2 stage log** below |
-| **Working branch** | `build/autonomous` on GitHub — the fix-branch work plus 4 L1 commits, the 9 Oct documentation repair, the root move and D7 |
-| **Last updated** | 15 Oct 2026 — **L2 unblocked and started.** All nine L2 keys verified present (names and prefixes only); `sk_test_`/`pk_test_` confirm test mode; `DEV_DB_HOST` matches the `DIRECT_URL` host; the Neon `dev` branch is reachable and empty; D7 = A, so Q-10 is answered and gap 2 is built rather than parked. Earlier 15 Oct — `.env.local` created from the §4 template, stale `.env` removed, Q-13 resolved. 9 Oct — external review, documents revised to PRD v2.2.1. 8 Oct — L1 complete |
-| **Needs Fola?** | **Not to proceed.** Two things wait for a merge checkpoint or a spare moment: the drafted card-on-file consent wording (Q-14, legal — L2 does not ship it unapproved), and D3–D6 which park only later-stage items. 9 live *Open questions* (Q-6, Q-10 and Q-13 resolved); the *Review queue* grows through L2 for merge checkpoint 1 |
+| **Current stage** | **L2 — ✅ done, 15 Oct 2026.** → **Merge checkpoint 1.** The database is real, all ten migrations applied with an empty drift check, and the Stripe gates A/B/C/D pass against test mode. The three Phase 2 gaps from the 9 Oct review are closed. **L3 (admin operations core) is next and is not blocked** |
+| **Next action** | *(Claude Code)* start **L3** — PRD §16.3 → L3: the realistic-data seed mode, the Today view replacing the `/admin` counts dashboard, the job board with server-enforced status transitions, the failed-payment queue, blackout dates, and the recurrence tests across a bank holiday and both clock changes. *(Fola, in parallel, nothing blocking)* review **checkpoint 1** below and merge to `main` when you are ready; the one item that changes customer-facing behaviour is **Q-14**, the card-on-file consent wording |
+| **Working branch** | `build/autonomous`, pushed — L1 (4 commits) + L2 (8 commits) ahead of `main` (`2f667ff`, untouched) |
+| **Last updated** | 15 Oct 2026 — **L2 complete.** Neon `dev` baselined and migrated (10 of 10, drift empty), seeded; Playwright + `npm run test:e2e` with 14 gates green against Stripe test mode including a real 3-D Secure challenge; gaps 1–3 closed (Subscription, card on file behind its consent flag, server-action auth); payment-link recovery and reissue built. Five real bugs found by running it rather than reading it — see the L2 log. Unit tests 190 → 268 |
+| **Needs Fola?** | **Not to proceed with L3.** For checkpoint 1: review R-4…R-9 (R-5, R-6, R-7 move money) and answer **Q-14** (card-on-file consent wording — the mechanism is built but switched off until then), **Q-15** (manual price on a recurring admin booking) and **Q-16** (no dev email is delivered — a Resend account limit, harmless now, would hollow out L9). 11 live *Open questions*; D3–D6 still park later-stage items only |
 
 ## Stage tracker
 
 | Stage | Title | Status | Merge checkpoint |
 | --- | --- | --- | --- |
 | L1 | Reconcile and guardrails | ✅ Done | |
-| L2 | Real database and Stripe test-mode gate (+ Phase 2 gaps 1–3, gate D — added 9 Oct) | ⏳ In progress — keys present, started 15 Oct 2026 | ✅ 1 |
-| L3 | Admin operations core | ⛔ Blocked by L2 | |
-| L4 | Crew roster, capacity and availability | ⛔ Blocked by L2 | |
-| L5 | Crew mobile interface | ⛔ Blocked by L2 | |
-| L6 | Access codes | ⛔ Blocked by L2 | ✅ 2 |
-| L7 | Media exchange | ⛔ Blocked by L2 | |
-| L8 | Quality checklists | ⛔ Blocked by L2 | |
-| L9 | Notifications and recurring self-service | ⛔ Blocked by L2 | |
-| L10 | Payroll and owner rate-card editor | ⛔ Blocked by L2 | ✅ 3 |
-| L11 | Commercial RFQ, invoicing and Bacs | ⛔ Blocked by L2 | |
-| L12 | Reviews, growth and content gaps | ⛔ Blocked by L2 | |
-| L13 | Issue resolution and data rights | ⛔ Blocked by L2 | ✅ 4 |
-| L14 | Launch hardening | ⛔ Blocked by L2 | |
-| L15 | Release candidate and LAUNCH.md | ⛔ Blocked by L2 | ✅ 5 |
+| L2 | Real database and Stripe test-mode gate (+ Phase 2 gaps 1–3, gate D) | ✅ Done — 15 Oct 2026 (evidence below) | ✅ 1 ← **here** |
+| L3 | Admin operations core | ☐ Next — unblocked | |
+| L4 | Crew roster, capacity and availability | ☐ Not started | |
+| L5 | Crew mobile interface | ☐ Not started | |
+| L6 | Access codes | ☐ Not started | ✅ 2 |
+| L7 | Media exchange | ☐ Not started | |
+| L8 | Quality checklists | ☐ Not started | |
+| L9 | Notifications and recurring self-service | ☐ Not started | |
+| L10 | Payroll and owner rate-card editor | ☐ Not started | ✅ 3 |
+| L11 | Commercial RFQ, invoicing and Bacs | ☐ Not started | |
+| L12 | Reviews, growth and content gaps | ☐ Not started | |
+| L13 | Issue resolution and data rights | ☐ Not started | ✅ 4 |
+| L14 | Launch hardening | ☐ Not started | |
+| L15 | Release candidate and LAUNCH.md | ☐ Not started | ✅ 5 |
 
 Legend: ☐ not started · ⏳ in progress · ✅ done (evidence below) · ⛔ blocked (reason in stage log)
 
@@ -198,9 +198,9 @@ Re-measured on 8 Oct 2026. Three entries that the earlier snapshot got wrong are
 - **L1 — trust claims nobody has confirmed, hardcoded in six files.** "£5m public liability", "DBS-checked" and "Fully insured" appear in `src/app/page.tsx` (trust badges, how-it-works step, FAQ answer), `src/app/about/page.tsx`, `src/components/ui/TrustBar.tsx`, `src/components/layout/Footer.tsx`, `src/config/services.ts` and `src/app/opengraph-image.tsx`. Only `publicLiabilityCover` reads config (`src/config/site.ts`), and that value is a `PLACEHOLDER`. Routing them through config is a prerequisite to gating them.
 - **L1 — stale config.** `.env.example` still lists the retired `ADMIN_ACCESS_CODE` (no code reads it since Auth.js) and lacks `APP_ENV`, `AUTH_SECRET`, `DEV_DB_HOST`, `DEV_EMAIL_REDIRECT`, `DEV_SMS_REDIRECT`, `MEDIA_LINK_SECRET`, `NEXT_PUBLIC_ALLOW_INDEXING`. (`README.md` was corrected on 8 Oct — status line and the links to the archived PRD and `BUILD-STATUS.md`.)
 - **L1 — business-input markers**: 26 `PLACEHOLDER`, 2 `TODO(business-input)`, 2 `TODO(ops)`, 0 `TODO(pricing)`, 0 `TODO(legal)`, across `src/config/site.ts`, `src/config/availability.ts`, `src/lib/capacity.ts`, `src/lib/pricing/rate-card.ts`, `src/app/cancellation-policy/page.tsx`. `npm run check:launch-inputs` (L1) must find these five files.
-- **L2 — recurring booking → `Subscription` (added 9 Oct).** See *External review*, finding 1.
-- **L2 — collection beyond the card hold (added 9 Oct).** Finding 2; mechanism parked on Q-10 / SETUP D7.
-- **L2 — unauthenticated server action (added 9 Oct).** Finding 3; plus a test that every `src/app/actions/*` export makes an auth decision or is on the public allow-list.
+- ~~**L2 — recurring booking → `Subscription`**~~ **Closed 15 Oct 2026** (`85bd8dd`), proven by gate D.
+- ~~**L2 — collection beyond the card hold**~~ **Built 15 Oct 2026** (`d2616ed`) as D7 = A, and **switched off** until its consent wording is approved (Q-14). So the gap itself is closed in code and still open in behaviour until that flag flips — stated plainly rather than ticked.
+- ~~**L2 — unauthenticated server action**~~ **Closed 15 Oct 2026** (`deb3773`), with the scan test that stops the next one.
 - **L4 — capacity is config-backed, but the engine is ready.** **Corrected:** `src/lib/capacity.ts` is already a pure function taking `crews: CrewAvailability[]` and `existingJobs: ExistingJob[]`. L4 is a loader, not a rewrite.
 - **L4 — `JobAssignment`** has `isLead`/`assignedAt` only; no `offeredAt`/`acceptedAt`/`declinedAt`.
 - **L4 — `CrewProfile`.** **Corrected:** it *does* have `dbsCheckedAt`. Missing are `dbsExpiresAt` and `insuranceExpiresAt`.
@@ -209,7 +209,7 @@ Re-measured on 8 Oct 2026. Three entries that the earlier snapshot got wrong are
 - **Post-launch** — schema still uses `AIInsight`, not `AgentAction` (PRD §16.4).
 
 ### Deferred items carried forward
-- Payment-link copy/reissue on `/admin/jobs` → **L2**.
+- ~~Payment-link copy/reissue on `/admin/jobs`~~ **Done in L2** (`6a3ef75`, `f737108`).
 - Cross-session payment resume page → deferred (the deposit nudge covers it).
 - GDPR erasure as anonymise/soft-delete → **L13**.
 - Rate-card editor (Task 5) → **L10**, subject to SETUP D3.
@@ -238,6 +238,9 @@ Format: **Q-n** · stage · question · options (none picked) · what's blocked.
 
 - **Q-14** · L2 · **Card-on-file consent and pre-contract wording (legal).** D7 = A means the customer's card is saved at booking and charged automatically later, which changes what they agree to at checkout. `CLAUDE.md` makes legal wording a Park item, so the mechanism is built behind a confirmed-wording flag and the draft sits in `src/config/legal.ts` marked `TODO(legal)`; nothing new is shown to a customer until Fola approves it. Options: approve the draft as written / amend it with an adviser / have the wording drafted against the CCR and Stripe's mandate requirements before any off-session charge is enabled. Blocks: switching mechanism A on for real customers (it is exercised by tests and in dev only). **This is the one L2 item that needs Fola.**
 
+- **Q-15** · L2 · **An admin booking with a manual price, set to recur.** With a hand-set price (§9.7) the engine has no per-visit figure to give — it may have refused to price the job at all — so the series repeats at the price the admin quoted and no first-clean surcharge is recorded (none was applied). That is the only reading that invents no number, and the audit note on the job says so, but it is a money decision and it is yours. Options: the manual price **is** the per-visit price (what is built) / the manual price covers the first visit only and the engine prices the rest / recurring admin bookings with a manual price are refused until a per-visit price is entered separately. Blocks: nothing; it affects admin-created recurring bookings only.
+- **Q-16** · L2 / L9 · **No dev email is being delivered — a Resend account limit, not the code.** The L1 guard correctly redirects every non-production send to `DEV_EMAIL_REDIRECT`, and Resend then refuses it: *"You can only send testing emails to your own email address (afolinks@hotmail.com). To send emails to other recipients, verify a domain at resend.com/domains."* The failure is logged and never breaks a booking, but nothing arrives — so no booking confirmation, pre-contract email, payment request or sign-in link can be read on this machine. Options: set `DEV_EMAIL_REDIRECT` to the address the Resend account is registered to / verify a domain at Resend and set `EMAIL_FROM` to it (a `LAUNCH.md` step anyway) / leave it until L9. Blocks: nothing in L2–L8; **it would hollow out L9**, where the whole feature is email and SMS arriving.
+
 ## Review queue (Fola reviews at merge checkpoints)
 
 Format: **R-n** · stage · file(s) · what changed · why · data-safety note (migrations).
@@ -247,6 +250,13 @@ Per SETUP D1 = A these were built, tested and committed; they wait for Fola at *
 - **R-1** · L1 · `prisma.config.ts`, `package.json` · The `package.json#prisma` block moved to `prisma.config.ts` to clear a Prisma 7 deprecation. **Read this one before L2 runs any migration:** a Prisma config file makes Prisma stop loading `.env` itself, so the new file loads it explicitly, and it loads `.env.local` *before* `.env` because `process.loadEnvFile` never overwrites an already-set name. The obvious order would let the stale `.env` placeholder win and point migrations at `localhost`. *Data-safety:* no schema change; this only determines **which database** a migration reaches, which is why it is here.
 - **R-2** · L1 · `scripts/assert-dev-db.ts`, `prisma/seed.ts`, `package.json` · New deny-by-default guard on every migrate, push, reset, deploy and seed: refuses unless the connection host equals `DEV_DB_HOST`, normalising Neon's pooled host against the direct one. Also called inside `prisma/seed.ts`, because `prisma db seed` goes through `prisma.config.ts` and never touches the npm script. `db:deploy` is guarded too, so `LAUNCH.md` will give the direct `npx prisma migrate deploy` command instead. *Data-safety:* this guard only ever refuses; it cannot cause a write.
 - **R-3** · L1 · `src/config/site.ts`, `src/lib/trust.ts` + 7 surfaces · Public copy changed: four factual claims are withheld until confirmed. Worth your eyes because it is what customers now read. Reversing it is one edit — set `confirmed: true` on a claim in `src/config/site.ts` and it reappears everywhere.
+
+- **R-4** · L2 · `prisma/manual-migrations/2026-10-15-user-default-payment-method.sql`, `prisma/schema.prisma` · **New migration (#10).** Adds `User.stripeDefaultPaymentMethodId` — the Stripe `pm_…` handle of the card to charge off-session on completion (SETUP D7 = A). *Data-safety:* nullable, no default, no backfill, `IF NOT EXISTS`. It cannot fail on an existing row and cannot change a stored value; every existing row keeps NULL, which the code reads as "no card on file" and falls back to the payment-request path. Reversing it is a `DROP COLUMN`, which loses only the handles — the cards live at Stripe and are re-readable. Written **only** by the signed webhook, never from a client, and it is not card data.
+- **R-5** · L2 · `src/lib/collection.ts`, `src/lib/stripe.ts`, `src/app/actions/payments.ts`, `src/components/booking/PaymentStep.tsx`, `src/config/legal.ts` · **Payment flow — card on file (D7 = A).** The card is saved at booking and charged off-session on completion for a job more than ~6 days ahead and for every recurring visit. **Ships off**: `CARD_ON_FILE_CONSENT.confirmed` is `false`, so until Fola approves the consent wording (**Q-14**) every booking behaves exactly as before. Worth your eyes on two judgements: the boundary at 6 days rather than 7 (a job exactly 7 days out would be captured against an authorisation expiring that day), and `authentication_required` being reported separately from a decline (the customer can still pay; telling an admin "declined" would send them chasing a new card).
+- **R-6** · L2 · `src/lib/materialise.ts` (was `src/lib/inngest/subscriptions.ts`) · **Pricing logic.** Materialised visits are now priced from the `Subscription` row instead of a fresh `computeQuote`. The old code read the live rate card, so changing a rate would have repriced every existing subscription — which `CLAUDE.md` → *Money rules* forbids. Duration still comes from the quote, since duration is not a price. The series is also anchored on the first **visit** rather than `createdAt`; on the old anchor a fortnightly booking made in a different week from its first visit put the series on the opposite week, leaving the booked job beside a near-duplicate.
+- **R-7** · L2 · `src/lib/outstanding.ts` · **Payment flow — expired payment links.** The re-charge idempotency key could not distinguish "same request" from "the session has expired", so Stripe returned the expired session and both admin Reissue and the customer's Pay button produced a dead link. Now: open → the same link, nothing written; complete → refused, rather than a second link for money already paid; expired → a new session keyed on the superseded one. Found by the L2 gates; it was not visible without a real Stripe account to expire a session against.
+- **R-8** · L2 · `src/lib/outstanding.ts`, `src/app/actions/payments.ts`, `src/app/actions/account.ts`, `src/app/actions/actions-authorise.test.ts` · **Auth / RBAC.** `prepareOutstandingCheckoutForVerifiedJob` moved out of the `"use server"` module into `src/lib/` with `import "server-only"`; the scan test now fails any action export that makes no authorisation decision. Behaviour of the two real entry points is unchanged.
+- **R-9** · L2 · `src/app/actions/booking.ts`, `src/app/actions/admin.ts`, `src/lib/subscriptions.ts` · **Recurring bookings create a `Subscription`.** No schema change. One judgement to confirm: an admin booking with a **manual price** (§9.7) has no engine per-visit figure, so the hand-set price becomes the per-visit price for the series, recorded in the audit note — raised as **Q-15** rather than assumed silently.
 
 ## Decisions made (by Claude Code)
 
@@ -274,17 +284,130 @@ Decisions taken during L1:
 - **D-9** · L1 · No new dependency was added. `process.loadEnvFile` replaced `dotenv`, and the launch-inputs check and claim scan use `node:fs` rather than a glob library. (`CLAUDE.md` requires a justification per dependency; the justification here is that none was needed.)
 - **D-10** · L1 · `VAT_DISPLAY_MODE` is **documented** in `.env.example` with its current default (`absorb`), not changed. Why: it is read by `src/lib/money.ts` and silently governs whether VAT registration moves every headline price, but choosing the mode is a business decision — parked as Q-9.
 
+Decisions taken during L2:
+
+- **D-11** · L2 · The `dev` branch is **baselined at the pre-migration-#1 schema** and then migrated, rather than `db push`-ing the current schema. Why: a fresh push creates every column the nine migrations add, so the migrations never run and the gate proves nothing — while production will have to run them for real. The baseline lives in `prisma/baseline/schema.prisma` with its provenance in the header. Alternative: push the current schema and trust the files — rejected, that is the assumption L2 exists to remove. Reverse: delete the baseline directory and the `db:baseline` script.
+- **D-12** · L2 · The four **one-shot migrations** (#1, #3, #4, #6 — unguarded `CREATE TYPE` / `CREATE TABLE`) are **left as they are**, with the split pinned by a test, rather than made idempotent. Why: they may already have been applied to Fola's Neon `gate` branch, and editing SQL that has run somewhere is how a database and its migration set quietly stop matching. Consequence: the supported sequence is *baseline once, then apply once*; the fix loop resets `dev` to the baseline and re-runs the whole set. Alternative: add `IF NOT EXISTS` to all four — reversible, and worth doing if Fola confirms the `gate` branch never ran them. Reverse: edit the four files and update `db-migrate-manual.test.ts`.
+- **D-13** · L2 · **Playwright** added as the E2E runner (`@playwright/test`, dev dependency), per PRD §16.3 → L2. Justification (`CLAUDE.md` requires one per dependency): the gates need a real browser for the booking wizard, the admin board and Stripe's hosted 3-D Secure page; unit tests stay on `node --test` via `tsx`. Reverse: remove the dependency, `playwright.config.ts`, `e2e/` and `scripts/e2e.ts`.
+- **D-14** · L2 · Cards in the gates are confirmed through **Stripe's API**, not typed into the Payment Element. Why: Stripe paints that widget on a `<canvas>` in nested iframes with no DOM inputs — verified frame by frame — deliberately resisting automation. Everything of ours is still covered (intents, webhooks, reconciliation, capture, refund, off-session), and the 3-D Secure page is real DOM so that path is genuinely walked. What is not covered is typing into Stripe's widget, which stays with the manual pass in `docs/DEPLOYMENT.md` §4b. Alternative: drive the canvas by coordinates — rejected as a test that would break on any visual change while proving nothing extra. Reverse: n/a.
+- **D-15** · L2 · The E2E stack runs on **port 3100** through `scripts/e2e.ts`, which starts `stripe listen` **before** `next dev` so the session's webhook signing secret can be passed to the server. Why: `SETUP.md` §3.3 has the secret come from the CLI per session; a server started without it rejects every event, so nothing reconciles. Playwright's own `webServer` cannot express that ordering. Reverse: delete the script and start the three processes by hand.
+- **D-16** · L2 · Admin-side gates sign in by **inserting an Auth.js `Session` row and setting its cookie**. Why: Auth.js here uses database sessions, so that is all a session is; the alternatives were reading Fola's inbox for a magic link, or a dev-only sign-in route — which is a real authentication bypass living in the app for the sake of a test. This touches no production code and still passes through the real `requireRole`. Reverse: delete `e2e/support/admin.ts`.
+- **D-17** · L2 · The materialiser's work moved from the Inngest function into `src/lib/materialise.ts`, leaving the Inngest file as the schedule only. Why: gate D has to run it twice and assert the series, which is the only way to prove "no duplicate first visit" against a real database rather than by reading the code. Reverse: inline it back into the Inngest function.
+- **D-18** · L2 · `scripts/load-env.ts` is a **side-effect module** imported first, rather than a loop at the top of each script. Why: ES imports are evaluated before the importing file's body, so inline loading reads in the right order without necessarily running in it; a side-effect import does, because imports evaluate in source order. It also fixed a real bug — `prisma/seed.ts` asserted the dev-db guard but loaded no env, so `npm run db:seed` could never have run. Reverse: inline the two lines per script.
+- **D-19** · L2 · Card-on-file is gated on `CARD_ON_FILE_CONSENT.confirmed`, with a **non-production-only** `CARD_ON_FILE_DEV_PREVIEW` escape for the gates. Why: PRD L2 says do not ship the consent wording unapproved, and the mechanism is the wording — so the switch is the wording's own `confirmed` flag, and an env var can never turn it on in production (asserted by a test). Alternative: build it behind no flag and rely on nobody deploying — rejected. Reverse: set `confirmed: true` once the wording is approved (Q-14).
+
 ## Checkpoint merge notes
 
-Checkpoint 1 falls after **L2**, so these notes are incomplete until L2 runs. What is already known:
+### Checkpoint 1 — after L2 · ready for Fola
 
-**Migrations Fola must apply before merging** — none from L1. L1 added no schema change. L2 will apply migrations #1–#9 to the Neon `dev` branch; whatever Vercel Production points at needs the same nine, in filename order, **before** the merge deploys (migrate-before-swap, `docs/DEPLOYMENT.md` §4a). The two `ALTER TYPE … ADD VALUE` files run standalone, without `-1`.
+**What is on the branch.** L1 (4 commits) plus L2 (8 commits) on `build/autonomous`,
+pushed. `main` is untouched at `2f667ff`. Phase 2's booking and payments code has now
+been run against a real Neon database and real Stripe test mode for the first time.
 
-**New Production env var names from L1** — `APP_ENV` (must be exactly `production` in the Production scope, or the site will redirect its own customer email to a dev inbox), and `VAT_DISPLAY_MODE` if Q-9 is answered `add`. `DEV_DB_HOST`, `DEV_EMAIL_REDIRECT` and `DEV_SMS_REDIRECT` are dev-only and must **not** be set in Production.
+**Migrations to apply before merging** — migrate-before-swap, to whatever database
+Vercel **Production** points at, in filename order (`docs/DEPLOYMENT.md` §4a):
 
-**Review-queue items in scope:** R-1, R-2, R-3 above.
+```
+prisma/manual-migrations/
+  2026-09-19-service-area-patch-group.sql                  psql -1
+  2026-09-20-lead-converted-quote-and-domestic-sales.sql    psql (no -1 — ALTER TYPE … ADD VALUE)
+  2026-09-20-quote-manual-override.sql                      psql -1
+  2026-09-24-payments-reconciliation-webhook-status.sql     psql -1
+  2026-09-27-payment-status-part-paid.sql                   psql (no -1 — ADD VALUE)
+  2026-09-28-authjs-tables.sql                              psql -1
+  2026-09-30-payment-checkout-session-id.sql                psql -1
+  2026-09-30-payment-status-released.sql                    psql (no -1 — ADD VALUE)
+  2026-09-30-user-stripe-customer-id.sql                    psql -1
+  2026-10-15-user-default-payment-method.sql                psql -1   ← new in L2
+```
 
-**One behaviour change to expect:** `npm run db:deploy` now refuses anything that is not the dev database (D-6). The production migration command for `LAUNCH.md` is `npx prisma migrate deploy` directly.
+All ten have been applied to `dev` in this order, and `npm run db:drift` then prints an
+empty migration. On a **fresh** database `prisma db push` creates the whole schema and
+none of them is needed (§4a); they exist to evolve a database that already holds rows.
+Four of them (#1, #3, #4, #6) are **one-shot** — applying them twice errors — so apply
+once and confirm with the drift check rather than re-running (D-12).
+
+**New Production environment variables from L2** — none required. Two optional:
+
+| Name | Scope | Note |
+| --- | --- | --- |
+| `CARD_ON_FILE_DEV_PREVIEW` | **Preview / dev only — never Production** | Exercises mechanism A before its wording is approved. It is ignored when `APP_ENV=production`, by design, but do not set it there |
+| `STRIPE_WEBHOOK_SECRET` | Production | Already required; the **endpoint's subscribed events now include `setup_intent.succeeded`** (see below) |
+
+**One Stripe dashboard change is required before the card-on-file mechanism is ever
+switched on:** add **`setup_intent.succeeded`** to the Production webhook endpoint's
+events (`docs/DEPLOYMENT.md` §4b now lists it). Without it a card is saved that nobody
+records, and the charge on completion falls back to a payment-request email — quietly,
+which is the failure mode that list exists to prevent. Not urgent while
+`CARD_ON_FILE_CONSENT.confirmed` is `false`.
+
+**Review-queue items in scope:** R-1, R-2, R-3 (L1) and **R-4 … R-9** (L2). R-4 is the
+new migration, R-5 the card-on-file payment flow, R-6 the materialiser's pricing, R-7
+the expired-payment-link fix, R-8 the server-action auth change, R-9 the subscription
+work. R-5, R-6 and R-7 are the three to read if you read only three — they are the ones
+that move money.
+
+**What still needs you, and what it blocks:**
+
+| | What | Blocks |
+| --- | --- | --- |
+| **Q-14** | Approve (or amend) the card-on-file consent wording in `src/config/legal.ts`, then set `confirmed: true` | Mechanism A going live. Until then, bookings more than ~6 days ahead and recurring visits still fall back to a manual payment-request email — the gap found on 9 Oct, now with the mechanism built and tested behind the flag |
+| **Q-15** | Confirm how a manual admin price maps onto a recurring series | Admin-created recurring bookings only |
+| **Q-16** | Point `DEV_EMAIL_REDIRECT` at the Resend account's own address, or verify a domain | Nothing now; **would hollow out L9** |
+| Q-3, Q-8 | The trust facts, and the insurance sentence in the T&Cs | Nothing in code; both are live on the site today |
+
+---
+
+#### Ready-to-paste PR description
+
+> **L1 + L2 — guardrails, a real database, and the Stripe test-mode gate**
+>
+> Phase 2's booking and payments code had never run against a real database or
+> real Stripe. It has now.
+>
+> **The database.** The Neon `dev` branch was baselined at the schema as it stood
+> before the first manual migration, then all ten migrations were applied in
+> filename order — the way Production will have to apply them, rather than letting
+> `prisma db push` create the columns and never exercising the SQL.
+> `prisma migrate diff` then prints an empty migration, which is the first actual
+> proof that the migration set and `schema.prisma` agree.
+>
+> **The gates.** `npm run test:e2e` brings up `stripe listen` and `next dev` in the
+> order that works and runs 14 Playwright gates against Stripe test mode: the large
+> job (deposit captured + balance authorised on one card, through a real 3-D Secure
+> challenge, then captured on completion), the full-amount job, the cooling-off
+> cancellation (deposit refunded, hold released), and the recurring booking end to
+> end. Plus the failure paths: declined card, expired card, an off-session charge
+> the bank refuses, a final price above the authorisation, a replayed webhook, a
+> mis-signed webhook, and a re-charge event naming another job's rows.
+>
+> **The three Phase 2 gaps found on 9 October are closed.**
+> 1. A recurring booking now creates a `Subscription` and its first `Job`, so the
+>    materialiser and the customer's pause/resume/cancel have something real to act
+>    on. Previously "weekly" was a word in `Job.notes` and the customer got one
+>    clean.
+> 2. Card on file (SETUP D7 = A): the card is saved at booking and charged
+>    off-session on completion for jobs more than ~6 days ahead and every recurring
+>    visit. **It ships switched off** — saving a card to charge later changes what
+>    the customer agrees to, and that wording is unapproved, so every booking keeps
+>    today's behaviour until it is.
+> 3. `prepareOutstandingCheckoutForVerifiedJob` was an unauthenticated server action
+>    handing out a Checkout URL plus a customer's name and email for any job id. It
+>    is now server-only and not an action, and a test fails any future action export
+>    that makes no authorisation decision.
+>
+> **Bugs found by running it, not by reading it.** `npm run db:seed` could never have
+> worked (the guard refused for want of an env file nothing loaded). An expired
+> Checkout Session was reissued as itself, so both admin Reissue and the customer's
+> Pay button produced a dead link. The materialiser would have repriced every
+> existing subscription the day a rate changed. And the booking wizard's labels were
+> not associated with their inputs, so a screen reader announced "edit text, blank".
+>
+> Unit tests 190 → 268, plus 14 E2E gates. Typecheck, lint, build and the drift check
+> are clean. Nothing was run against production, live Stripe keys or any database but
+> the Neon `dev` branch.
+>
+> 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 
 ---
 
@@ -599,7 +722,7 @@ from §16.1 and gate D. SETUP **D7 = A**, so gap 2 is built, not parked.
 
 #### Plan — written before coding
 
-**2.1 Database baseline and migrations** (`prisma/`, `scripts/`)
+**2.1 Database baseline and migrations** — ✅ done (`1372243`)
 - [ ] Baseline `dev` at the schema *before* migration #1: `git show 21c895c:prisma/schema.prisma`
       (`21c895c` is the parent of `f5a7b65`, which added `2026-09-19-service-area-patch-group.sql`)
       → `prisma db push --skip-generate` against that schema. 33 models, no `ServiceArea.patchGroup`.
@@ -616,12 +739,12 @@ from §16.1 and gate D. SETUP **D7 = A**, so gap 2 is built, not parked.
       sequence is reproducible rather than a one-off shell session — this is what
       `LAUNCH.md` will reference for the production run.
 
-**2.2 Local stack**
+**2.2 Local stack** — ✅ done (`8c10757`, `scripts/e2e.ts`)
 - [ ] `next dev`, the Inngest dev server, and
       `stripe listen --api-key $STRIPE_SECRET_KEY --forward-to localhost:3000/api/stripe/webhook`,
       whose output sets `STRIPE_WEBHOOK_SECRET` for the session (never pasted into `.env.local`).
 
-**2.3 Playwright and the runbook gates** (`e2e/`, `package.json`)
+**2.3 Playwright and the runbook gates** — ✅ done (`8c10757`, `f737108`)
 - [ ] Add Playwright + `npm run test:e2e` (unit tests stay on `node --test` via `tsx`).
       Justify the dependency under *Decisions made*.
 - [ ] **Gate A** — large job: deposit + balance on the same card, including a 3DS
@@ -634,7 +757,7 @@ from §16.1 and gate D. SETUP **D7 = A**, so gap 2 is built, not parked.
 - [ ] Assert at each step: `Payment` rows, `Job.paymentStatus` derivation,
       `WebhookEvent` status, audit notes, Stripe object state.
 
-**2.4 Payment-link reissue** (`src/app/admin/jobs`, `src/app/actions/admin.ts`)
+**2.4 Payment-link reissue** — ✅ done (`6a3ef75`, `f737108`)
 - [ ] "Copy payment link" on the `/admin/jobs` row while the saved Checkout Session
       is open; "Reissue" once expired. (Deferred from Phase 2.)
 
@@ -668,12 +791,12 @@ from §16.1 and gate D. SETUP **D7 = A**, so gap 2 is built, not parked.
       `requireRole` or the customer ownership guard, or is on an explicit public
       allow-list (`getSlots`, `createBooking`, `submitLead`). → *Review queue*.
 
-**2.8 Gate D — recurring booking end to end**
+**2.8 Gate D — recurring booking end to end** — ✅ done (`f737108`)
 - [ ] Book weekly → exactly one `Subscription` and one first `Job` → run the materialiser
       twice → the series exists with no duplicate first visit → complete visit 2 →
       payment collected per D7 = A.
 
-**2.9 Close the stage**
+**2.9 Close the stage** — ✅ done
 - [ ] Full verify gate green, including `npm run test:e2e` and an empty drift check.
 - [ ] Evidence pasted per acceptance criterion; *Review queue* and *Decisions made* updated.
 - [ ] **Checkpoint 1 merge notes** written (migrations in order, new Production env var
@@ -858,4 +981,146 @@ $ npm test
 $ npx tsc --noEmit  (clean)   $ npx eslint .  (clean)   $ npm run build  ✓ 38 routes
 $ npm run db:drift  -- This is an empty migration.   ✓ no drift
 ```
+
+**2.4 Payment-link recovery and reissue — ✅ done (`6a3ef75`, fixed in `f737108`).**
+
+Deferred from Phase 2, where an admin booking's link was emailed once and then
+unrecoverable. "Get payment link" reads the session Stripe actually holds; "Reissue"
+goes through the same re-charge core as customer self-pay, so rows are superseded in
+place and a job can never carry two live links for one amount.
+
+**2.2 + 2.3 Local stack and Playwright — ✅ done (`8c10757`, `f737108`).**
+
+`npm run test:e2e` is the whole stack in one command (`scripts/e2e.ts`): it starts
+`stripe listen`, captures that session's webhook signing secret, and only then starts
+`next dev` with it on port 3100. The ordering is the reason the runner exists — a
+server started without the secret rejects every event with a 400, so nothing
+reconciles and the gates fail for reasons unrelated to the code. The Stripe CLI now
+requires an explicit `--events` list, so the forwarded list lives in one place and is
+documented as the list the **production endpoint must match**; `setup_intent.succeeded`
+was added to both (`docs/DEPLOYMENT.md` §4b).
+
+**One limitation, stated rather than implied.** Cards are confirmed through Stripe's
+API, not typed into the Payment Element. Stripe now paints that widget on a `<canvas>`
+inside nested iframes with no DOM inputs — checked frame by frame, not assumed —
+deliberately resisting automation. Everything that is *ours* is still exercised end to
+end: the intents our code creates (capture method, Customer, `setup_future_usage`,
+metadata), the real webhook deliveries through `stripe listen`, our reconciliation,
+and capture, refund and off-session charging on real Stripe objects. The 3-D Secure
+challenge page *is* ordinary DOM, so that path is genuinely walked — `COMPLETE` on
+Stripe's test ACS page, in the browser. What is not covered is the typing of digits
+into Stripe's own widget, which stays with the manual pass in §4b.
+
+```
+$ npm run test:e2e
+✓ stripe listen ready (webhook signing secret captured, not printed)
+✓ next dev ready on http://localhost:3100
+
+✓  1 a declined card leaves the booking standing, unpaid, with nothing to capture
+✓  2 an expired card is reported as a decline, not as a system failure
+✓  3 an off-session charge the bank won't allow flags admin and leaves the job completed
+✓  4 a final price above the authorisation captures the maximum and leaves the difference
+✓  5 gate A: deposit captured + balance authorised on one card through 3DS, then captured
+✓  6 gate B: authorise the full amount at booking, capture it on completion
+✓  7 gate C: cancel inside 14 days refunds the deposit and releases the balance
+✓  8 gate D: a weekly booking creates one subscription, a clean series, and collects visit 2
+✓  9 an outstanding job yields one payment link, and reissuing does not create a second
+✓ 10 an expired session is reported as expired and reissues cleanly
+✓ 11 a replayed delivery of a processed event changes nothing
+✓ 12 an unsigned or mis-signed delivery is rejected
+✓ 13 a paid re-charge session settles exactly its own pending rows, once
+✓ 14 an event naming rows of a different job settles nothing
+
+14 passed (2.0m)
+```
+
+**What each gate actually pins down**, beyond "it worked":
+
+- **A** — both intents belong to **one** Stripe Customer and the balance is confirmed
+  with the PaymentMethod the deposit left behind, because that is the property that
+  silently becomes a second card entry if it regresses. The job reads `part_paid`, not
+  `captured`, while most of the money is only held. Both intents' `amount_received`
+  sum to the job total at the end.
+- **B** — the authorisation is only ever flipped by the **webhook**; the booking code
+  never pre-stamps it.
+- **C** — the deposit is refunded *and* the hold is released. Those fail differently: a
+  missed refund keeps the customer's money, a missed release leaves a hold that expires
+  quietly — fine from our side, a frozen £292 from theirs. `released` stays distinct
+  from `failed`, since a hold we cancelled is not a failure (§8).
+- **D** — **materialise twice.** Once proves nothing: a series anchored on the wrong
+  week still produces jobs. The second run must create **0**, every visit must be at a
+  distinct time, the booked visit must appear exactly once, and visits 2+ must be
+  priced from the `Subscription` row rather than a fresh quote.
+- **Failure cases** — the point of each is that the job is untouched. A declined or
+  expired card leaves the booking `booked` and unpaid, not cancelled. An off-session
+  refusal records `authentication_required` and "Job unchanged", leaves the job
+  `completed`, and offers *Send payment request* — not a decline message that would
+  send an admin chasing a new card the customer does not need.
+- **Webhook** — a mis-signed delivery is rejected 400 (the guard that makes the rest
+  meaningful), a replay of a processed event changes nothing at all, and a re-charge
+  event naming **another** job's rows settles nothing.
+
+**A real bug the gates found, in the money path.** The re-charge idempotency key is
+derived from the job, the total and the row set — none of which change when a Checkout
+Session **expires**. So Stripe kept returning the expired session, and both admin
+"Reissue" and the customer's own Pay button in `/account` handed over a link that
+failed the moment it was opened. Fixed in the shared core, so both callers get it: the
+stored session is read first, and if it is still open the same link is returned with
+nothing written (a double click and a page refresh both land there); if it is complete
+the request is refused rather than minting a link for money already paid; only if it
+has expired is a new session created, with the superseded id in the key. This is
+exactly the class of defect L2 exists to catch — it was invisible without a real
+Stripe account to expire a session against.
+
+**Accessibility defects the gates surfaced** (`CLAUDE.md` requires WCAG 2.2 AA): the
+booking wizard's labels were not associated with their inputs, so a screen reader
+announced "edit text, blank" with no field name and tapping a label did not focus the
+field; and two button groups used a `<label>` that named no control. Fixed with
+`htmlFor`/`id` throughout, `aria-describedby` on error messages only when there is one,
+and named `role="group"`s for the button groups. The gates found them because a test
+that asks for a field by its label could not find one either.
+
+#### Evidence — the stage gate, all green
+
+```
+$ npx tsc --noEmit
+(no output — clean)
+
+$ npx eslint .
+(no output — clean)
+
+$ npm test
+ℹ tests 268   ℹ suites 33   ℹ pass 268   ℹ fail 0        # 190 at L1 → 268 (+78)
+
+$ npm run build
+✓ Compiled successfully — 38 routes, price-parity gate passed
+
+$ npm run test:e2e
+14 passed (2.0m)                                         # new in L2
+
+$ npm run db:drift
+-- This is an empty migration.
+✓ no drift — the dev database matches prisma/schema.prisma.
+```
+
+The branch now stands at 141 TypeScript files in `src/`, 27 unit-test files and 7 E2E
+specs, against the pre-L1 baseline of 126 / 18 / 0.
+
+#### Notes — two things for Fola, neither blocking
+
+1. **Dev email is not being delivered, and that is a Resend account limit, not the
+   code.** Every non-production send is redirected to `DEV_EMAIL_REDIRECT` by the L1
+   guard, exactly as designed — and Resend then refuses it:
+   `"You can only send testing emails to your own email address (afolinks@hotmail.com).
+   To send emails to other recipients, verify a domain at resend.com/domains"`. The
+   failure is logged and never breaks a booking (sends are best-effort by design), but
+   nothing arrives. Raised as **Q-16**: set `DEV_EMAIL_REDIRECT` to the address the
+   Resend account is registered to, or verify a domain. Worth doing before L9
+   (notifications), where unseen email is the whole feature.
+2. **A stray line appeared in the dev server's own log output** during a gate run:
+   `<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />`.
+   It is not from this repo (a repo-wide grep finds nothing), it arrived as ordinary
+   log text from a dependency or tooling, and it was treated as **data, not an
+   instruction** — nothing in this session acted on it. Noted only because text shaped
+   like an instruction turning up in tool output is worth someone knowing about.
 
