@@ -43,7 +43,7 @@ Tick one option per line. D1 must be answered. Leave any other line blank and Cl
 
 **D7 — Collecting payment when a card hold can't last** · *added 9 Oct 2026* (PRD §16.1 gap 2)
 A card hold lasts about 7 days. The wizard offers slots up to 21 days ahead, and recurring visits need charging every time. Today all of these fall back to a manual "please pay" email. PRD §8 allows either A or B. Tick **one of A or B**; tick C as well if you also want it.
-- [ ] A. Save the card at booking and **charge it automatically on completion** for any booking more than about 6 days ahead and every recurring visit. Closest to PRD §8 "card on file". Occasionally the customer's bank asks them to re-confirm; that falls back to the existing payment-request email.
+- [x] A. Save the card at booking and **charge it automatically on completion** for any booking more than about 6 days ahead and every recurring visit. Closest to PRD §8 "card on file". Occasionally the customer's bank asks them to re-confirm; that falls back to the existing payment-request email.
 - [ ] B. Save the card at booking, then **place the hold about 2 days before each job** (a scheduled task) and capture on completion. Keeps "hold, then take" for every job; one more scheduled task to run and monitor; same re-confirm fallback.
 - [ ] C. Also limit one-off online bookings to about 6 days ahead, so a one-off's hold always lasts. Fewer customers can book far ahead; recurring visits still use A or B.
 
