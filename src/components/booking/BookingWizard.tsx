@@ -323,8 +323,11 @@ function StepProperty({ state, set }: StepProps) {
           </div>
         ))}
       </div>
-      <div>
-        <label className="block text-sm font-semibold">Property type</label>
+      {/* A <label> with no form control names nothing — these are groups of
+          buttons, so they get a group role and an accessible name instead
+          (WCAG 2.2 AA, 1.3.1). */}
+      <div role="group" aria-labelledby="bw-property-type-label">
+        <span id="bw-property-type-label" className="block text-sm font-semibold">Property type</span>
         <div className="mt-2 flex gap-2">
           {([["flat", "Flat / apartment"], ["house", "House"]] as const).map(([value, label]) => (
             <button
@@ -337,8 +340,8 @@ function StepProperty({ state, set }: StepProps) {
           ))}
         </div>
       </div>
-      <div>
-        <label className="block text-sm font-semibold">Property condition</label>
+      <div role="group" aria-labelledby="bw-condition-label">
+        <span id="bw-condition-label" className="block text-sm font-semibold">Property condition</span>
         <div className="mt-2 flex gap-2">
           {(["standard", "heavily_soiled"] as Condition[]).map((c) => (
             <button
@@ -481,8 +484,8 @@ function StepAccess({ state, set }: StepProps) {
   return (
     <div className="space-y-4">
       <div>
-        <label className="block text-sm font-semibold">How will we get in?</label>
-        <select className="mt-1 w-full rounded-lg border border-line bg-surface px-3 py-2.5" value={a.entryMethod} onChange={(e) => upd({ entryMethod: e.target.value })}>
+        <label htmlFor="bw-entry-method" className="block text-sm font-semibold">How will we get in?</label>
+        <select id="bw-entry-method" className="mt-1 w-full rounded-lg border border-line bg-surface px-3 py-2.5" value={a.entryMethod} onChange={(e) => upd({ entryMethod: e.target.value })}>
           <option value="client_present">I&apos;ll be home</option>
           <option value="key_held">You hold a key</option>
           <option value="lockbox">Lockbox / key safe</option>
@@ -490,8 +493,8 @@ function StepAccess({ state, set }: StepProps) {
         </select>
       </div>
       <div>
-        <label className="block text-sm font-semibold">Product preference</label>
-        <select className="mt-1 w-full rounded-lg border border-line bg-surface px-3 py-2.5" value={a.productPreference} onChange={(e) => upd({ productPreference: e.target.value })}>
+        <label htmlFor="bw-product-preference" className="block text-sm font-semibold">Product preference</label>
+        <select id="bw-product-preference" className="mt-1 w-full rounded-lg border border-line bg-surface px-3 py-2.5" value={a.productPreference} onChange={(e) => upd({ productPreference: e.target.value })}>
           <option value="standard">Standard eco products</option>
           <option value="fragrance_free">Fragrance-free</option>
           <option value="allergy_sensitive">Allergy-sensitive</option>
@@ -517,8 +520,9 @@ function StepDetails({ state, set, quote, result }: StepProps & { quote: QuotePr
       <Input label="Address line 1" value={c.addressLine1} onChange={(v) => upd({ addressLine1: v })} />
 
       <div>
-        <label className="block text-sm font-semibold">Promo code (optional)</label>
+        <label htmlFor="bw-promo-code" className="block text-sm font-semibold">Promo code (optional)</label>
         <input
+          id="bw-promo-code"
           value={state.discountCode}
           onChange={(e) => set("discountCode", e.target.value.toUpperCase())}
           placeholder="e.g. FIRST30"
@@ -612,21 +616,47 @@ function Stepper({ value, onChange, label }: { value: number; onChange: (v: numb
   );
 }
 
+/**
+ * A field id derived from its label, so the label is programmatically ASSOCIATED
+ * with its control rather than merely sitting above it (WCAG 2.2 AA, 1.3.1 /
+ * 3.3.2 — `CLAUDE.md` requires AA). Until L2 these inputs had an unassociated
+ * `<label>`: a screen reader announced "edit text, blank" with no name, and
+ * tapping the label did not focus the field. The L2 gates found it, because a
+ * test that asks for a field by its label could not find one either.
+ */
+function fieldId(label: string): string {
+  return `bw-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
+}
+
 function Input({ label, value, onChange, type = "text", required, error }: { label: string; value: string; onChange: (v: string) => void; type?: string; required?: boolean; error?: string }) {
+  const id = fieldId(label);
+  const errorId = `${id}-error`;
   return (
     <div>
-      <label className="block text-sm font-semibold">{label} {required && <span className="text-error">*</span>}</label>
-      <input type={type} value={value} onChange={(e) => onChange(e.target.value)} aria-invalid={Boolean(error)} className="mt-1 w-full rounded-lg border border-line bg-surface px-3 py-2.5" />
-      {error && <p className="mt-1 text-sm text-error">{error}</p>}
+      <label htmlFor={id} className="block text-sm font-semibold">{label} {required && <span className="text-error">*</span>}</label>
+      <input
+        id={id}
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        required={required}
+        aria-invalid={Boolean(error)}
+        // Point at the message only when there is one: a dangling
+        // aria-describedby is announced as an empty description.
+        aria-describedby={error ? errorId : undefined}
+        className="mt-1 w-full rounded-lg border border-line bg-surface px-3 py-2.5"
+      />
+      {error && <p id={errorId} className="mt-1 text-sm text-error">{error}</p>}
     </div>
   );
 }
 
 function Textarea({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  const id = fieldId(label);
   return (
     <div>
-      <label className="block text-sm font-semibold">{label}</label>
-      <textarea value={value} onChange={(e) => onChange(e.target.value)} rows={2} className="mt-1 w-full rounded-lg border border-line bg-surface px-3 py-2.5" />
+      <label htmlFor={id} className="block text-sm font-semibold">{label}</label>
+      <textarea id={id} value={value} onChange={(e) => onChange(e.target.value)} rows={2} className="mt-1 w-full rounded-lg border border-line bg-surface px-3 py-2.5" />
     </div>
   );
 }

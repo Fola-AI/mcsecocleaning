@@ -92,7 +92,14 @@ state.
   it the webhook rejects every event (400), so captures/refunds never reconcile.
 - **Dashboard webhook endpoint** → `https://<domain>/api/stripe/webhook`,
   subscribed to `payment_intent.amount_capturable_updated`, `payment_intent.succeeded`,
-  `payment_intent.payment_failed`, `payment_intent.canceled`, `charge.refunded`.
+  `payment_intent.payment_failed`, `payment_intent.canceled`, `charge.refunded`,
+  `setup_intent.succeeded`.
+  **`setup_intent.succeeded` was added in L2** for card on file (SETUP D7 = A): it is
+  how the saved card is recorded against the customer, server-side. Without it, a
+  booking more than ~6 days ahead saves a card nobody knows about and the charge on
+  completion falls back to a payment-request email — quietly, which is the failure
+  mode this list exists to prevent. The same list is forwarded locally by
+  `npm run test:e2e` (`scripts/e2e.ts`), so local and production stay in step.
 - **End-to-end test-key pass (GATE — unverified until done).** The client Stripe
   flow has not been run against live Stripe. Before go-live, in Stripe **test
   mode**, confirm end to end: (a) a **large job** — deposit captured + balance
