@@ -111,10 +111,14 @@ test("gate D: a weekly booking creates one subscription, a clean series, and col
   expect(paymentsBefore, "the materialiser creates jobs, never charges (§6.2)").toBe(0);
 
   await openJobsBoard(page, context, baseURL!);
-  // Target visit 2 by its own id, through the status control the board renders
-  // per row. Matching on the date text used to work and silently stopped when
-  // the board started grouping by day and moved the date into the heading — an
-  // id cannot drift like that, and it cannot complete the wrong visit.
+  // Filter to this customer first: the board draws a page at a time, so a future
+  // visit is not necessarily on the first one. Then target visit 2 by its own
+  // id — matching on date text used to work and silently stopped when the board
+  // moved the date into the day heading; an id cannot drift like that, and it
+  // cannot complete the wrong visit.
+  await page.goto(`/admin/jobs?view=all&q=${encodeURIComponent(email)}`, {
+    waitUntil: "domcontentloaded",
+  });
   const row = page.locator("tr", { has: page.locator(`#status-${visitTwo.id}`) });
   await expect(row).toBeVisible();
   await row.getByRole("button", { name: /Mark complete/ }).click();

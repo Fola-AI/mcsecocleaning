@@ -1,12 +1,14 @@
 "use server";
 
 import { z } from "zod";
+import { redirect } from "next/navigation";
 
 import { db, hasDatabase } from "@/lib/db";
 import { requireCrew, requireRole } from "@/lib/auth";
 import { checkTransition, label as statusLabel } from "@/lib/job-status";
 import { lockoutState, nextAttemptState, normaliseIdentifier, verifyPin, checkPinStrength, hashPin } from "@/lib/crew-pin";
 import { endCrewSession, startCrewSession } from "@/lib/crew-session";
+import { canRevealAccessCode, decryptAccessCode, recordAccessCodeView } from "@/lib/access-codes";
 import type { JobStatus } from "@prisma/client";
 
 /**
@@ -99,6 +101,31 @@ export async function crewSignIn(
   await db.authAttempt.deleteMany({ where: { identifier } });
   await startCrewSession(user!.id);
   return { ok: true, message: "Signed in." };
+}
+
+/**
+ * The same sign-in, as a **form action** (`<form action={…}>`).
+ *
+ * This is what makes the crew sign-in work before — or without — hydration. A
+ * form whose only handler is `onSubmit` does a native submit when JavaScript has
+ * not attached yet, which reloads the page and throws away what was typed. §9.2
+ * designs for "a phone, often on mobile data", where that gap is longest and the
+ * person is least able to wait, so the form posts to the server either way and
+ * JavaScript only improves it.
+ *
+ * On success it redirects, which is why it returns no success state: a redirect
+ * from a server action is thrown, not returned.
+ */
+export async function crewSignInForm(
+  _previous: { message: string | null },
+  formData: FormData,
+): Promise<{ message: string | null }> {
+  const result = await crewSignIn({
+    identifier: String(formData.get("identifier") ?? ""),
+    pin: String(formData.get("pin") ?? ""),
+  });
+  if (result.ok) redirect("/crew");
+  return { message: result.message };
 }
 
 /** Sign out — ends the session server-side, for the next person on the device. */
@@ -334,4 +361,117 @@ export async function reportIssue(
   });
 
   return { ok: true, message: "Reported. The office can see it now." };
+}
+
+// ---------- Access codes (§6.9, L6) ----------
+
+const codeTypeSchema = z.enum(["lockbox", "alarm"]);
+
+/**
+ * Reveal a property's access code to the crew on the job (§6.9).
+ *
+ * Everything about this function is shaped by one sentence in `CLAUDE.md`: *"a
+ * leaked alarm code is a burglary."* So:
+ *
+ *  - **It is an action, not a page.** The code is decrypted only when a crew
+ *    member asks for it, and returned to that one request. Rendering it into the
+ *    job page would put it in a payload that is cached by the router, kept in
+ *    browser history, and included in any error report the page produces.
+ *  - **Both conditions are checked server-side** — assigned crew *and* inside
+ *    the window — by `canRevealAccessCode`, which already existed and is
+ *    unit-tested. Hiding the button is not access control.
+ *  - **Every request is logged, including the refusals.** The refusal rows are
+ *    the ones worth reading later.
+ *  - **A refusal says what to do instead.** A crew member standing outside a
+ *    locked house needs a next step, not a shrug.
+ */
+export async function revealAccessCode(
+  jobId: string,
+  codeType: z.input<typeof codeTypeSchema>,
+): Promise<{ ok: boolean; message: string; code?: string }> {
+  const { id: crewId, role } = await requireCrew();
+  if (!hasDatabase) return { ok: false, message: "No database configured." };
+
+  const parsedType = codeTypeSchema.safeParse(codeType);
+  if (!parsedType.success) return { ok: false, message: "Unknown code type." };
+
+  // Not scoped to the crew's own jobs in the query, deliberately: an admin or
+  // supervisor may also reveal (and is logged for it), so the decision belongs
+  // to canRevealAccessCode where both cases are written down together.
+  const job = await db.job.findUnique({
+    where: { id: jobId },
+    select: {
+      id: true,
+      scheduledStart: true,
+      propertyId: true,
+      property: { select: { accessCodeEncrypted: true, alarmCodeEncrypted: true } },
+      assignments: { select: { crewId: true } },
+    },
+  });
+  if (!job) return { ok: false, message: "That job isn't on your list." };
+
+  const isAssignedCrew = job.assignments.some((assignment) => assignment.crewId === crewId);
+  const isAdmin = role === "admin" || role === "owner" || role === "supervisor";
+  const decision = canRevealAccessCode({
+    isAssignedCrew,
+    scheduledStart: job.scheduledStart,
+    isAdmin,
+  });
+
+  if (!decision.allowed) {
+    await recordAccessCodeView({
+      propertyId: job.propertyId,
+      accessorId: crewId,
+      jobId: job.id,
+      codeType: parsedType.data,
+      outcome: "refused",
+      reason: decision.reason,
+    });
+    return {
+      ok: false,
+      // The reason, then the way forward. "Outside the permitted access window"
+      // on its own tells someone on a doorstep nothing they can act on.
+      message: `${decision.reason}. Ring the office and they can let you in.`,
+    };
+  }
+
+  const encrypted =
+    parsedType.data === "alarm" ? job.property?.alarmCodeEncrypted : job.property?.accessCodeEncrypted;
+  if (!encrypted) {
+    // Logged as a reveal that found nothing rather than a refusal: nobody was
+    // turned away, there is simply no code on file.
+    await recordAccessCodeView({
+      propertyId: job.propertyId,
+      accessorId: crewId,
+      jobId: job.id,
+      codeType: parsedType.data,
+      reason: "No code on file",
+    });
+    return { ok: false, message: `No ${parsedType.data} code is on file for this property.` };
+  }
+
+  let code: string;
+  try {
+    code = decryptAccessCode(encrypted);
+  } catch {
+    await recordAccessCodeView({
+      propertyId: job.propertyId,
+      accessorId: crewId,
+      jobId: job.id,
+      codeType: parsedType.data,
+      outcome: "refused",
+      reason: "Code could not be decrypted",
+    });
+    // Never echo the stored payload or the error — both are about the key.
+    return { ok: false, message: "That code can't be read. Ring the office." };
+  }
+
+  await recordAccessCodeView({
+    propertyId: job.propertyId,
+    accessorId: crewId,
+    jobId: job.id,
+    codeType: parsedType.data,
+  });
+
+  return { ok: true, message: "Shown once — close it when you're in.", code };
 }

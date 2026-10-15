@@ -830,9 +830,20 @@ model AccessCodeAudit {
   accessorId String
   jobId      String?
   codeType   String // lockbox | alarm
+  // What happened, not just that something did (§6.9, L6). A log that only
+  // records successes cannot answer the question anyone actually asks of it:
+  // was someone turned away, and who. `refused` rows carry the reason.
+  outcome    AccessOutcome @default(revealed)
+  reason     String?
   accessedAt DateTime @default(now())
 
   @@index([propertyId])
+  @@index([outcome])
+}
+
+enum AccessOutcome {
+  revealed
+  refused
 }
 
 // ───────────────────────── Auth.js (§3, §13) ─────────────────────────

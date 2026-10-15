@@ -19,6 +19,17 @@ import { VIEWS, describeFilter, isUnfiltered, jobWhere, parseJobFilter } from "@
 
 export const metadata: Metadata = { title: "Jobs", robots: { index: false, follow: false } };
 
+/**
+ * How many rows the board draws at once.
+ *
+ * Not a performance tweak for its own sake: every row carries a status control,
+ * a crew control and a payment-link control, so a few hundred of them is both
+ * slow to render and useless to read. The board is for a day or a week; finding
+ * one job among hundreds is what the filters and the search box are for, and the
+ * count below says plainly when there is more than this behind the filter.
+ */
+const PAGE_SIZE = 60;
+
 /** What a board row needs. Shared with the row type below — see `JobRow`. */
 const JOB_INCLUDE = {
   customer: { select: { name: true, email: true } },
@@ -71,7 +82,7 @@ export default async function AdminJobsPage({
         db.job.findMany({
           where: jobWhere(filter, today),
           orderBy: [{ scheduledStart: "asc" }, { createdAt: "desc" }],
-          take: 200,
+          take: PAGE_SIZE,
           include: JOB_INCLUDE,
         }),
         db.user.findMany({ where: { role: "crew" }, select: { id: true, name: true, email: true } }),
@@ -148,7 +159,8 @@ export default async function AdminJobsPage({
       {jobs.length > 0 && (
         <p className="mb-3 text-sm text-ink-soft">
           {jobs.length} {jobs.length === 1 ? "job" : "jobs"} — {describeFilter(filter)}
-          {jobs.length === 200 && " (showing the first 200)"}
+          {jobs.length === PAGE_SIZE &&
+            ` (the first ${PAGE_SIZE} — narrow the filter or search to see others)`}
         </p>
       )}
 

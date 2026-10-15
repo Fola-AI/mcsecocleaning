@@ -7,6 +7,7 @@ import { db, hasDatabase } from "@/lib/db";
 import { localDateString, localTimeString } from "@/lib/timezone";
 import { label as statusLabel } from "@/lib/job-status";
 import { CrewJobControls } from "@/components/crew/CrewJobControls";
+import { AccessCodeReveal } from "@/components/crew/AccessCodeReveal";
 
 export const metadata: Metadata = { title: "Job", robots: { index: false, follow: false } };
 
@@ -20,8 +21,8 @@ export const metadata: Metadata = { title: "Job", robots: { index: false, follow
  *
  * `params` is a Promise in Next 16 and is awaited (`AGENTS.md`).
  *
- * Access codes are NOT here yet — L6 builds the reveal, with its window and its
- * audit trail. Until then the page says so rather than leaving a silent gap.
+ * Access codes are revealed by `AccessCodeReveal`, which asks for them on
+ * demand — this page never loads or renders one (§6.9).
  */
 export default async function CrewJobPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: crewId } = await requireCrew();
@@ -109,10 +110,11 @@ export default async function CrewJobPage({ params }: { params: Promise<{ id: st
           {property?.accessNotes && <li>{property.accessNotes}</li>}
           {property?.parkingNotes && <li>Parking: {property.parkingNotes}</li>}
         </ul>
-        <p className="mt-2 text-xs text-ink-soft">
-          Alarm and lockbox codes are not shown yet — they arrive with the access-code release, which shows them only
-          to the crew on the job and only around the appointment.
-        </p>
+        {/* The codes themselves are NOT fetched here. This renders buttons; the
+            code is decrypted only when one is pressed and returned to that one
+            request, so it never enters this page's payload — which is cached by
+            the router and included in error reports. */}
+        <AccessCodeReveal jobId={job.id} />
       </section>
 
       {(pets || products || property?.doNotTouch || job.notes) && (

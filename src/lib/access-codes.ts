@@ -94,18 +94,35 @@ export function canRevealAccessCode(params: {
 }
 
 /**
- * Log an access-code reveal (§6.9). Called on every successful reveal. Uses a
- * lazy import so the crypto module stays free of DB deps for unit testing.
+ * Log an access-code request (§6.9) — whatever the answer was.
+ *
+ * Called on **both** branches of `canRevealAccessCode`, which is the whole point
+ * of the `outcome` column. A log of successes alone cannot answer the question
+ * anyone ever asks of an access-code audit: *was someone turned away, and who?*
+ * A code is revealed dozens of times a week without incident; a refusal is the
+ * first sign of something being wrong — a crew member who is not on the job, or
+ * someone trying at three in the morning.
+ *
+ * Uses a lazy import so the crypto module stays free of database dependencies
+ * for unit testing. The code itself is never a parameter here: an audit row that
+ * contained the code would defeat the encryption it is auditing.
  */
 export async function recordAccessCodeView(params: {
   propertyId: string;
   accessorId: string;
   jobId?: string;
   codeType: "lockbox" | "alarm";
+  outcome?: "revealed" | "refused";
+  /** Why it was refused — the reason from `canRevealAccessCode`. */
+  reason?: string;
 }): Promise<void> {
+  const outcome = params.outcome ?? "revealed";
   const { db, hasDatabase } = await import("@/lib/db");
   if (!hasDatabase) {
-    console.log(`[access-audit] ${params.accessorId} viewed ${params.codeType} for property ${params.propertyId}`);
+    console.log(
+      `[access-audit] ${params.accessorId} ${outcome} ${params.codeType} for property ${params.propertyId}` +
+        (params.reason ? ` (${params.reason})` : ""),
+    );
     return;
   }
   await db.accessCodeAudit.create({
@@ -114,6 +131,8 @@ export async function recordAccessCodeView(params: {
       accessorId: params.accessorId,
       jobId: params.jobId ?? null,
       codeType: params.codeType,
+      outcome,
+      reason: params.reason ?? null,
     },
   });
 }

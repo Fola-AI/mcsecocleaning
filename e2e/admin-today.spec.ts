@@ -97,13 +97,20 @@ test("an illegal status transition is refused, and the refusal explains itself",
 test("a legal transition is applied and logged with the actor", async ({ page, context, baseURL }) => {
   const booked = await db.job.findFirst({
     where: { status: "booked" },
-    select: { id: true },
+    select: { id: true, customer: { select: { email: true } } },
     orderBy: { createdAt: "desc" },
   });
   test.skip(!booked, "no booked job in the dev seed");
 
   await openJobsBoard(page, context, baseURL!);
-  await page.goto("/admin/jobs?view=all&status=booked", { waitUntil: "domcontentloaded" });
+  // Search for this job's own customer rather than listing every booked job:
+  // the board draws a page at a time, so "the newest booked job" is not
+  // necessarily on the first one — and a test that depends on how much other
+  // data happens to exist is a test that fails on a Tuesday.
+  await page.goto(
+    `/admin/jobs?view=all&q=${encodeURIComponent(booked!.customer!.email)}`,
+    { waitUntil: "domcontentloaded" },
+  );
 
   await page.locator(`#status-${booked!.id}`).selectOption("scheduled");
   await page

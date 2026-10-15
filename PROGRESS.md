@@ -52,11 +52,11 @@ drafted and parked, per the L2 stage text.
 
 | | |
 | --- | --- |
-| **Current stage** | **L5 — ✅ done, 15 Oct 2026.** Crews have a phone app: PIN sign-in with a real lockout, today's jobs, job detail, clock in/out with GPS that never blocks, one-tap status and issue reporting — and they can reach nothing else. **L6 (access codes) is next** |
-| **Next action** | *(Claude Code)* start **L6** — PRD §16.3 → L6: the crew reveal surface for alarm and lockbox codes, with the time window, and **refusal logging** (`recordAccessCodeView` writes only on success today, so the audit cannot tell a reveal from a refusal — it needs an `outcome` field). The encryption, the window and `canRevealAccessCode` are already built and tested. *(Fola)* **merge checkpoint 2** falls after L6 |
-| **Working branch** | `build/autonomous`, pushed — L1 → L5 ahead of `main` (`2f667ff`, untouched) |
-| **Last updated** | 15 Oct 2026 — **L5 complete.** Crew PIN sign-in (scrypt, per-identifier lockout that lengthens, same message for both failure kinds); persistent session on Auth.js's own table; sign-out that ends it server-side. Today's jobs, job detail, clock in/out recording GPS when given and its absence when not, status and issues. A crew sees only their own jobs and no money at all — asserted by asking for another crew's job id directly (404). Unit tests 367 → 389, E2E 24 → 27 |
-| **Needs Fola?** | **Not to proceed with L6.** Checkpoint 1 is still unmerged (R-4…R-14). Four answers wanted when convenient: **Q-14** card-on-file consent wording, **Q-15** manual price on a recurring admin booking, **Q-16** dev email delivery, **D2** the production assignment mode. Note L7 (media) needs the three **R2 keys**, which are empty — it will park unless they are filled |
+| **Current stage** | **L6 — ✅ done, 15 Oct 2026. → Merge checkpoint 2.** Crews can open the houses they are booked into, and nobody else can: the reveal is assigned-crew-only, inside the window, decrypted per request, and **every attempt is logged — including the refusals**. **L7 (media exchange) is next, and will park: its three R2 keys are empty** |
+| **Next action** | *(Claude Code)* attempt **L7** — PRD §16.3 → L7 needs `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY`, which are blank, so per PRD §16.2 the stage parks with the missing keys named and the build moves to **L8 (quality checklists)**, which needs none. *(Fola)* **checkpoints 1 and 2 are both ready to merge** — see *Checkpoint merge notes* |
+| **Working branch** | `build/autonomous`, pushed — L1 → L6 ahead of `main` (`2f667ff`, untouched) |
+| **Last updated** | 15 Oct 2026 — **L6 complete, checkpoint 2 reached.** `AccessCodeAudit` gains `outcome` and `reason`, and is written on **both** branches of the decision; the crew reveal decrypts per request so a code never enters a page payload; a source scan keeps codes out of every message template, log line and audit row. Unit tests 389 → 396, E2E 27 → 30 |
+| **Needs Fola?** | **Not to proceed.** Two merge checkpoints are waiting. L7 needs the **R2 keys** (`SETUP.md` §3.7) or it stays parked; L9 will need the **Twilio** keys. Four answers still open: **Q-14** card-on-file consent wording, **Q-15** manual price on a recurring admin booking, **Q-16** dev email delivery, **D2** the production assignment mode |
 
 ## Stage tracker
 
@@ -67,9 +67,9 @@ drafted and parked, per the L2 stage text.
 | L3 | Admin operations core | ✅ Done — 15 Oct 2026 (evidence below) | |
 | L4 | Crew roster, capacity and availability | ✅ Done — 15 Oct 2026 (evidence below) | |
 | L5 | Crew mobile interface | ✅ Done — 15 Oct 2026 (evidence below) | |
-| L6 | Access codes | ☐ Next | ✅ 2 |
-| L7 | Media exchange | ☐ Not started | |
-| L8 | Quality checklists | ☐ Not started | |
+| L6 | Access codes | ✅ Done — 15 Oct 2026 (evidence below) | ✅ 2 ← **here** |
+| L7 | Media exchange | ⛔ Parked — needs `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | |
+| L8 | Quality checklists | ☐ Next | |
 | L9 | Notifications and recurring self-service | ☐ Not started | |
 | L10 | Payroll and owner rate-card editor | ☐ Not started | ✅ 3 |
 | L11 | Commercial RFQ, invoicing and Bacs | ☐ Not started | |
@@ -267,6 +267,9 @@ Per SETUP D1 = A these were built, tested and committed; they wait for Fola at *
 - **R-14** · L5 · `prisma/manual-migrations/2026-10-15-crew-pin-and-issue-types.sql`, `prisma/schema.prisma` · **New migration (#13).** An `AuthAttempt` table for the crew PIN lockout, and two new `IssueType` labels (`access_problem`, `additional_work`) for what §9.2 has a crew report from the job. *Data-safety:* a new empty table, and adding an enum label does not remap existing rows. The `ALTER TYPE` statements run **outside** a transaction (no `-1`) — the runner detects that automatically and a test pins which files it applies to. Reverse: `DROP TABLE`; enum labels cannot be dropped in Postgres without recreating the type, which is why adding one is a decision rather than a tidy-up.
 - **R-15** · L5 · `src/lib/crew-pin.ts`, `src/lib/crew-session.ts`, `src/app/actions/crew.ts` · **Auth.** A second way into the application: a PIN. Worth your eyes because it is a weaker credential than a magic link by design, and what makes it acceptable is the lockout (5 failures, lengthening), the hashing (scrypt, per-PIN salt), and the fact that it reaches only a crew member's own jobs and no money at all. One bug worth knowing about was found here by its own test: a corrupt hash decoding to an empty buffer compared **equal** to anything, so a blanked-out `passwordHash` would have authenticated every PIN. Fixed, with the test kept.
 
+- **R-16** · L6 · `prisma/manual-migrations/2026-10-15-access-code-audit-outcome.sql`, `prisma/schema.prisma` · **New migration (#14).** `AccessCodeAudit.outcome` (`revealed` | `refused`) and `reason`. *Data-safety:* a new enum type plus a column **with a default**, so every existing row keeps the meaning it was written with — each one was a successful reveal, because that was the only kind the old code wrote. Nothing fails on existing rows and no stored value changes. Reverse: `DROP COLUMN` + `DROP TYPE`, returning the audit to success-only.
+- **R-17** · L6 · `src/app/actions/crew.ts` (`revealAccessCode`), `src/lib/access-codes.ts`, `src/components/crew/AccessCodeReveal.tsx` · **Access-code handling.** The one place a plaintext alarm or lockbox code exists in the system. Worth reading in full: it decrypts only on request (never into a page payload), checks both conditions server-side, logs every attempt including refusals, never echoes the stored payload or a decryption error, and returns the code to a single request. The accompanying scan (`access-codes.leak.test.ts`) is what keeps it true as templates are added later.
+
 ## Decisions made (by Claude Code)
 
 Format: **D-n** · stage · decision · why · alternative · how to reverse.
@@ -367,6 +370,52 @@ that move money.
 
 ---
 
+### Checkpoint 2 — after L6 · ready for Fola
+
+**What is on the branch since checkpoint 1.** L3 (admin operations core), L4 (crew roster,
+capacity and availability), L5 (crew mobile interface) and L6 (access codes). The business
+now has an operations back office, a booking wizard that only offers staffable slots, a
+crew app, and access codes that can be opened by the right person and nobody else.
+
+**Migrations to apply before merging** — in filename order, after the ten from
+checkpoint 1 (`docs/DEPLOYMENT.md` §4a):
+
+```
+  2026-10-15-blackout-policy.sql                 psql -1    ← L3
+  2026-10-15-crew-roster-and-capacity.sql        psql -1    ← L4
+  2026-10-15-crew-pin-and-issue-types.sql        psql       ← L5 (no -1 — ALTER TYPE … ADD VALUE)
+  2026-10-15-access-code-audit-outcome.sql       psql -1    ← L6
+```
+
+All four are applied to `dev` and `npm run db:drift` prints an empty migration. Every one
+is additive: new columns are nullable or defaulted, new tables are empty, and the two new
+`IssueType` labels do not remap existing rows.
+
+**New Production environment variables** — none. `CARD_ON_FILE_DEV_PREVIEW` remains
+Preview-only and must not be set in Production.
+
+**One Stripe dashboard change still outstanding from checkpoint 1:** add
+`setup_intent.succeeded` to the Production webhook endpoint before card-on-file is ever
+switched on.
+
+**Review-queue items in scope:** R-10, R-11, R-12 (L3), R-13 (L4), R-14, R-15 (L5), R-16,
+R-17 (L6). If you read four, read **R-15** (the crew PIN — a weaker credential by design,
+and what makes it acceptable), **R-16** and **R-17** (access codes — the one place a
+plaintext alarm code exists), and **R-11** (which job status changes are forbidden, and
+why).
+
+**Two behaviour changes a customer could notice:**
+
+1. The booking wizard now offers **fewer slots**, because it only offers ones a real crew
+   can staff: travel buffers between districts, a crew's day that never spans two patches,
+   and the daily cap. That is the intended behaviour (§7.4: "you cannot offer a slot you
+   cannot staff"), but it will look like reduced availability compared with the placeholder
+   roster.
+2. **Admin screens no longer carry the marketing header, footer or cookie banner.** No
+   public URL changed.
+
+---
+
 #### Ready-to-paste PR description
 
 > **L1 + L2 — guardrails, a real database, and the Stripe test-mode gate**
@@ -412,7 +461,19 @@ that move money.
 > existing subscription the day a rate changed. And the booking wizard's labels were
 > not associated with their inputs, so a screen reader announced "edit text, blank".
 >
-> Unit tests 190 → 268, plus 14 E2E gates. Typecheck, lint, build and the drift check
+> **Since then (L3–L6).** The admin back office became an operations tool: a Today view
+> that answers what is happening today, a filtered job board, the §9.1 status pipeline
+> enforced server-side with every change logged against its actor, a payments queue,
+> customer records, and blackout dates that hold or move affected visits on purpose.
+> Capacity moved off its placeholder roster onto the database, with §7.5 travel buffers
+> and the §4 rule that a crew's day never spans two patches — proved by a property-based
+> test over 200 generated rosters. Crews got a phone app: PIN sign-in with a real lockout,
+> clock in/out with GPS that never blocks, one-tap status and issue reporting, and access
+> codes revealed only to the crew on the job, only around the appointment, decrypted per
+> request, with every attempt logged — including the refusals, which are the rows worth
+> reading.
+>
+> Unit tests 190 → 396, E2E gates 14 → 30. Typecheck, lint, build and the drift check
 > are clean. Nothing was run against production, live Stripe keys or any database but
 > the Neon `dev` branch.
 >
@@ -1592,4 +1653,120 @@ $ npm test                ℹ tests 389   ℹ pass 389   ℹ fail 0     # 367 �
 $ npm run build           ✓ Compiled successfully
 $ npm run db:drift        -- This is an empty migration.  ✓ no drift
 $ npm run test:e2e        27 passed (2.9m)                        # 24 → 27 (+3)
+```
+
+---
+
+### L6 — Access codes
+
+**Started 15 Oct 2026.** Depends on L5 (done). Keys: `ACCESS_CODE_ENC_KEY` (present).
+Stage text: PRD §16.3 → L6, §6.9. **→ Merge checkpoint 2.**
+
+#### Plan — written before coding
+
+More of this exists than the title suggests: AES-256-GCM encrypt/decrypt with a versioned
+`v1:` payload, `isWithinAccessWindow`, `canRevealAccessCode` and the write-only editing in
+`/account/property/[id]` are all built and tested. What is missing is the part that
+matters on a doorstep, and the part that matters afterwards.
+
+**6.1 Refusal logging** — ✅ done (migration #14)
+- [ ] `AccessCodeAudit` gains `outcome` (`revealed` | `refused`) and the refusal reason.
+      Today a row is written only on success, so the audit cannot tell "the crew opened
+      the lockbox" from "someone tried and was turned away" — and the second is the one
+      worth reading.
+- [ ] `recordAccessCodeView` is called on **both** branches of `canRevealAccessCode`.
+
+**6.2 The crew reveal** — ✅ done
+- [ ] Assigned crew only, inside the window, decrypted **server-side on request** — never
+      rendered into the page payload, because a payload is cached, logged and sent to
+      error reporters.
+- [ ] A refusal says *why* and what to do instead (ring the office), rather than failing
+      silently — a crew locked out of a house needs a next step, not a shrug.
+
+**6.3 Codes never leave the server** — ✅ done
+- [ ] A test that renders **every** email and SMS template with a code-bearing fixture and
+      scans the output. The rule is in `CLAUDE.md` ("never in any message body") and in
+      §6.9; a test is what keeps it true the day someone adds a helpful "access details"
+      line to a confirmation email.
+- [ ] The same scan covers log lines and error payloads in the access-code path.
+
+**6.4 Acceptance (PRD)** — ✅ met
+- [ ] Outside-window reveal **refused and logged**; inside-window reveal **shown and
+      logged**; the template scan passes.
+
+**6.5 Checkpoint 2** — ✅ written
+- [ ] Merge notes for Fola: migrations in order, review-queue items, a PR description.
+
+#### Work — ✅ stage complete
+
+**6.1 The audit now records refusals.** It recorded only successful reveals, which means
+it could not answer the one question anyone ever asks of an access-code log: *was somebody
+turned away, and who?* A code is revealed dozens of times a week without incident; a
+refusal — a crew member who is not on the job, a request at three in the morning — is the
+first sign of something wrong. `outcome` defaults to `revealed`, so every existing row
+keeps exactly the meaning it had: each one **was** a successful reveal, because that was
+the only kind the code wrote.
+
+**6.2 The reveal is an action, not a page.** The code is decrypted only when a crew member
+asks for it and returned to that one request. Rendering it into the job page would put an
+alarm code into the router cache, the browser's history entry and any error report the
+page produced. The gate asserts the code is **not** in the page's HTML before the button
+is pressed.
+
+Both conditions are still checked by `canRevealAccessCode` — assigned crew **and** inside
+the window — because hiding a button is not access control. On screen it hides itself
+after two minutes: not theatre, but the specific way these leak, which is a phone left on
+a kitchen worktop.
+
+A refusal says the reason **and what to do instead**. "Outside the permitted access
+window" tells someone standing outside a locked house nothing they can act on; "…ring the
+office and they can let you in" does.
+
+**6.3 The leak scan.** Access codes leak through helpful changes, not malicious ones — a
+confirmation email that adds "access details so the crew don't have to ask", a log line
+added while debugging, an error report that happens to carry the property. So the test
+fails on the *shape* of the mistake at the moment it is written: no message-building module
+may mention a code field or `decryptAccessCode`, no template string anywhere may
+interpolate one, the reveal action may not log the plaintext on any branch, and
+`recordAccessCodeView` takes no code parameter — an audit row holding the code would defeat
+the encryption it audits.
+
+#### Evidence — acceptance (PRD §16.3 → L6)
+
+```
+$ npm run test:e2e -- access-codes
+✓ inside the window, the assigned crew sees the code — and it is logged
+✓ outside the window the reveal is refused, with a reason — and the refusal is logged
+✓ a crew member who is not on the job cannot reveal its codes
+
+$ npx tsx --test src/lib/access-codes.leak.test.ts
+ℹ tests 5   ℹ pass 5   ℹ fail 0   ℹ skipped 0
+```
+
+Each gate also asserts the audit row does **not** contain the code it is auditing, and the
+refusal gate asserts the reason was stored (`/window/i`), not just the fact of a refusal.
+
+**Three defects found by running it, all fixed in the app:**
+
+1. **The crew sign-in did not work before hydration.** A form whose only handler is
+   `onSubmit` does a native submit when JavaScript has not attached, reloading the page and
+   discarding what was typed. §9.2's context — "a phone, often on mobile data" — is exactly
+   where that gap is longest. It is a **server-action form** now, so it works before
+   hydration and would work without JavaScript at all.
+2. **The job board drew up to 200 rows**, each with three interactive controls. Slow enough
+   to time out a gate, and useless to read: the board is for a day or a week, and finding
+   one job among hundreds is what the filters are for. 60 a page, and it says when there is
+   more behind the filter.
+3. Two gates targeted rows by position or date text and broke when the board changed. They
+   filter to their own customer and match by job id now — a test that depends on how much
+   other data happens to exist is a test that fails on a Tuesday.
+
+#### Evidence — the stage gate
+
+```
+$ npx tsc --noEmit        (clean)        $ npx eslint .          (clean)
+$ npm test                ℹ tests 396   ℹ pass 396   ℹ fail 0     # 389 → 396 (+7)
+$ npm run build           ✓ Compiled successfully
+$ npm run db:drift        -- This is an empty migration.  ✓ no drift
+$ npm run test:e2e        30 passed (3.3m)                        # 27 → 30 (+3)
 ```

@@ -45,6 +45,9 @@ const PUBLIC_ALLOW_LIST: Record<string, string> = {
     "the crew sign-in itself — it cannot require a session to create one. It is " +
     "protected instead by a hashed PIN, a per-identifier lockout, and a failure " +
     "message that does not say which half was wrong",
+  crewSignInForm:
+    "the same sign-in as a form action, so the crew app works before JavaScript " +
+    "hydrates; it does nothing but call crewSignIn, which carries the protection",
   crewSignOut:
     "signing out must work whatever state the session is in, including already " +
     "expired; requiring a valid session to end one would strand a shared device " +
