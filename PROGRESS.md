@@ -234,7 +234,7 @@ Format: **Q-n** · stage · question · options (none picked) · what's blocked.
 
 - **Q-11** · L2 · **Quote validity period.** PRD §7.2 says 14 days; the code stores 30 (`src/app/actions/booking.ts:362`). Options: change the code to 14 / amend the PRD to 30. Blocks: nothing; it sets how long a quoted price is honoured.
 - **Q-13** · all · ~~**Where the five build documents live.**~~ **Resolved 15 Oct 2026 — option (a):** Fola moved the five back to the repo root in `31fa69d`, keeping the v2.2.1 content, so `CLAUDE.md` auto-loads again and matches its own line 24. `31fa69d` moved the five files only, so `README.md`'s three links were left pointing at `docs/` and were broken by the move; repointed at the root in the same commit as this entry. The original question, for the record: They were moved into `docs/` on 9 Oct 2026 along with the v2.2.1 revision, but `CLAUDE.md` itself still states (line 24) that the five live at the **repo root**, and decision D-0a records why: *Claude Code only auto-reads `CLAUDE.md` from the repo root*. That is not theoretical — this session was **not** given `CLAUDE.md` automatically and had to be pointed at `docs/CLAUDE.md` by hand. A future session started without that instruction runs with no rulebook and would not know it. The agent may not edit `CLAUDE.md`, so the contradiction is parked rather than resolved. Options: **(a)** move the five back to the repo root, keeping the v2.2.1 content — restores auto-loading and matches `CLAUDE.md` as written; **(b)** keep them in `docs/` and amend `CLAUDE.md` line 24 and D-0a, accepting that every future session must be told where the rulebook is. `README.md`'s links were repointed at `docs/` so the repo is at least self-consistent today; under option (a) that is one edit back. Blocks: nothing in code — but it decides whether the next unattended session reads the rules at all.
-- **Q-12** · L7 · **Media retention.** `.env.example` pre-fills `MEDIA_RETENTION_MONTHS="12"` while SETUP D4 is blank, so L7 would ship 12 months by default. Options: 12 / 18 / 24 months (answer D4). L7 reads D4, not the example default; until D4 is answered the retention value is parked. Blocks: L7 retention only.
+- **Q-12** · L7 · **Media retention.** *(Now blocking: L7 is parked for its R2 keys, and this decision is the second thing it needs.)* `.env.example` pre-fills `MEDIA_RETENTION_MONTHS="12"` while SETUP D4 is blank, so L7 would ship 12 months by default. Options: 12 / 18 / 24 months (answer D4). L7 reads D4, not the example default; until D4 is answered the retention value is parked. Blocks: L7 retention only.
 
 - **Q-14** · L2 · **Card-on-file consent and pre-contract wording (legal).** D7 = A means the customer's card is saved at booking and charged automatically later, which changes what they agree to at checkout. `CLAUDE.md` makes legal wording a Park item, so the mechanism is built behind a confirmed-wording flag and the draft sits in `src/config/legal.ts` marked `TODO(legal)`; nothing new is shown to a customer until Fola approves it. Options: approve the draft as written / amend it with an adviser / have the wording drafted against the CCR and Stripe's mandate requirements before any off-session charge is enabled. Blocks: switching mechanism A on for real customers (it is exercised by tests and in dev only). **This is the one L2 item that needs Fola.**
 
@@ -1770,3 +1770,45 @@ $ npm run build           ✓ Compiled successfully
 $ npm run db:drift        -- This is an empty migration.  ✓ no drift
 $ npm run test:e2e        30 passed (3.3m)                        # 27 → 30 (+3)
 ```
+
+---
+
+### L7 — Media exchange · ⛔ PARKED — missing keys
+
+**Parked 15 Oct 2026**, per PRD §16.2: *"Each stage lists the keys it needs. If they are
+absent from `.env.local`, the agent parks the stage (Blocked, with the missing key named),
+and moves to the next stage whose keys are present and whose dependencies are met."*
+
+| Key | State | Where it comes from |
+| --- | --- | --- |
+| `R2_ACCOUNT_ID` | ❌ empty | Cloudflare → R2 → account id · `SETUP.md` §3.7 |
+| `R2_ACCESS_KEY_ID` | ❌ empty | R2 → Manage API tokens → **Object Read & Write, scoped to the bucket only** |
+| `R2_SECRET_ACCESS_KEY` | ❌ empty | same token |
+| `R2_BUCKET` | ✅ set | `mcseco-media-dev` |
+| `MEDIA_LINK_SECRET` | ✅ set | generated in L1 |
+
+**Why it is parked rather than part-built.** Every acceptance criterion in L7 is about
+what a *real* presigned URL does: that an expired link fails **server-side**, that a URL
+issued for job A cannot write job B's key, that a fresh short-lived GET is minted per
+request. Those are properties of R2's signature, not of our code — building them against
+a mock would produce tests that pass while the real thing is wrong, which is the failure
+mode this whole build is structured to avoid (it is why L2 existed at all).
+
+**Also blocked on a decision:** `MEDIA_RETENTION_MONTHS` depends on **SETUP D4** (12, 18
+or 24 months), which is unanswered — see **Q-12**. `.env.example` pre-fills 12, which the
+code deliberately does not read as an answer.
+
+**What L7 needs from Fola, in order:**
+1. Cloudflare R2 bucket `mcseco-media-dev`, **EU jurisdiction**, with CORS allowing `PUT`
+   and `GET` from `http://localhost:3000` and `https://*.vercel.app` (`SETUP.md` §3.7).
+2. An API token scoped to **that bucket only** — a wider token in a dev `.env.local` is a
+   wider blast radius for no benefit.
+3. **D4**: 12, 18 or 24 months' media retention.
+
+**Dependencies for later stages:** L8 (quality checklists) wants photos attached to
+checklist items, and L12's location-page gate wants an area photo. Both are built so the
+photo part is additive — the checklist works without a photo and says so, rather than
+being half-built around an upload that cannot happen.
+
+**Resuming it:** fill the three keys, answer D4, then run L7 from PRD §16.3. Nothing in
+L8–L15 has to be revisited.
