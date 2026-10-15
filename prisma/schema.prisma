@@ -719,6 +719,10 @@ model CrewUnavailability {
   startsAt DateTime
   endsAt   DateTime
   reason   String?
+  // Holiday taken, as opposed to any other reason someone is unavailable
+  // (§9.8 "holiday accrual tracking"). Separate from `reason` because a free-text
+  // field cannot be counted, and payroll has to count it.
+  isHoliday Boolean    @default(false)
 
   @@index([crewId])
 }

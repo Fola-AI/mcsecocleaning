@@ -1,0 +1,16 @@
+-- Migration: CrewUnavailability.isHoliday (PRD §16.3 → L10, §9.8).
+--
+-- §9.8 asks for holiday accrual tracking. Accrued days can be computed from
+-- hours worked, but days TAKEN have to be recorded, and a free-text `reason`
+-- cannot be counted — "hol", "holiday", "annual leave" and "away" are the same
+-- thing to a person and four different things to a query.
+--
+-- Note what this does NOT decide: whether holiday pay applies at all depends on
+-- whether crews are employees, workers or genuinely self-employed (§14.6, SETUP
+-- D2 — unanswered). The column records a fact; the entitlement is a question for
+-- Fola, raised as Q-17.
+--
+-- Data-safety: a boolean with a default of false. Every existing row keeps the
+-- meaning it had — unavailable for some unstated reason, not counted as holiday.
+-- Reverse: DROP COLUMN.
+ALTER TABLE "CrewUnavailability" ADD COLUMN IF NOT EXISTS "isHoliday" BOOLEAN NOT NULL DEFAULT false;

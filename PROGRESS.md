@@ -52,11 +52,11 @@ drafted and parked, per the L2 stage text.
 
 | | |
 | --- | --- |
-| **Current stage** | **L9 — ✅ done, 15 Oct 2026** (SMS delivery parked on the Twilio keys). All thirteen §10.3 rows have a sender, PECR is one gate on one field, `STOP` stops every channel, and a customer can skip a visit without losing the plan. **L10 (payroll and the rate-card editor) is next** |
-| **Next action** | *(Claude Code)* start **L10** — PRD §16.3 → L10: payroll from the `TimeEntry` rows the crew app is already writing, and the owner rate-card editor **subject to SETUP D3**, which is unanswered — if it stays blank that item parks and the payroll half proceeds. **→ Merge checkpoint 3** after L10. *(Fola)* the most useful thing now is **Q-16**: no email is delivered in this environment, so L9's subject matter cannot be demonstrated end to end |
-| **Working branch** | `build/autonomous`, pushed — L1 → L6, L8, L9 ahead of `main` (`2f667ff`, untouched); L7 parked |
-| **Last updated** | 15 Oct 2026 — **L9 complete.** The §10.3 matrix is one registry, which found seven triggers declared and never sent; they are sent now. PECR gates on one field in one pure function; `STOP` and the email unsubscribe both write it. Skipping a visit leaves the plan alone (§7.3). SMS is written, gated and tested but cannot deliver without the Twilio keys. Unit tests 415 → 473, E2E 33 → 38 |
-| **Needs Fola?** | **Not to proceed with L10's payroll half.** In order of value: **Q-16** (dev email is not delivered — Resend limit), the **Twilio keys** (SMS), **D3** (whether to build the rate-card editor at all), the **R2 keys** (unparks L7), **D4** (media retention). Two merge checkpoints are ready. Still open: **Q-14**, **Q-15**, **D2** |
+| **Current stage** | **L10 — ✅ payroll done, 15 Oct 2026; the rate-card editor is parked on SETUP D3** (a stated pre-authorisation, not a preference). **→ Merge checkpoint 3.** **L11 (commercial RFQ, invoicing and Bacs) is next and will partly park** — it needs Bacs enabled in Stripe test mode and `NEXT_PUBLIC_CALCOM_URL` |
+| **Next action** | *(Claude Code)* start **L11**, building the RFQ and invoicing parts and parking the Bacs and site-survey items on their missing prerequisites. *(Fola)* **three merge checkpoints are now ready.** The most valuable answers, in order: **Q-16** (no dev email is delivered), **D3** (build the rate-card editor or not), the **Twilio** and **R2** keys |
+| **Working branch** | `build/autonomous`, pushed — L1 → L6, L8 → L10 ahead of `main` (`2f667ff`, untouched); L7 parked |
+| **Last updated** | 15 Oct 2026 — **L10 payroll complete.** Three pay types with the distinctions that matter (a two-person crew does not pay out twice on one job; an attended-but-cancelled visit is not an automatic payment); report and CSV generated from one set of functions so they cannot disagree; reconciliation asserted against the database. The rate-card editor is not started, pending D3. Unit tests 473 → 491, E2E 38 → 40 |
+| **Needs Fola?** | **Yes, for the parked half.** **D3** decides whether the rate-card editor is built at all. Then: **Q-16** (dev email), **Q-17** (does holiday pay apply?), the **Twilio** keys, the **R2** keys and **D4**. Three checkpoints ready to merge. Still open: **Q-14**, **Q-15**, **D2** |
 
 ## Stage tracker
 
@@ -71,8 +71,8 @@ drafted and parked, per the L2 stage text.
 | L7 | Media exchange | ⛔ Parked — needs `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | |
 | L8 | Quality checklists | ✅ Done — 15 Oct 2026 (evidence below) | |
 | L9 | Notifications and recurring self-service | ✅ Done — 15 Oct 2026 (SMS delivery parked: Twilio keys) | |
-| L10 | Payroll and owner rate-card editor | ☐ Next | ✅ 3 |
-| L11 | Commercial RFQ, invoicing and Bacs | ☐ Not started | |
+| L10 | Payroll and owner rate-card editor | ✅ Payroll done — 15 Oct 2026; editor ⛔ parked on D3 | ✅ 3 ← **here** |
+| L11 | Commercial RFQ, invoicing and Bacs | ☐ Next — Bacs and Cal.com items will park | |
 | L12 | Reviews, growth and content gaps | ☐ Not started | |
 | L13 | Issue resolution and data rights | ☐ Not started | ✅ 4 |
 | L14 | Launch hardening | ☐ Not started | |
@@ -241,6 +241,8 @@ Format: **Q-n** · stage · question · options (none picked) · what's blocked.
 - **Q-15** · L2 · **An admin booking with a manual price, set to recur.** With a hand-set price (§9.7) the engine has no per-visit figure to give — it may have refused to price the job at all — so the series repeats at the price the admin quoted and no first-clean surcharge is recorded (none was applied). That is the only reading that invents no number, and the audit note on the job says so, but it is a money decision and it is yours. Options: the manual price **is** the per-visit price (what is built) / the manual price covers the first visit only and the engine prices the rest / recurring admin bookings with a manual price are refused until a per-visit price is entered separately. Blocks: nothing; it affects admin-created recurring bookings only.
 - **Q-16** · L2 / L9 · **No dev email is being delivered — a Resend account limit, not the code.** The L1 guard correctly redirects every non-production send to `DEV_EMAIL_REDIRECT`, and Resend then refuses it: *"You can only send testing emails to your own email address (afolinks@hotmail.com). To send emails to other recipients, verify a domain at resend.com/domains."* The failure is logged and never breaks a booking, but nothing arrives — so no booking confirmation, pre-contract email, payment request or sign-in link can be read on this machine. Options: set `DEV_EMAIL_REDIRECT` to the address the Resend account is registered to / verify a domain at Resend and set `EMAIL_FROM` to it (a `LAUNCH.md` step anyway) / leave it until L9. Blocks: nothing in L2–L8; **it would hollow out L9**, where the whole feature is email and SMS arriving.
 
+- **Q-17** · L10 · **Does holiday pay apply to crews at all, and at what rate?** Payroll shows accrual at the statutory **12.07%** of hours worked (5.6 weeks expressed as a proportion of a working year) and labels it as a figure, not a liability — because whether it is owed depends on whether crews are employees, workers or genuinely self-employed (§14.6, SETUP **D2**, undecided). A genuinely self-employed contractor accrues none. Options: confirm 12.07% as the accrual for workers / set a different contractual rate / mark it not applicable until employment status is settled. Blocks: nothing in code — the column records days taken either way — but the figure on the payroll screen is either meaningful or misleading depending on the answer.
+
 ## Review queue (Fola reviews at merge checkpoints)
 
 Format: **R-n** · stage · file(s) · what changed · why · data-safety note (migrations).
@@ -274,6 +276,9 @@ Per SETUP D1 = A these were built, tested and committed; they wait for Fola at *
 
 - **R-19** · L9 · `prisma/manual-migrations/2026-10-15-notification-log.sql`, `prisma/schema.prisma` · **New migration (#16).** A `NotificationLog` table: the scheduled senders run repeatedly and "has this already gone out?" cannot be answered from a job's own state — a job is `scheduled` both before and after its reminder. `dedupeKey` is unique so two concurrent runs cannot both decide they are the one sending. It is also the PECR audit: a row is written when a message is **withheld** for want of consent, not only when one is sent. It deliberately stores **no message body** — that would be a new home for a payment link or an access code. *Data-safety:* a new empty table; nothing else changes. Reverse: `DROP TABLE`.
 - **R-20** · L9 · `src/lib/notifications/*`, `src/lib/sms.ts`, `src/app/api/sms/inbound/route.ts`, `src/app/(site)/unsubscribe/page.tsx` · **PECR and outbound messaging.** Worth your eyes because getting it wrong is a regulatory matter rather than a bug: which triggers are classified as marketing (two — the review request and the lapsing win-back), that a missing consent field fails **closed**, that `STOP` and the email unsubscribe write the **same single field**, and that the unsubscribe link acts on a GET without a confirmation step (deliberate — it is signed, and an "are you sure?" is what makes people press spam instead).
+
+- **R-21** · L10 · `prisma/manual-migrations/2026-10-15-crew-holiday-flag.sql`, `prisma/schema.prisma` · **New migration (#17).** `CrewUnavailability.isHoliday`. §9.8 asks for holiday accrual tracking, and days *taken* have to be recorded — a free-text `reason` cannot be counted, since "hol", "annual leave" and "away" are one thing to a person and three to a query. *Data-safety:* a boolean defaulting to false, so every existing row keeps its meaning. Reverse: `DROP COLUMN`. Note it records a fact and decides no entitlement — that is **Q-17**.
+- **R-22** · L10 · `src/lib/payroll.ts`, `src/lib/payroll-db.ts`, `src/app/admin/payroll` · **Money owed to people.** Worth reading for the three judgements rather than the code: hourly pays for attended-but-not-completed work, per-job does not, and percentage counts a job once however many crew were on it. Rounding is half away from zero. Access is owner/admin only, because pay rates are one of the few things one member of staff must not read about another.
 
 ## Decisions made (by Claude Code)
 
@@ -418,6 +423,48 @@ why).
    roster.
 2. **Admin screens no longer carry the marketing header, footer or cookie banner.** No
    public URL changed.
+
+---
+
+### Checkpoint 3 — after L10 · ready for Fola
+
+**What is on the branch since checkpoint 2.** L8 (quality checklists), L9 (notifications,
+PECR and visit self-service) and L10's payroll half. L7 (media exchange) is **parked** on
+its R2 keys and L10's rate-card editor is **parked** on D3 — both stated in full in their
+stage logs rather than silently skipped.
+
+**Migrations to apply before merging** — in filename order, after checkpoint 2's four:
+
+```
+  2026-10-15-checklist-item-fields.sql      psql -1    ← L8
+  2026-10-15-notification-log.sql           psql -1    ← L9
+  2026-10-15-crew-holiday-flag.sql          psql -1    ← L10
+```
+
+All three applied to `dev`, drift empty, all additive: defaulted or nullable columns and
+one new empty table.
+
+**New Production environment variables** — none required. Two that matter when they are
+filled: `TWILIO_*` (SMS cannot send without them and reports `not_configured`) and
+`GOOGLE_REVIEW_URL` (the review request sends without it, asking the customer to reply by
+email instead).
+
+**Review-queue items in scope:** R-18 (L8), R-19, R-20 (L9), R-21, R-22 (L10). **R-20** is
+the one to read: it is the PECR surface — which messages are classified as marketing, that
+a missing consent flag fails closed, and that `STOP` and the email unsubscribe write the
+same single field.
+
+**What is NOT demonstrated, and should not be taken as working:**
+
+- **No email is delivered in this environment at all.** The Resend account can only send to
+  its own address (**Q-16**). Every send is attempted, guarded and recorded — and refused
+  by Resend with a 403. For L9, whose subject is messages arriving, this is the gap.
+- **No SMS can be sent** — the Twilio keys are empty (`SETUP.md` §3.8).
+- **No media can be uploaded** — the R2 keys are empty, so L7 is parked and photo-required
+  checklist items are held rather than tickable.
+
+**Two decisions are now blocking real work:** **D3** (rate-card editor), and **D4** (media
+retention, needed by L7).
 
 ---
 
@@ -2072,3 +2119,120 @@ $ npm run test:e2e        38 passed (3.2m)                        # 33 → 38 (+
    that can hide its worst item is worse than no queue, because it looks complete.
 3. A skipped visit's confirmation **unmounted with the button that produced it** — the same
    shape as the blackout-row defect in L4. The row itself says it was skipped now.
+
+---
+
+### L10 — Payroll and owner rate-card editor
+
+**Started 15 Oct 2026.** Depends on L5 (done). **Pre-authorisation: SETUP D3 is
+unanswered**, so the rate-card editor is **parked** and the payroll half is built. Stage
+text: PRD §16.3 → L10, §9.8, §17.4. **→ Merge checkpoint 3.**
+
+#### The parked half, stated first
+
+**D3 — "Owner rate-card editor (Task 5) cleared to build in L10"** has neither box ticked.
+The stage lists it as a **pre-authorisation**, not a preference, and the reason is in the
+feature itself: an editor that publishes rate-card figures is the one tool in this system
+that can change every future price. `CLAUDE.md` also puts rate-card figures outside what
+this build may decide. So it is not started, and nothing half-built is left behind.
+
+If D3 is answered **yes**, the editor is built to §17.4: owner only, draft → validate →
+publish, immutable versions, `RATE_CARD_VERSION` bumps, existing quotes and subscriptions
+never repriced, preview and diff, audit log, one-click rollback, seeded from the code card
+as version one — and the agent never publishes changed figures itself. If **no**, rates
+stay code-only and L10 is complete as it stands.
+
+#### Plan — written before coding
+
+**10.1 Payroll figures** — ✅ done
+- [ ] Per crew member, over a period: hours worked from `TimeEntry`, jobs completed, and
+      pay owed under their own `payType` — hourly, per job, or a percentage of job value.
+- [ ] Pure, so the arithmetic is testable: this is money owed to people, and a rounding
+      error in it is a wage dispute.
+- [ ] **Holiday accrual** — the statutory 12.07% method, *clearly labelled*, and raised as
+      an open question: whether it applies at all depends on employment status (§14.6,
+      SETUP D2), which is undecided.
+
+**10.2 The period report** — ✅ done
+- [ ] Owner/admin only. A period picker, the figures per crew member, and the totals.
+- [ ] Every figure traceable to the entries behind it — a payroll report nobody can check
+      is one nobody can defend.
+
+**10.3 CSV export** — ✅ done
+- [ ] §9.8: "a format your accountant or payroll software can consume".
+
+**10.4 Acceptance (PRD)** — ✅ met (payroll half; the editor is parked on D3)
+- [ ] The export **reconciles to the time entries**: the hours in the CSV are the hours in
+      `TimeEntry`, summed, with nothing lost to rounding.
+
+#### Work — ✅ payroll complete; the rate-card editor parked on D3
+
+**10.1 The arithmetic, tested as arithmetic.** Three pay types, because the three are
+genuinely different relationships and not three ways of saying the same thing:
+
+- **Hourly** pays for time, including time on a job that did not complete — they were
+  there.
+- **Per job** pays for completed visits only: a job the crew attended and which was
+  cancelled underneath them is a conversation, not an automatic payment. Two clock-ins on
+  one job (someone who breaks for lunch) pay **once**, while all the time is still counted.
+- **Percentage** pays a share of completed work, counted **per job** rather than per
+  entry — otherwise a two-person crew pays out twice the share of a job the business
+  charged for once.
+
+Rounding is to whole pence, half away from zero, in the worker's favour where it falls:
+37 minutes at £14.00 is £8.63, not £8.00. A negative duration in bad data cannot reduce
+someone's pay.
+
+**10.2 / 10.3 Report and export.** Owner and admin only — pay rates are among the few
+things one member of staff must not be able to read about another. Every line shows **how
+the figure was reached** ("3.50h × 14.00/h"), because a payroll report nobody can check is
+one nobody can defend. The CSV is generated **server-side from the same functions the
+screen uses**: a CSV rebuilt in the browser from a rounded table is how a payroll run ends
+up a few pence out with nobody able to say why. A name containing a comma is quoted — the
+kind of bug found at the end of a payroll run.
+
+Hours count into a period by **clock-in**, so a visit starting at 23:30 on the last day of
+the month belongs to that month; splitting it would be wrong and impossible to explain on
+a payslip. Open shifts — clocked in, not out — are excluded, because paying an unfinished
+shift guesses at hours nobody has worked.
+
+#### Evidence — acceptance (PRD §16.3 → L10)
+
+```
+$ npx tsx --test src/lib/payroll.test.ts
+ℹ tests 17   ℹ pass 17   ℹ fail 0
+
+$ npm run test:e2e -- payroll
+✓ the payroll report and its CSV reconcile to the time entries
+✓ an open shift is not paid, because there are no hours yet
+```
+
+The reconciliation gate asserts against the **database**, not against a figure computed in
+the test: it reads every recorded entry for that crew member in the period and requires the
+screen and the CSV to agree with it. (Its first version compared against hand-computed
+hours and failed on fifteen minutes left by another gate — which is exactly the kind of
+difference a payroll report must not paper over.)
+
+#### ⛔ The rate-card editor — not built, pending SETUP D3
+
+**D3 has neither box ticked**, and the stage lists it as a **pre-authorisation** rather
+than a preference. The reason is in the feature: an editor that publishes rate-card figures
+is the single tool in this system that can change every future price, and `CLAUDE.md` puts
+rate-card figures outside what this build may decide. Nothing half-built has been left
+behind.
+
+Answer D3 **yes** and it is built to §17.4 — owner only, draft → validate → publish,
+immutable versions, `RATE_CARD_VERSION` bumps, existing quotes and subscriptions never
+repriced, preview and diff, audit log, one-click rollback, seeded from the code card as
+version one, and the agent never publishing changed figures itself. Answer **no** and rates
+stay code-only and L10 is finished as it stands.
+
+#### Evidence — the stage gate
+
+```
+$ npx tsc --noEmit        (clean)        $ npx eslint .          (clean)
+$ npm test                ℹ tests 491   ℹ pass 490   ℹ fail 0   ℹ skipped 1   # 473 → 491 (+18)
+$ npm run build           ✓ Compiled successfully
+$ npm run db:drift        -- This is an empty migration.  ✓ no drift
+$ npm run test:e2e        40 passed (3.1m)                        # 38 → 40 (+2)
+```

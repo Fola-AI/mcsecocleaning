@@ -680,3 +680,35 @@ export async function backfillChecklist(jobId: string): Promise<{ ok: boolean; m
     message: added > 0 ? `Added ${added} checklist items.` : "That job already has a checklist.",
   };
 }
+
+// ---------- Payroll (§9.8) ----------
+
+/**
+ * The period payroll as CSV (§9.8).
+ *
+ * Owner and admin only, like the report itself: pay rates are one of the few
+ * things one member of staff must not be able to read about another.
+ *
+ * Generated server-side from the same functions the page renders, so the export
+ * and the screen can never disagree — a CSV rebuilt in the browser from a
+ * rounded table is how a payroll run ends up a few pence out and nobody can say
+ * why.
+ */
+export async function payrollCsvForPeriod(
+  from: string,
+  to: string,
+): Promise<{ ok: true; csv: string } | { ok: false; message: string }> {
+  await requireRole(["owner", "admin"]);
+  if (!hasDatabase) return { ok: false, message: "No database configured." };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+    return { ok: false, message: "Those dates don't look right." };
+  }
+
+  const { payrollInputs } = await import("@/lib/payroll-db");
+  const { payrollReport, payrollCsv } = await import("@/lib/payroll");
+
+  const report = payrollReport(
+    await payrollInputs({ from: new Date(`${from}T00:00:00Z`), to: new Date(`${to}T23:59:59Z`) }),
+  );
+  return { ok: true, csv: payrollCsv(report, { from, to }) };
+}
