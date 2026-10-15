@@ -111,12 +111,12 @@ test("gate D: a weekly booking creates one subscription, a clean series, and col
   expect(paymentsBefore, "the materialiser creates jobs, never charges (§6.2)").toBe(0);
 
   await openJobsBoard(page, context, baseURL!);
-  // Visit 2 is the second row for this customer, newest first — target it by its
-  // own scheduled date so the gate cannot complete the wrong visit.
-  const row = page
-    .locator("tr", { hasText: `E2E ${email.split("@")[0]}` })
-    .filter({ hasText: new RegExp(String(visitTwo.scheduledStart!.getUTCDate())) })
-    .first();
+  // Target visit 2 by its own id, through the status control the board renders
+  // per row. Matching on the date text used to work and silently stopped when
+  // the board started grouping by day and moved the date into the heading — an
+  // id cannot drift like that, and it cannot complete the wrong visit.
+  const row = page.locator("tr", { has: page.locator(`#status-${visitTwo.id}`) });
+  await expect(row).toBeVisible();
   await row.getByRole("button", { name: /Mark complete/ }).click();
 
   const collected = await waitFor(

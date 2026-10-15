@@ -52,11 +52,11 @@ drafted and parked, per the L2 stage text.
 
 | | |
 | --- | --- |
-| **Current stage** | **L2 — ✅ done, 15 Oct 2026.** → **Merge checkpoint 1.** The database is real, all ten migrations applied with an empty drift check, and the Stripe gates A/B/C/D pass against test mode. The three Phase 2 gaps from the 9 Oct review are closed. **L3 (admin operations core) is next and is not blocked** |
-| **Next action** | *(Claude Code)* start **L3** — PRD §16.3 → L3: the realistic-data seed mode, the Today view replacing the `/admin` counts dashboard, the job board with server-enforced status transitions, the failed-payment queue, blackout dates, and the recurrence tests across a bank holiday and both clock changes. *(Fola, in parallel, nothing blocking)* review **checkpoint 1** below and merge to `main` when you are ready; the one item that changes customer-facing behaviour is **Q-14**, the card-on-file consent wording |
-| **Working branch** | `build/autonomous`, pushed — L1 (4 commits) + L2 (8 commits) ahead of `main` (`2f667ff`, untouched) |
-| **Last updated** | 15 Oct 2026 — **L2 complete.** Neon `dev` baselined and migrated (10 of 10, drift empty), seeded; Playwright + `npm run test:e2e` with 14 gates green against Stripe test mode including a real 3-D Secure challenge; gaps 1–3 closed (Subscription, card on file behind its consent flag, server-action auth); payment-link recovery and reissue built. Five real bugs found by running it rather than reading it — see the L2 log. Unit tests 190 → 268 |
-| **Needs Fola?** | **Not to proceed with L3.** For checkpoint 1: review R-4…R-9 (R-5, R-6, R-7 move money) and answer **Q-14** (card-on-file consent wording — the mechanism is built but switched off until then), **Q-15** (manual price on a recurring admin booking) and **Q-16** (no dev email is delivered — a Resend account limit, harmless now, would hollow out L9). 11 live *Open questions*; D3–D6 still park later-stage items only |
+| **Current stage** | **L3 — ✅ done, 15 Oct 2026.** The admin back office is an operations tool rather than a dashboard: the §9.7 Today view, a filtered job board, the §9.1 status pipeline enforced server-side, a payments queue, customer records and blackout dates with a per-date policy. **L4 (crew roster, capacity and availability) is next** |
+| **Next action** | *(Claude Code)* start **L4** — PRD §16.3 → L4: move capacity off the placeholder roster onto `CrewProfile` / `CrewUnavailability` (a loader, not a rewrite — `src/lib/capacity.ts` is already a pure function), build the `SlotAvailability` service with travel buffers and the Bromley patch rule, point the wizard's step 5 at real slots, and build both assignment modes per SETUP D2. *(Fola)* **merge checkpoint 1** is ready and waiting — see *Checkpoint merge notes* |
+| **Working branch** | `build/autonomous`, pushed — L1 + L2 + L3 ahead of `main` (`2f667ff`, untouched) |
+| **Last updated** | 15 Oct 2026 — **L3 complete.** Today view replaces the counts dashboard; §9.1 pipeline with legal transitions enforced server-side and logged with the actor; job board with shareable filters; payments queue; customer records; blackout dates with per-date hold-or-move; §13.3 dev seed (20 customers, 50 jobs, 3 crews); recurrence tested across a bank holiday and both clock changes. Admin screens no longer carry the marketing chrome. Unit tests 268 → 328, E2E 14 → 21 |
+| **Needs Fola?** | **Not to proceed with L4.** Checkpoint 1 is ready to merge: review R-4…R-9 (R-5, R-6, R-7 move money) plus **R-10** (L3's migration) and **R-11** (the status pipeline). Three answers wanted when convenient: **Q-14** card-on-file consent wording (the mechanism is built but off), **Q-15** manual price on a recurring admin booking, **Q-16** no dev email is delivered (a Resend account limit; would hollow out L9) |
 
 ## Stage tracker
 
@@ -64,8 +64,8 @@ drafted and parked, per the L2 stage text.
 | --- | --- | --- | --- |
 | L1 | Reconcile and guardrails | ✅ Done | |
 | L2 | Real database and Stripe test-mode gate (+ Phase 2 gaps 1–3, gate D) | ✅ Done — 15 Oct 2026 (evidence below) | ✅ 1 ← **here** |
-| L3 | Admin operations core | ☐ Next — unblocked | |
-| L4 | Crew roster, capacity and availability | ☐ Not started | |
+| L3 | Admin operations core | ✅ Done — 15 Oct 2026 (evidence below) | |
+| L4 | Crew roster, capacity and availability | ☐ Next | |
 | L5 | Crew mobile interface | ☐ Not started | |
 | L6 | Access codes | ☐ Not started | ✅ 2 |
 | L7 | Media exchange | ☐ Not started | |
@@ -257,6 +257,10 @@ Per SETUP D1 = A these were built, tested and committed; they wait for Fola at *
 - **R-7** · L2 · `src/lib/outstanding.ts` · **Payment flow — expired payment links.** The re-charge idempotency key could not distinguish "same request" from "the session has expired", so Stripe returned the expired session and both admin Reissue and the customer's Pay button produced a dead link. Now: open → the same link, nothing written; complete → refused, rather than a second link for money already paid; expired → a new session keyed on the superseded one. Found by the L2 gates; it was not visible without a real Stripe account to expire a session against.
 - **R-8** · L2 · `src/lib/outstanding.ts`, `src/app/actions/payments.ts`, `src/app/actions/account.ts`, `src/app/actions/actions-authorise.test.ts` · **Auth / RBAC.** `prepareOutstandingCheckoutForVerifiedJob` moved out of the `"use server"` module into `src/lib/` with `import "server-only"`; the scan test now fails any action export that makes no authorisation decision. Behaviour of the two real entry points is unchanged.
 - **R-9** · L2 · `src/app/actions/booking.ts`, `src/app/actions/admin.ts`, `src/lib/subscriptions.ts` · **Recurring bookings create a `Subscription`.** No schema change. One judgement to confirm: an admin booking with a **manual price** (§9.7) has no engine per-visit figure, so the hand-set price becomes the per-visit price for the series, recorded in the audit note — raised as **Q-15** rather than assumed silently.
+
+- **R-10** · L3 · `prisma/manual-migrations/2026-10-15-blackout-policy.sql`, `prisma/schema.prisma` · **New migration (#11).** Adds `BlackoutDate.policy` (`BlackoutPolicy` enum: `flag` | `shift`) so a blackout date can say whether visits landing on it are held for review or moved to the next working day. *Data-safety:* a new enum type plus a column **with a default**, so every existing row reads `flag` — exactly the behaviour it had before the column existed. Cannot fail on existing rows, cannot change a stored value. Reverse: `DROP COLUMN` + `DROP TYPE`, which returns the materialiser to always flagging.
+- **R-11** · L3 · `src/lib/job-status.ts`, `src/app/actions/admin.ts` (`setJobStatus`) · **Auth / RBAC and the §9.1 pipeline.** A new role-gated action that moves a job between statuses, refuses illegal transitions server-side, and logs every change with the actor in the same transaction. Worth your eyes on which transitions are *forbidden*: a completed job cannot be rewound or cancelled, and a cancelled booking cannot be revived — both would mean refunding work we did or charging for work we did not. If you disagree with any of those, they are one map in one file.
+- **R-12** · L3 · `src/app/(site)/**`, `src/app/layout.tsx`, `src/components/layout/SiteChrome.tsx` · **Route move, no behaviour change.** Every public page moved into a `(site)` route group so the admin area is not wrapped in the marketing header, footer, sticky CTA and cookie banner. Route group names never appear in URLs, so **no public path changed** — worth a glance precisely because that is a large diff for a change that should be invisible to customers. A gate asserts both sides, and the sitemap, robots and 404 were checked.
 
 ## Decisions made (by Claude Code)
 
@@ -1135,7 +1139,7 @@ L3, with §9.1 (the status pipeline), §9.7 (Today view and the back office) and
 
 #### Plan — written before coding
 
-**3.1 The status pipeline, server-enforced** (`src/lib/job-status.ts`, `src/app/actions/admin.ts`)
+**3.1 The status pipeline, server-enforced** — ✅ done
 - [ ] The §9.1 pipeline as a pure legal-transition map with a reason per refusal, unit
       tested: `draft → booked → payment_authorised → scheduled → in_progress →
       completed → awaiting_feedback → closed`, plus `cancelled`, `on_hold` and
@@ -1146,7 +1150,7 @@ L3, with §9.1 (the status pipeline), §9.7 (Today view and the back office) and
 - [ ] `no_access` is the one that costs money — it triggers the §8 lockout fee — so it
       records the attendance rather than quietly parking the job.
 
-**3.2 Today view replaces the counts dashboard** (`src/app/admin/page.tsx`, `src/lib/today.ts`)
+**3.2 Today view replaces the counts dashboard** — ✅ done
 - [ ] The §9.7 screen: today's jobs with status, anything unassigned, anything overdue
       for check-in, failed payments. Nothing else. The agent's approval inbox (§11) gets
       its slot, rendered empty and labelled as post-launch.
@@ -1155,36 +1159,36 @@ L3, with §9.1 (the status pipeline), §9.7 (Today view and the back office) and
       that is right in October and wrong in April.
 - [ ] The stale line about an "interim access code" goes with the old page.
 
-**3.3 Job board with filters** (`src/app/admin/jobs`)
+**3.3 Job board with filters** — ✅ done
 - [ ] List and week views, filters on status, date, patch, crew and unassigned.
 - [ ] Per-row status control driven by 3.1, so the only transitions offered are legal
       ones and the server re-checks anyway.
 
-**3.4 Failed-payment queue** (`src/app/admin/payments`)
+**3.4 Failed-payment queue** — ✅ done
 - [ ] A visible queue, not an email: every job with a failed or outstanding charge, with
       the recovery actions already built (retry capture, payment request, payment link)
       and the reason the last attempt failed.
 
-**3.5 Customer records** (`src/app/admin/customers`)
+**3.5 Customer records** — ✅ done
 - [ ] List and detail: properties, jobs, subscriptions, payments, consent state.
 
-**3.6 Blackout dates** (`src/app/admin/blackouts`, migration)
+**3.6 Blackout dates** — ✅ done (migration #11)
 - [ ] Admin CRUD, and a **per-date policy**: flag the affected visits for review, or
       shift them. The materialiser already flags; shifting needs the policy stored, so
       `BlackoutDate.policy` is an additive migration (→ *Review queue*).
 - [ ] Affected materialised jobs are never silently generated — that is the property
       under test.
 
-**3.7 Realistic seed data, dev only** (`prisma/seed-dev.ts`)
+**3.7 Realistic seed data, dev only** — ✅ done
 - [ ] §13.3: 20 customers, 50 jobs across every status, 3 crews, both patch groups.
 - [ ] Refuses to run when `APP_ENV=production`, on top of the dev-db host guard, and
       nothing it creates is rendered on a public route.
 
-**3.8 Recurrence across the hard boundaries** (`src/lib/recurrence.test.ts`)
+**3.8 Recurrence across the hard boundaries** — ✅ done
 - [ ] §13.4: a series across a **bank holiday** and across **both** clock changes,
       asserting the London wall-clock time holds and the blackout is flagged, not skipped.
 
-**3.9 Confirm rather than rebuild**
+**3.9 Confirm rather than rebuild** — ✅ done
 - [ ] Discount codes (§10.2), admin-created bookings with payment link / invoice (no cash
       on any path), CSV client import — all exist; confirm with tests and leave alone.
 
@@ -1192,6 +1196,114 @@ L3, with §9.1 (the status pipeline), §9.7 (Today view and the back office) and
 data in one screen; illegal transitions are rejected; the recurrence tests pass across
 the boundaries.
 
-#### Work
+#### Work — ✅ stage complete (`85eaec7`, `b-fixups`)
 
-*(ticked as each item lands, with commit hashes)*
+**3.1 The status pipeline.** `src/lib/job-status.ts` is the §9.1 pipeline as a legal
+transition map with a reason per refusal, and `setJobStatus` re-applies it server-side —
+the dropdown is built from the same map, so the UI cannot offer what the server will
+refuse, and the server does not trust the UI. Every change writes `JobStatusEvent` with
+the actor, in the same transaction as the update: a status with no trail is worse than a
+refused change, because the trail is what explains a refund or a lockout fee later.
+
+Three rules are deliberate and tested as such:
+
+- **A completed job cannot be rewound**, to anything. The clean happened. A wrong price
+  is settled on the payment; bad work is an issue and a re-clean.
+- **A completed job cannot be cancelled** — that would refund a customer for work we did.
+- **`cancelled` and `closed` are terminal.** Reviving a cancelled booking means undoing a
+  refund; the honest move is a new booking, which keeps both records.
+- **`no_access` can be resolved**, to scheduled, cancelled or closed. A crew that could
+  not get in leaves a job that is neither done nor abandoned, and it carries the §8
+  lockout fee — treating it as terminal would strand the customer's money with no path.
+
+**3.2 Today view.** The counts dashboard is gone. Three totals (jobs, leads, customers)
+answered a question nobody asks before 7am and said nothing about whether anyone is going
+to the 9 o'clock in Clapham. It is now the four buckets §9.7 names, in the order an
+operator needs them — overdue check-in and unassigned **before** the timetable — plus the
+agent's slot, rendered empty and labelled, so the screen's shape does not change the day
+the agent layer arrives.
+
+The failed-payments bucket is deliberately **not** limited to today: money that failed
+last week is still today's problem, and a screen that hides it is comforting rather than
+true.
+
+**3.6 Blackout dates** now carry a **per-date policy** — hold the visit for review, or
+move it to the next working day — because the two cases are different instructions to the
+scheduler. A bank holiday the crew will work around should move; a closure needs a human
+to speak to the customer. The default is *hold*, since a visit silently moved is a
+customer not expecting us. Migration #11; drift still empty. A moved visit says on the job
+itself where it moved from, so it is never invisible.
+
+**3.7 Dev seed.** §13.3 asked for this and said why — *"admin views look fine empty and
+fall apart in use"* — which is exactly what the old dashboard did. 20 customers across
+seven districts including Bromley (its own patch, §4), 50 jobs weighted like a working
+business rather than evenly spread, 3 crews. It refuses to run when `APP_ENV=production`
+on top of the dev-host guard, every customer is `@example.com`, and it creates **no**
+`Review` rows — an invented review is exactly what the content rules forbid.
+
+```
+$ npm run db:seed:dev
+✓ dev database confirmed (ep-red-scene-…) — proceeding.
+  3 crews · 20 customers with a property each · 50 jobs across 11 statuses
+✓ dev seed complete — 6 unassigned upcoming, 1 failed payment(s).
+```
+
+**3.8 Recurrence across the hard boundaries** (§13.4). The tests assert the property that
+matters, not that occurrences exist: the customer's **London wall-clock time holds while
+the UTC instant moves**. A series that kept 09:00 by accident of a fixed offset would pass
+a weaker test, so each one asserts the UTC hour *does* shift across the boundary.
+
+```
+$ npx tsx --test src/lib/recurrence.test.ts
+ℹ tests 14   ℹ pass 14   ℹ fail 0
+  ✔ a Monday series across the Christmas closure holds the visit for review
+  ✔ the same date with policy 'shift' moves the visit and says where from
+  ✔ a date's own policy overrides the call's default, in both directions
+  ✔ GMT begins mid-series: 09:00 London stays 09:00, and the UTC hour shifts
+  ✔ BST begins on Easter Monday 2027, which is also a bank holiday
+  ✔ a run of consecutive blackouts shifts past all of them, not into the next one
+```
+
+**3.9 Confirmed rather than rebuilt.** Discount codes, the admin booking (payment link or
+invoice), and the CSV import all exist and pass (15 tests). The **no-cash** rule (§12.5)
+is now a source scan rather than a convention: the guard today is a zod enum admitting
+`payment_link` and `invoice` only, and the way that regresses is someone adding a third
+value in a hurry.
+
+**One defect found by looking at the screen rather than the code.** Every admin page was
+wrapped in the marketing header, footer, sticky "Get a price" bar and cookie banner,
+because the root layout wrapped every route. A quarter of an operations screen spent on
+things an operator cannot act on, with a consent prompt aimed at a member of staff
+floating over the job board — the opposite of §9.7's thirty seconds. The public site now
+lives in a `(site)` route group that carries the chrome; the admin area does not. Route
+group names never appear in URLs, so **no public path changed**, and the 404 keeps the
+chrome explicitly so a mistyped URL still looks like the website. A gate asserts both
+sides, because this is easy to undo by accident.
+
+The L1 trust-claim scan caught its own exemption going stale in that move (the T&Cs page
+is exempt by path, Q-8) — the scan working as designed.
+
+#### Evidence — the stage gate
+
+```
+$ npx tsc --noEmit        (clean)        $ npx eslint .          (clean)
+$ npm test                ℹ tests 328   ℹ pass 328   ℹ fail 0     # 268 → 328 (+60)
+$ npm run build           ✓ Compiled successfully — 36 routes
+$ npm run db:drift        -- This is an empty migration.  ✓ no drift
+$ npm run test:e2e        21 passed (2.2m)                        # 14 → 21 (+7)
+```
+
+**Acceptance (PRD §16.3 → L3):**
+
+- *"The Today view answers 'what's the state of today' from seeded data in one screen"* —
+  gate: `the Today view answers the day's state in one screen`, against the §13.3 seed.
+- *"Illegal transitions rejected"* — 17 unit tests on the map, plus a gate asserting the
+  board offers a completed job only *Awaiting feedback* and *Closed*, never *In progress*
+  or *Cancelled*, and a gate that applies a legal one and checks the actor was recorded.
+- *"Recurrence tests pass across the boundaries"* — above.
+
+**Two E2E gates had to be updated**, and both were the tests being wrong rather than the
+code: a completed job now correctly leaves the board's default *upcoming* view (its money
+is on the payments queue, which is where the gate now looks), and the board moved the date
+into the day heading, so a row matched by date text no longer matched — it is matched by
+job id now, which cannot drift.

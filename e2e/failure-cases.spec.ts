@@ -99,6 +99,7 @@ test("an off-session charge the bank won't allow flags admin and leaves the job 
   // The admin is told what actually happened, in those terms.
   await expect(row.getByText(/asked them to confirm|payment request/i)).toBeVisible({ timeout: 60_000 });
 
+
   const after = await waitFor(
     "the charge to be marked failed",
     () => jobForEmail(email),
@@ -111,8 +112,16 @@ test("an off-session charge the bank won't allow flags admin and leaves the job 
   expect(after!.notes.join(" ")).toMatch(/authentication_required/);
   expect(after!.notes.join(" ")).toMatch(/Job unchanged/);
 
-  // And the recovery path is offered rather than a dead end.
-  await expect(row.getByRole("button", { name: /Send payment request/ })).toBeVisible();
+  // And the recovery path is offered rather than a dead end — on the payments
+  // queue, which is where unpaid work now lives (§9.7). The job board's default
+  // view is upcoming work, so a completed job correctly leaves it; the money
+  // must not leave with it.
+  await page.goto("/admin/payments", { waitUntil: "domcontentloaded" });
+  const queued = page.locator("article", { hasText: `E2E ${email.split("@")[0]}` }).first();
+  await expect(queued).toBeVisible();
+  await expect(queued.getByText(/failed charge/)).toBeVisible();
+  await expect(queued.getByText(/authentication_required/)).toBeVisible();
+  await expect(queued.getByRole("button", { name: /Send payment request/ })).toBeVisible();
 });
 
 /**
