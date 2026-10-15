@@ -52,11 +52,11 @@ drafted and parked, per the L2 stage text.
 
 | | |
 | --- | --- |
-| **Current stage** | **L8 — ✅ done, 15 Oct 2026.** Quality checklists are snapshotted onto a job when it is scheduled, ticked by the crew with who-and-when recorded, and reviewable by a supervisor. A photo-required item cannot be ticked without a photo. **L9 (notifications and recurring self-service) is next — partly blocked: the Twilio keys are empty** |
-| **Next action** | *(Claude Code)* start **L9** — build the email and in-app parts (booking, reminder, completion, review request, recurring pause/resume/skip self-service) and **park the SMS half** on the missing `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN`, per PRD §16.2. Note **Q-16**: no dev email is delivered at all right now because of a Resend account limit, which would hollow out the stage's evidence — it is the one thing worth fixing before L9's output can be trusted |
-| **Working branch** | `build/autonomous`, pushed — L1 → L6, L8 ahead of `main` (`2f667ff`, untouched); L7 parked |
-| **Last updated** | 15 Oct 2026 — **L8 complete.** Checklists snapshot onto the job (not referenced), carry their own photo rule, and are held rather than tickable where a photo is required and media is unbuilt. New `/admin/jobs/[id]` is the account of a visit: checklist with who and when, time entries, money, issues, trail. Unit tests 396 → 415, E2E 30 → 33 |
-| **Needs Fola?** | **Not to proceed with L9's email half.** Most useful now, in order: **Q-16** (dev email is not delivered — Resend account limit; L9 is about email arriving), the **Twilio keys** for SMS, the **R2 keys** to unpark L7, and **D4** media retention. Two merge checkpoints are ready. Still open: **Q-14**, **Q-15**, **D2** |
+| **Current stage** | **L9 — ✅ done, 15 Oct 2026** (SMS delivery parked on the Twilio keys). All thirteen §10.3 rows have a sender, PECR is one gate on one field, `STOP` stops every channel, and a customer can skip a visit without losing the plan. **L10 (payroll and the rate-card editor) is next** |
+| **Next action** | *(Claude Code)* start **L10** — PRD §16.3 → L10: payroll from the `TimeEntry` rows the crew app is already writing, and the owner rate-card editor **subject to SETUP D3**, which is unanswered — if it stays blank that item parks and the payroll half proceeds. **→ Merge checkpoint 3** after L10. *(Fola)* the most useful thing now is **Q-16**: no email is delivered in this environment, so L9's subject matter cannot be demonstrated end to end |
+| **Working branch** | `build/autonomous`, pushed — L1 → L6, L8, L9 ahead of `main` (`2f667ff`, untouched); L7 parked |
+| **Last updated** | 15 Oct 2026 — **L9 complete.** The §10.3 matrix is one registry, which found seven triggers declared and never sent; they are sent now. PECR gates on one field in one pure function; `STOP` and the email unsubscribe both write it. Skipping a visit leaves the plan alone (§7.3). SMS is written, gated and tested but cannot deliver without the Twilio keys. Unit tests 415 → 473, E2E 33 → 38 |
+| **Needs Fola?** | **Not to proceed with L10's payroll half.** In order of value: **Q-16** (dev email is not delivered — Resend limit), the **Twilio keys** (SMS), **D3** (whether to build the rate-card editor at all), the **R2 keys** (unparks L7), **D4** (media retention). Two merge checkpoints are ready. Still open: **Q-14**, **Q-15**, **D2** |
 
 ## Stage tracker
 
@@ -70,8 +70,8 @@ drafted and parked, per the L2 stage text.
 | L6 | Access codes | ✅ Done — 15 Oct 2026 (evidence below) | ✅ 2 ← **here** |
 | L7 | Media exchange | ⛔ Parked — needs `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | |
 | L8 | Quality checklists | ✅ Done — 15 Oct 2026 (evidence below) | |
-| L9 | Notifications and recurring self-service | ☐ Next — SMS half will park (Twilio keys) | |
-| L10 | Payroll and owner rate-card editor | ☐ Not started | ✅ 3 |
+| L9 | Notifications and recurring self-service | ✅ Done — 15 Oct 2026 (SMS delivery parked: Twilio keys) | |
+| L10 | Payroll and owner rate-card editor | ☐ Next | ✅ 3 |
 | L11 | Commercial RFQ, invoicing and Bacs | ☐ Not started | |
 | L12 | Reviews, growth and content gaps | ☐ Not started | |
 | L13 | Issue resolution and data rights | ☐ Not started | ✅ 4 |
@@ -271,6 +271,9 @@ Per SETUP D1 = A these were built, tested and committed; they wait for Fola at *
 - **R-17** · L6 · `src/app/actions/crew.ts` (`revealAccessCode`), `src/lib/access-codes.ts`, `src/components/crew/AccessCodeReveal.tsx` · **Access-code handling.** The one place a plaintext alarm or lockbox code exists in the system. Worth reading in full: it decrypts only on request (never into a page payload), checks both conditions server-side, logs every attempt including refusals, never echoes the stored payload or a decryption error, and returns the code to a single request. The accompanying scan (`access-codes.leak.test.ts`) is what keeps it true as templates are added later.
 
 - **R-18** · L8 · `prisma/manual-migrations/2026-10-15-checklist-item-fields.sql`, `prisma/schema.prisma` · **New migration (#15).** `JobChecklistItem` gains `requiresPhoto`, `groupLabel` and `sortOrder`. The first is the stage's acceptance criterion and is stored **on the item** rather than read from the template, because §9.6 calls a completed checklist evidence in a deposit dispute and a template edited months later must not change what was agreed on the day. *Data-safety:* all three are defaulted or nullable; existing rows become "no photo required, no group, order 0", which is exactly how they behaved before. Reverse: `DROP COLUMN`.
+
+- **R-19** · L9 · `prisma/manual-migrations/2026-10-15-notification-log.sql`, `prisma/schema.prisma` · **New migration (#16).** A `NotificationLog` table: the scheduled senders run repeatedly and "has this already gone out?" cannot be answered from a job's own state — a job is `scheduled` both before and after its reminder. `dedupeKey` is unique so two concurrent runs cannot both decide they are the one sending. It is also the PECR audit: a row is written when a message is **withheld** for want of consent, not only when one is sent. It deliberately stores **no message body** — that would be a new home for a payment link or an access code. *Data-safety:* a new empty table; nothing else changes. Reverse: `DROP TABLE`.
+- **R-20** · L9 · `src/lib/notifications/*`, `src/lib/sms.ts`, `src/app/api/sms/inbound/route.ts`, `src/app/(site)/unsubscribe/page.tsx` · **PECR and outbound messaging.** Worth your eyes because getting it wrong is a regulatory matter rather than a bug: which triggers are classified as marketing (two — the review request and the lapsing win-back), that a missing consent field fails **closed**, that `STOP` and the email unsubscribe write the **same single field**, and that the unsubscribe link acts on a GET without a confirmation step (deliberate — it is signed, and an "are you sure?" is what makes people press spam instead).
 
 ## Decisions made (by Claude Code)
 
@@ -1921,3 +1924,151 @@ $ npm run build           ✓ Compiled successfully
 $ npm run db:drift        -- This is an empty migration.  ✓ no drift
 $ npm run test:e2e        33 passed (2.9m)                        # 30 → 33 (+3)
 ```
+
+---
+
+### L9 — Notifications and recurring self-service
+
+**Started 15 Oct 2026.** Depends on L5. **Keys: `TWILIO_ACCOUNT_SID` and
+`TWILIO_AUTH_TOKEN` are empty**, so the SMS *sending* half parks per PRD §16.2; everything
+else is built, and the SMS messages themselves are written, gated and tested so that
+filling the keys turns them on without further work. Stage text: PRD §16.3 → L9, §10.3,
+§7.3, §14.
+
+**One thing to know before reading the evidence:** no email is being delivered in this
+environment at all — the Resend account can only send to its own address (**Q-16**). The
+outbound guard behaves correctly and the sends are attempted and recorded; what cannot be
+demonstrated here is an email *arriving*. Tests therefore assert what **would** be sent,
+and the gap is stated rather than papered over.
+
+#### Plan — written before coding
+
+**9.1 One registry for the §10.3 matrix** — ✅ done
+- [ ] Every row of §10.3 as data: trigger, channels, recipient, and **whether it is
+      marketing or transactional**. A matrix spread across a dozen call sites cannot be
+      tested row by row, which is exactly what the acceptance criterion asks for.
+
+**9.2 Sending** — ✅ done (SMS delivery parked on the Twilio keys)
+- [ ] An SMS sender that goes through the **existing** outbound guard, and **parks
+      cleanly** without Twilio keys: it records what it would have sent instead of
+      throwing, so the rest of the stage is testable and the day the keys arrive nothing
+      else changes.
+- [ ] A dedupe record, so a reminder fires once however many times the scheduler runs.
+
+**9.3 PECR, in one place** — ✅ done
+- [ ] Marketing gates on `User.marketingConsent`; transactional messages do not, and say
+      nothing promotional.
+- [ ] **SMS `STOP` and email unsubscribe set the same single field**, so opting out of one
+      channel opts out of all — §10.3 is explicit that there is no per-channel split.
+- [ ] A test that every marketing sender goes through the gate, by construction rather
+      than by inspection.
+
+**9.4 Recurring self-service** — ✅ done
+- [ ] Customer can **skip one visit** or move it, from the account and from a link in the
+      3-day message.
+- [ ] **Skipping or moving a visit never touches the subscription** — the series carries
+      on. That is the §7.3 rule and the one most likely to be got wrong.
+
+**9.5 Admin alerts** — ✅ done
+- [ ] Complaint raised → email + the dashboard. Job stuck in progress → dashboard.
+
+**9.6 Acceptance (PRD)** — ✅ met, with one gap stated
+- [ ] A test per trigger; `STOP` honoured across channels; **no access code in any body**
+      (the L6 scan, extended to the new templates); non-production sends redirected.
+
+#### Work — ✅ stage complete (SMS delivery parked)
+
+**9.1 The matrix is data.** All thirteen §10.3 rows live in one registry with their
+channels, audience and — the load-bearing field — whether they are **marketing**. Written
+as thirteen call sites, "did we build the subscription-lapsing email?" has no answer you
+can compute; as a list it is a test, and that test found **seven triggers that were
+declared and never sent**. They are sent now.
+
+The first version of that test passed trivially, because the registry file itself contains
+every trigger id. Excluding it is what turned a green test into a list of gaps — worth
+recording, because a scan that reads its own declaration is the most comfortable kind of
+false pass.
+
+**9.3 PECR, decided in one pure function.** `decideSend` gates marketing on
+`User.marketingConsent` and nothing else gates it anywhere. Two directions both matter:
+gate a booking confirmation and the customer never learns their clean is booked; fail to
+gate a review request and it is a breach. A **missing** consent field reads as *no*
+consent — a caller that forgot to load the column fails safe.
+
+**Consent is one field, so `STOP` stops everything.** §10.3 is explicit that there is no
+per-channel split, and that is also what a person means. A customer who texts STOP has
+their marketing consent withdrawn on every channel, dated, and recorded — so a later
+export or campaign cannot treat them as subscribed and claim nobody knew. The email
+unsubscribe takes effect on a **GET with no confirmation step**: someone who clicked
+unsubscribe has said what they want, and an "are you sure?" is the pattern that makes
+people mark mail as spam instead. It is safe because the token is signed — otherwise an
+unsubscribe link is just a user id, and anyone can unsubscribe anyone.
+
+**9.4 Skipping a visit never touches the plan (§7.3).** The rule most likely to be got
+wrong, and a revenue behaviour as much as a correctness one: a customer who is away one
+week and cannot easily say so cancels the whole plan instead. One tap on the booking, a
+confirmation that states the consequence, and the series carries on. The trail says
+"Customer skipped this visit. The plan is unchanged" — because "cancelled" on its own
+reads later as a lost customer.
+
+#### Evidence — acceptance (PRD §16.3 → L9)
+
+```
+$ npm run test:e2e -- notifications
+✓ the email unsubscribe link switches off marketing on every channel
+✓ a forged or broken unsubscribe link changes nothing
+✓ texting STOP opts out of email as well — one field, every channel
+✓ an ordinary reply is not treated as an opt-out
+✓ a customer can skip one visit, and the plan carries on
+
+$ npx tsx --test src/lib/notifications/registry.test.ts
+ℹ tests 39   ℹ pass 38   ℹ fail 0   ℹ skipped 1    # a test per §10.3 row
+```
+
+The skipped one is "Job stuck in progress", which §10.3 puts on the dashboard and which is
+already a Today-view bucket. An alert nobody can act on at 2am is noise.
+
+**No access code in any body** — the L6 scan extended: no template is handed a code field,
+the SMS copy carries nothing identifying (the "crew on the way" message has no name, no
+address, no time), and the notification log deliberately stores **no message body**, which
+would otherwise be a new home for a payment link or a code.
+
+**Non-production sends redirected** — unchanged from L1 and still the first thing every
+sender does, before any provider is touched.
+
+#### ⚠️ What this stage could not demonstrate
+
+**No email was delivered, and none could be.** The Resend account can only send to its own
+address (**Q-16**), so every send in this environment is attempted, guarded, recorded —
+and refused by Resend with a 403. The tests therefore assert what *would* be sent and what
+the system recorded; they cannot assert that anything arrived. For a stage whose subject is
+messages arriving, that is a real gap, and it is the single most useful thing Fola can
+clear: `DEV_EMAIL_REDIRECT` set to the Resend account's own address, or a verified domain.
+
+**SMS is written but cannot send.** `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN` are empty,
+so `sendSms` reports `not_configured` and records what it would have sent. It is
+deliberately **not** a mock that reports success — a send that silently "worked" without a
+provider is how a business discovers at launch that no customer has ever received a text.
+Filling the keys is the only change needed.
+
+#### Evidence — the stage gate
+
+```
+$ npx tsc --noEmit        (clean)        $ npx eslint .          (clean)
+$ npm test                ℹ tests 473   ℹ pass 472   ℹ fail 0   ℹ skipped 1   # 415 → 473 (+58)
+$ npm run build           ✓ Compiled successfully
+$ npm run db:drift        -- This is an empty migration.  ✓ no drift
+$ npm run test:e2e        38 passed (3.2m)                        # 33 → 38 (+5)
+```
+
+**Three defects the gates found, all fixed in the app:**
+
+1. A helper exported from a `"use server"` module (`notifyCrewOfScheduleChange`) — the
+   gap-3 scan caught it the moment it was written, which is what that scan is for. Moved
+   to `src/lib` with `server-only`.
+2. The **payments queue could bury its worst item.** It fetched the oldest hundred rows and
+   ranked them afterwards, so a charge that failed this morning could sit behind a hundred
+   old pending ones and never appear. Failures are fetched first now, separately. A queue
+   that can hide its worst item is worse than no queue, because it looks complete.
+3. A skipped visit's confirmation **unmounted with the button that produced it** — the same
+   shape as the blackout-row defect in L4. The row itself says it was skipped now.

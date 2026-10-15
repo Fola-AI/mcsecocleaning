@@ -948,3 +948,34 @@ model AuthAttempt {
 
   @@index([lockedUntil])
 }
+
+/**
+ * What has been sent, so it is sent once (§10.3, L9).
+ *
+ * The scheduled senders run repeatedly — a reminder sweep every hour, a
+ * materialiser every night — and "has this already gone?" cannot be answered
+ * from the job's own state: a job is `scheduled` both before and after its
+ * reminder. Without this row, a customer gets the same reminder every hour.
+ *
+ * `dedupeKey` is the unique handle a sender computes for one message to one
+ * person about one thing (e.g. `reminder-24h:<jobId>`). Unique, so two
+ * concurrent runs cannot both win.
+ */
+model NotificationLog {
+  id        String   @id @default(cuid())
+  dedupeKey String   @unique
+  trigger   String
+  channel   String // email | sms
+  userId    String?
+  jobId     String?
+  /** Where it went, after the non-production redirect — never the message body. */
+  sentTo    String?
+  /** sent | skipped_no_consent | skipped_not_configured | failed */
+  outcome   String
+  detail    String?
+  createdAt DateTime @default(now())
+
+  @@index([trigger])
+  @@index([jobId])
+  @@index([userId])
+}

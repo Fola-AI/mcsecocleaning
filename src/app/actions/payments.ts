@@ -4,6 +4,7 @@ import { db, hasDatabase } from "@/lib/db";
 import { requireRole } from "@/lib/auth";
 import { recomputeJobPaymentStatus } from "@/lib/payments";
 import { outstandingSummary, prepareOutstandingCheckout } from "@/lib/outstanding";
+import { notify } from "@/lib/notifications/send";
 import { paymentLinkAction, storedSessionId } from "@/lib/payment-link";
 import { cardOnFileEnabled } from "@/lib/collection";
 import { cancellationBlock, cancelOutcome } from "@/lib/cancellation";
@@ -499,10 +500,18 @@ async function sendCompletionEmail(jobId: string, capture: CaptureOutcome): Prom
     payLine = "to see your bookings and pay the balance";
   }
 
-  await sendEmail({
+  // Through the §10.3 pipeline (L9), so the completion message is recorded and
+  // deduped like every other notification. The trigger reflects what actually
+  // happened to the money: a job whose capture failed is a "payment failed"
+  // message to the customer, not a cheerful completion note.
+  await notify({
+    trigger: capture.ok ? "job_completed" : "payment_failed",
+    channel: "email",
+    subjectId: jobId,
+    jobId,
     to: email,
     subject: `Your ${label} is complete`,
-    html: `
+    body: `
       <h2>Your clean is complete</h2>
       ${body}
       <p><a href="${accountUrl}">Sign in to your account</a> ${payLine}.</p>

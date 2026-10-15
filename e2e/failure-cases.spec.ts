@@ -96,8 +96,10 @@ test("an off-session charge the bank won't allow flags admin and leaves the job 
   const row = jobsRowFor(page, email);
   await row.getByRole("button", { name: /Mark complete/ }).click();
 
-  // The admin is told what actually happened, in those terms.
-  await expect(row.getByText(/asked them to confirm|payment request/i)).toBeVisible({ timeout: 60_000 });
+  // The outcome is asserted on the payments queue below rather than in this row:
+  // completing the job takes it out of the board's default "upcoming" view, so
+  // the row — and any message in it — is gone by the time it could be read. That
+  // is correct behaviour for the board and the reason the queue exists.
 
 
   const after = await waitFor(

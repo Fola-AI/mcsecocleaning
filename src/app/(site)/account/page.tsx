@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+
+import { SkipVisitButton } from "@/components/account/SkipVisitButton";
 import { requireCustomer, signOut } from "@/lib/auth";
 import { db, hasDatabase } from "@/lib/db";
 import { formatPence } from "@/lib/money";
@@ -33,6 +35,9 @@ const OUTSTANDING = new Set(["part_paid", "failed", "pending"]);
 export default async function AccountPage() {
   // Ownership gate: `id` is the ONLY key used to scope reads below.
   const { id } = await requireCustomer();
+  // Read once, at the top, rather than per row: a "is this visit still in the
+  // future" test that drifts between rows is its own small bug.
+  const now = new Date();
 
   const [jobs, subscriptions, properties, me] = hasDatabase
     ? await Promise.all([
@@ -117,7 +122,28 @@ export default async function AccountPage() {
                     <span className="capitalize">{j.status}</span> · <span className="capitalize">{j.paymentStatus.replace("_", " ")}</span>
                   </p>
                 </div>
-                <Link href={rebookHref(j)} className="btn btn-outline">Book again</Link>
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* §7.3: a customer who is away one week must be able to say
+                      so without cancelling the plan — the alternative is that
+                      they cancel the plan. */}
+                  {j.subscriptionId &&
+                    j.scheduledStart &&
+                    j.scheduledStart.getTime() > now.getTime() &&
+                    ["booked", "payment_authorised", "scheduled", "on_hold"].includes(j.status) && (
+                      <SkipVisitButton jobId={j.id} />
+                    )}
+                  {/* A skipped visit says so on the row. The button that did it
+                      disappears with the state it changed, so the confirmation
+                      has to live somewhere that survives the refresh — otherwise
+                      the customer taps, everything flickers, and nothing tells
+                      them it worked. */}
+                  {j.subscriptionId && j.status === "cancelled" && (
+                    <span className="text-sm text-ink-soft">
+                      Skipped — we won&apos;t come that day. Your plan carries on.
+                    </span>
+                  )}
+                  <Link href={rebookHref(j)} className="btn btn-outline">Book again</Link>
+                </div>
               </div>
             ))}
           </div>

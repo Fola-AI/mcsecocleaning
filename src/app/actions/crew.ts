@@ -349,7 +349,7 @@ export async function reportIssue(
   const job = await crewJobOrNull(jobId, crewId);
   if (!job) return { ok: false, message: "That job isn't on your list." };
 
-  await db.issueThread.create({
+  const thread = await db.issueThread.create({
     data: {
       jobId,
       type: parsed.data.type,
@@ -361,7 +361,64 @@ export async function reportIssue(
     },
   });
 
+  // §10.3: a complaint reaches an admin by email as well as the dashboard. A
+  // damage claim found on site and not noticed until someone opens the board is
+  // the kind of delay that turns a re-clean into a dispute. Best-effort — the
+  // issue is recorded whatever the email does.
+  await notifyAdminOfIssue(jobId, thread.id, parsed.data.type, parsed.data.message).catch((error) => {
+    console.error("[crew] admin issue alert failed", error);
+  });
+
   return { ok: true, message: "Reported. The office can see it now." };
+}
+
+/**
+ * Tell the customer the crew is on the way (§10.3).
+ *
+ * A crew action rather than an automatic one: only the person in the van knows
+ * when they have actually set off, and a message that fires off a timetable is
+ * wrong exactly when it matters — the morning everything is running late.
+ *
+ * It carries nothing identifying (see the template): the customer knows which
+ * clean this is, and a text that recites their address is one more copy of it
+ * in the world.
+ */
+export async function announceOnTheWay(jobId: string): Promise<{ ok: boolean; message: string }> {
+  const { id: crewId } = await requireCrew();
+  if (!hasDatabase) return { ok: false, message: "No database configured." };
+
+  const job = await db.job.findFirst({
+    where: { id: jobId, assignments: { some: { crewId } } },
+    select: {
+      id: true,
+      customer: { select: { id: true, phone: true, marketingConsent: true } },
+    },
+  });
+  if (!job) return { ok: false, message: "That job isn't on your list." };
+  if (!job.customer?.phone) {
+    return { ok: false, message: "No mobile number for this customer — give them a ring instead." };
+  }
+
+  const { templates } = await import("@/lib/notifications/templates");
+  const { notify } = await import("@/lib/notifications/send");
+  const result = await notify({
+    trigger: "crew_on_the_way",
+    channel: "sms",
+    subjectId: jobId,
+    to: job.customer.phone,
+    body: templates.crewOnTheWaySms(),
+    userId: job.customer.id,
+    jobId,
+    marketingConsent: job.customer.marketingConsent,
+  });
+
+  if (result.outcome === "duplicate") return { ok: true, message: "Already told them." };
+  if (result.outcome === "skipped_not_configured") {
+    // Honest rather than reassuring: texts are not switched on, so the crew
+    // should not assume the customer knows.
+    return { ok: false, message: "Texts aren't switched on yet — ring them if they need to know." };
+  }
+  return { ok: result.outcome === "sent", message: result.outcome === "sent" ? "Customer told." : "Couldn't send it — ring them." };
 }
 
 // ---------- Access codes (§6.9, L6) ----------
@@ -537,4 +594,60 @@ function mediaUploadAvailable(): boolean {
   return Boolean(
     process.env.R2_ACCOUNT_ID && process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY,
   );
+}
+
+/**
+ * Tell an admin an issue has been raised (§10.3 "Complaint raised → Email +
+ * dashboard").
+ *
+ * Separate from the action so a failure to send cannot lose the issue itself:
+ * the thread is already committed before this runs.
+ */
+async function notifyAdminOfIssue(
+  jobId: string,
+  threadId: string,
+  issueType: string,
+  message: string,
+): Promise<void> {
+  const [job, admins] = await Promise.all([
+    db.job.findUnique({
+      where: { id: jobId },
+      select: {
+        scheduledStart: true,
+        customer: { select: { name: true } },
+        serviceType: { select: { name: true } },
+      },
+    }),
+    db.user.findMany({ where: { role: { in: ["owner", "admin"] } }, select: { id: true, email: true } }),
+  ]);
+  if (!job || admins.length === 0) return;
+
+  const { templates } = await import("@/lib/notifications/templates");
+  const { notify } = await import("@/lib/notifications/send");
+  const { localDateString } = await import("@/lib/timezone");
+  const { site } = await import("@/config/site");
+
+  const email = templates.adminComplaintEmail({
+    customerName: job.customer?.name ?? null,
+    serviceName: job.serviceType?.name ?? "clean",
+    when: job.scheduledStart ? localDateString(job.scheduledStart) : "an unscheduled visit",
+    issueType,
+    message,
+    jobUrl: `${site.url}/admin/jobs/${jobId}`,
+  });
+
+  for (const admin of admins) {
+    await notify({
+      trigger: "admin_complaint",
+      channel: "email",
+      // Keyed on the thread, so one issue produces one alert per admin however
+      // many times anything retries.
+      subjectId: `${threadId}:${admin.id}`,
+      to: admin.email,
+      subject: email.subject,
+      body: email.html,
+      userId: admin.id,
+      jobId,
+    });
+  }
 }

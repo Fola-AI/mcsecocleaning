@@ -29,23 +29,47 @@ export default async function AdminPaymentsPage() {
   await requireRole(["owner", "admin", "supervisor"]);
 
   const now = new Date();
-  const jobs = hasDatabase
-    ? await db.job.findMany({
-        where: {
-          status: { not: "cancelled" },
-          payments: { some: { type: "charge", status: { in: ["failed", "pending"] } } },
-        },
-        orderBy: [{ scheduledStart: "asc" }],
-        take: 100,
-        include: {
-          customer: { select: { name: true, email: true } },
-          serviceType: { select: { name: true } },
-          subscription: { select: { createdAt: true } },
-          payments: { where: { type: "charge" }, orderBy: { createdAt: "asc" } },
-          statusEvents: { orderBy: { createdAt: "desc" }, take: 3 },
-        },
-      })
-    : [];
+  /**
+   * Failures are fetched separately from the merely-outstanding, and **first**.
+   *
+   * One query with a `take` would order by date and cut the list before the
+   * ranking below ever ran — so a charge that failed this morning could sit
+   * behind a hundred old pending rows and never appear. An operations queue that
+   * can hide its worst item is worse than no queue, because it looks complete.
+   */
+  const queueInclude = {
+    customer: { select: { name: true, email: true } },
+    serviceType: { select: { name: true } },
+    subscription: { select: { createdAt: true } },
+    payments: { where: { type: "charge" as const }, orderBy: { createdAt: "asc" as const } },
+    statusEvents: { orderBy: { createdAt: "desc" as const }, take: 3 },
+  };
+
+  const [failedJobs, pendingJobs] = hasDatabase
+    ? await Promise.all([
+        db.job.findMany({
+          where: {
+            status: { not: "cancelled" },
+            payments: { some: { type: "charge", status: "failed" } },
+          },
+          orderBy: [{ scheduledStart: "desc" }],
+          take: 100,
+          include: queueInclude,
+        }),
+        db.job.findMany({
+          where: {
+            status: { not: "cancelled" },
+            payments: { some: { type: "charge", status: "pending" } },
+            NOT: { payments: { some: { type: "charge", status: "failed" } } },
+          },
+          orderBy: [{ scheduledStart: "desc" }],
+          take: 100,
+          include: queueInclude,
+        }),
+      ])
+    : [[], []];
+
+  const jobs = [...failedJobs, ...pendingJobs];
 
   // Worst first: a failed charge is money we tried to take and could not; a
   // pending one may simply not be due yet.

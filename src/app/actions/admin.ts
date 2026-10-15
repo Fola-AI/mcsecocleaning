@@ -14,6 +14,7 @@ import { localDateString } from "@/lib/timezone";
 import { checkAssign } from "@/lib/assignment";
 import { availabilityConfig } from "@/config/availability";
 import { ensureChecklist } from "@/lib/checklist-db";
+import { notifyCrewOfJob } from "@/lib/crew-notices";
 import type { JobStatus } from "@prisma/client";
 import { createSubscriptionForBooking } from "@/lib/subscriptions";
 
@@ -503,11 +504,19 @@ export async function assignCrew(
     });
   });
 
+  // §10.3: tell the crew member. Best-effort and after the commit — a text that
+  // fails must not undo an assignment that happened.
+  await notifyCrewOfJob(jobId, crewId, mode === "offer" ? "offer" : "assignment").catch((error) => {
+    console.error("[admin] crew assignment notice failed", error);
+  });
+
   return {
     ok: true,
     message: mode === "offer" ? `Offered to ${who} — awaiting their answer.` : `Assigned to ${who}.`,
   };
 }
+
+
 
 /** Record a crew's answer to an offer (D2 `offer` mode). */
 export async function answerOffer(

@@ -119,3 +119,127 @@ export async function updateMyProperty(propertyId: string, input: PropertyEditIn
   await db.property.update({ where: { id: propertyId }, data });
   return { ok: true, message: "Property updated." };
 }
+
+// ---------- Recurring self-service (§7.3, L9) ----------
+
+/**
+ * Skip a single visit, without touching the plan (§7.3).
+ *
+ * The rule this exists to protect: **skipping or moving one visit never changes
+ * the subscription.** A customer who is away one week should not have to cancel
+ * their cleaning plan to say so, and a system that makes them is a system that
+ * loses the plan. The series carries on; this one visit does not happen.
+ *
+ * Only a future visit can be skipped. A clean that has already happened is a
+ * matter for the payment or an issue, not the schedule.
+ */
+export async function skipMyVisit(jobId: string): Promise<{ ok: boolean; message: string }> {
+  const { id } = await requireCustomer();
+  if (!hasDatabase) return { ok: false, message: "No database configured." };
+
+  const job = await db.job.findFirst({
+    where: { id: jobId, customerId: id },
+    select: { id: true, status: true, scheduledStart: true, subscriptionId: true },
+  });
+  if (!job) return { ok: false, message: "We can't find that visit." };
+  if (!job.subscriptionId) {
+    return {
+      ok: false,
+      message: "That's a one-off booking rather than a plan visit — cancel it from your bookings instead.",
+    };
+  }
+  if (!["booked", "payment_authorised", "scheduled", "on_hold"].includes(job.status)) {
+    return { ok: false, message: "That visit can't be skipped now — please get in touch and we'll sort it." };
+  }
+  if (job.scheduledStart && job.scheduledStart.getTime() < Date.now()) {
+    return { ok: false, message: "That visit has already passed. Get in touch if something went wrong." };
+  }
+
+  await db.$transaction(async (tx) => {
+    await tx.job.update({ where: { id: job.id }, data: { status: "cancelled" } });
+    await tx.jobStatusEvent.create({
+      data: {
+        jobId: job.id,
+        fromStatus: job.status,
+        toStatus: "cancelled",
+        actorId: id,
+        // Said plainly in the trail, because "cancelled" on its own would read
+        // later as a lost customer rather than one week they did not need.
+        note: "Customer skipped this visit. The plan is unchanged and the next visit stands.",
+      },
+    });
+  });
+
+  return {
+    ok: true,
+    message: "Skipped — we won't come that day. Your plan carries on as normal.",
+  };
+}
+
+/**
+ * Move a single visit to another time (§7.3).
+ *
+ * Also leaves the subscription alone, for the same reason. The new time is
+ * checked against real availability rather than accepted as given — a customer
+ * choosing a slot nobody can staff is the problem §7.4 exists to prevent, and it
+ * does not stop being a problem because they chose it themselves.
+ */
+export async function rescheduleMyVisit(
+  jobId: string,
+  newStartISO: string,
+): Promise<{ ok: boolean; message: string }> {
+  const { id } = await requireCustomer();
+  if (!hasDatabase) return { ok: false, message: "No database configured." };
+
+  const when = new Date(newStartISO);
+  if (Number.isNaN(when.getTime())) return { ok: false, message: "That time doesn't look right." };
+  if (when.getTime() < Date.now()) return { ok: false, message: "That time has already passed." };
+
+  const job = await db.job.findFirst({
+    where: { id: jobId, customerId: id },
+    select: {
+      id: true,
+      status: true,
+      scheduledStart: true,
+      estimatedDurationMinutes: true,
+      subscriptionId: true,
+      property: { select: { postcode: true } },
+    },
+  });
+  if (!job) return { ok: false, message: "We can't find that visit." };
+  if (!["booked", "payment_authorised", "scheduled", "on_hold"].includes(job.status)) {
+    return { ok: false, message: "That visit can't be moved now — please get in touch." };
+  }
+
+  const { slotAvailability } = await import("@/lib/slot-availability");
+  const { elapsedSlotMinutes } = await import("@/lib/capacity");
+  const duration = elapsedSlotMinutes(job.estimatedDurationMinutes);
+  const availability = await slotAvailability({
+    durationMinutes: duration,
+    postcode: job.property?.postcode,
+  });
+  const offered = availability.slots.some((slot) => slot.start.getTime() === when.getTime());
+  if (!offered) {
+    return {
+      ok: false,
+      message: "We can't staff that time. Pick one of the times we're offering and we'll move it.",
+    };
+  }
+
+  await db.$transaction(async (tx) => {
+    await tx.job.update({
+      where: { id: job.id },
+      data: { scheduledStart: when, scheduledEnd: new Date(when.getTime() + duration * 60_000) },
+    });
+    await tx.jobStatusEvent.create({
+      data: {
+        jobId: job.id,
+        toStatus: job.status,
+        actorId: id,
+        note: `Customer moved this visit${job.subscriptionId ? " (plan unchanged)" : ""}.`,
+      },
+    });
+  });
+
+  return { ok: true, message: "Moved. Your plan is unchanged." };
+}

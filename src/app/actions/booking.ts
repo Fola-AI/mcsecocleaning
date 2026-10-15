@@ -17,6 +17,7 @@ import { defaultRoster, availabilityConfig } from "@/config/availability";
 import { ROOM_KEYS } from "@/lib/pricing/rate-card";
 import { resolveAndApply } from "@/lib/discounts";
 import { createSubscriptionForBooking } from "@/lib/subscriptions";
+import { notify, recordCarriedBy } from "@/lib/notifications/send";
 import { cardOnFileEnabled, collectionModeFor } from "@/lib/collection";
 import { isRecurringFrequency } from "@/lib/subscription-rule";
 import { fromGross, fromNet, isVatRegistered, type MoneyBreakdown } from "@/lib/money";
@@ -509,10 +510,16 @@ async function sendPreContractEmail({
     ? `<li><strong>Payment split:</strong> ${depositTerms(charge.gross, formatPence).sentence} ${DEPOSIT_REFUND_NOTE} If the balance authorisation isn't completed at booking, your deposit is still held and we'll contact you to finish it.</li>`
     : "";
 
-  await sendEmail({
+  // Sent through the §10.3 pipeline (L9) rather than straight at the sender, so
+  // it is recorded, deduped and visible beside every other notification. One
+  // email discharges two rows of the matrix — see `recordCarriedBy` below.
+  await notify({
+    trigger: "booking_confirmed",
+    channel: "email",
+    subjectId: reference,
     to: data.contact.email,
     subject: `Your ${service} booking — ${reference}`,
-    html: `
+    body: `
       <h2>Thanks for booking with ${site.name}</h2>
       <p>Reference: <strong>${reference}</strong></p>
       <h3>Pre-contract information</h3>
@@ -527,6 +534,16 @@ async function sendPreContractEmail({
       </ul>
       <p style="font-size:12px;color:#555">${site.company.registeredName}, company number ${site.company.companyNumber}, registered office ${formatAddress(site.company.registeredAddress)}. This confirms the information provided before your contract, in a durable medium.</p>
     `,
+  });
+
+  // The pre-contract information (§10.2, §14) is IN that email — a customer who
+  // has just paid wants one message, not two within a second of each other. The
+  // row is recorded so the §10.3 matrix stays answerable.
+  await recordCarriedBy({
+    trigger: "pre_contract",
+    carriedBy: "booking confirmation",
+    subjectId: reference,
+    to: data.contact.email,
   });
 }
 

@@ -41,6 +41,8 @@ export { nudgeIncompleteDeposits } from "./deposit-nudge";
 import { nudgeIncompleteDeposits } from "./deposit-nudge";
 export { sweepVerificationTokens } from "./verification-token-sweep";
 import { sweepVerificationTokens } from "./verification-token-sweep";
+export { sendVisitReminders, sendRecurringVisitNotices, sendReviewRequests, sendLapsingNotices } from "./notifications";
+import { sendVisitReminders, sendRecurringVisitNotices, sendReviewRequests, sendLapsingNotices } from "./notifications";
 
 /** All functions registered with the serve() handler. */
 export const functions = [
@@ -49,4 +51,9 @@ export const functions = [
   materialiseSubscriptions,
   nudgeIncompleteDeposits,
   sweepVerificationTokens,
+  // §10.3 — the scheduled customer notifications (L9).
+  sendVisitReminders,
+  sendRecurringVisitNotices,
+  sendReviewRequests,
+  sendLapsingNotices,
 ];
