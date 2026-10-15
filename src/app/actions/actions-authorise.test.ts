@@ -41,10 +41,25 @@ const PUBLIC_ALLOW_LIST: Record<string, string> = {
   submitLead:
     "the contact / quote-request form, same reason: a lead is created by someone who " +
     "has no account",
+  crewSignIn:
+    "the crew sign-in itself — it cannot require a session to create one. It is " +
+    "protected instead by a hashed PIN, a per-identifier lockout, and a failure " +
+    "message that does not say which half was wrong",
+  crewSignOut:
+    "signing out must work whatever state the session is in, including already " +
+    "expired; requiring a valid session to end one would strand a shared device " +
+    "on the last person's day",
 };
 
-/** The calls that count as an authorisation decision. */
-const AUTH_CALLS = ["requireRole(", "requireCustomer("] as const;
+/**
+ * The calls that count as an authorisation decision.
+ *
+ * Adding to this list is deliberate: a new guard has to be reviewed once, here,
+ * rather than every action that uses it being waved through. `requireCrew` was
+ * added in L5 and scopes to the signed-in crew member, whose own queries then
+ * filter by that id.
+ */
+const AUTH_CALLS = ["requireRole(", "requireCustomer(", "requireCrew("] as const;
 
 interface ActionExport {
   file: string;

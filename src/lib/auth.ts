@@ -70,3 +70,25 @@ export async function requireCustomer(): Promise<{ id: string }> {
   if (!id || role !== "customer") redirect("/account/signin");
   return { id };
 }
+
+/**
+ * The crew gate (§9.2, §3).
+ *
+ * Returns the signed-in crew member's id. Every crew query scopes by it — a crew
+ * sees the jobs assigned to **them**, never the diary, never another crew's day.
+ * Like `requireCustomer`, the id comes from the session and never from the
+ * request: a job id in a URL is not authorisation.
+ *
+ * Supervisors and above are allowed through as well, so an ops person can open
+ * the crew view to help someone on the phone — but they then see only what that
+ * route's own queries return, which is scoped by the id this returns.
+ */
+export async function requireCrew(): Promise<{ id: string; role: Role }> {
+  const session = await auth();
+  const id = session?.user?.id;
+  const role = session?.user?.role;
+  if (!id || !role || !["crew", "supervisor", "admin", "owner"].includes(role)) {
+    redirect("/crew/signin");
+  }
+  return { id, role };
+}

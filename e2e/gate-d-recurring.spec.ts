@@ -120,9 +120,9 @@ test("gate D: a weekly booking creates one subscription, a clean series, and col
   await row.getByRole("button", { name: /Mark complete/ }).click();
 
   const collected = await waitFor(
-    "visit 2 to be charged off-session from the card on file",
+    "visit 2 charged off-session, and its payment status caught up",
     () => db.job.findUnique({ where: { id: visitTwo.id }, include: { payments: true } }),
-    (j) => j?.payments.some((p) => p.status === "captured") ?? false,
+    (j) => Boolean(j?.payments.some((p) => p.status === "captured") && j?.paymentStatus === "captured"),
   );
   expect(collected!.status).toBe("completed");
   expect(collected!.paymentStatus).toBe("captured");

@@ -42,11 +42,20 @@ import { assertDevDatabase } from "../scripts/assert-dev-db";
 import { computeQuote } from "../src/lib/quote";
 import { priceFromRateCard } from "../src/lib/money";
 import { zonedWallTimeToUtc } from "../src/lib/timezone";
+import { hashPin } from "../src/lib/crew-pin";
 
 const db = new PrismaClient();
 
 /** Every row this script creates carries this, so it can find and replace them. */
 export const DEV_SEED_TAG = "[dev-seed]";
+
+/**
+ * The PIN every seeded crew member gets, for signing into the crew app in
+ * development. It is not a secret and is not meant to be: this script refuses to
+ * run when `APP_ENV=production`, and a real PIN is set per person by an admin
+ * (`setCrewPin`), told to them face to face.
+ */
+export const DEV_CREW_PIN = "4729";
 const DEV_EMAIL_DOMAIN = "example.com";
 
 const FIRST_NAMES = [
@@ -160,6 +169,10 @@ async function main(): Promise<void> {
         name,
         role: "crew",
         phone: `07700 9001${index}0`,
+        // A development PIN so the crew app can be signed into. Hashed like any
+        // other, and only ever this value in a dev database — the guard above
+        // refuses to run this script against production at all.
+        passwordHash: hashPin(DEV_CREW_PIN),
         crewProfile: {
           create: {
             payType: "hourly",
@@ -339,9 +352,20 @@ async function main(): Promise<void> {
   console.log("  Every row is tagged and every customer is @example.com. Public routes render none of it.");
 }
 
-main()
-  .catch((error) => {
-    console.error(`\n✗ ${error instanceof Error ? error.message : String(error)}\n`);
-    process.exitCode = 1;
-  })
-  .finally(() => db.$disconnect());
+/**
+ * Only when run as a script.
+ *
+ * Without this guard, *importing* anything from this file — a constant, a type —
+ * executes the entire seed: it deletes and recreates every `@example.com` user
+ * as a side effect of an `import`. An E2E spec that imported `DEV_CREW_PIN` did
+ * exactly that, and deadlocked against its own queries. Every other script in
+ * `scripts/` has the same guard, for the same reason.
+ */
+if (process.argv[1] && /seed-dev\.ts$/.test(process.argv[1])) {
+  main()
+    .catch((error) => {
+      console.error(`\n✗ ${error instanceof Error ? error.message : String(error)}\n`);
+      process.exitCode = 1;
+    })
+    .finally(() => db.$disconnect());
+}

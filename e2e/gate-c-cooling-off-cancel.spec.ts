@@ -43,10 +43,12 @@ test("gate C: cancel inside 14 days refunds the deposit and releases the balance
   await confirmAllIntents(page, job, CARDS.success);
 
   const paid = await waitFor(
-    "the deposit captured and the balance authorised",
+    "the deposit captured, the balance authorised, and the job reading part_paid",
     () => jobForEmail(email),
     (snapshot) =>
-      snapshot?.payments[0].status === "captured" && snapshot?.payments[1].status === "authorised",
+      snapshot?.payments[0].status === "captured" &&
+      snapshot?.payments[1].status === "authorised" &&
+      snapshot?.paymentStatus === "part_paid",
   );
   expect(paid!.paymentStatus).toBe("part_paid");
 

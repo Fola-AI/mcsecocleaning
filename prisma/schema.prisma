@@ -86,6 +86,12 @@ enum IssueType {
   complaint
   damage_claim
   general
+  // Raised by a crew from the job (§9.2): they could not get in, or the job
+  // needs work beyond what was quoted. Both need an admin, and both have money
+  // attached — a lockout fee (§8) or a re-quote — so they are their own types
+  // rather than a "general" issue with a note.
+  access_problem
+  additional_work
 }
 
 enum IssueStatus {
@@ -897,4 +903,28 @@ model CapacitySetting {
   updatedAt DateTime @updatedAt
 
   @@unique([date])
+}
+
+/**
+ * Failed sign-in attempts, for the crew PIN lockout (§9.2, L5).
+ *
+ * A 4-digit PIN is ten thousand guesses. Without a lockout it is not a
+ * credential, it is a formality — so attempts are counted per identifier and the
+ * account locks for a cooling-off period after repeated failures.
+ *
+ * Stored in Postgres rather than a cache because the lockout must survive a
+ * restart (a lockout you can clear by redeploying is not one) and because SETUP
+ * D5 — which rate-limiting backend to use generally — is unanswered. L14 revisits
+ * the general case; this is the specific lockout L5 requires.
+ */
+model AuthAttempt {
+  id          String   @id @default(cuid())
+  /** Lower-cased email, or normalised phone — whatever was typed. */
+  identifier  String   @unique
+  failedCount Int      @default(0)
+  lockedUntil DateTime?
+  lastFailedAt DateTime?
+  updatedAt   DateTime @updatedAt
+
+  @@index([lockedUntil])
 }

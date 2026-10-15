@@ -25,9 +25,9 @@ test("a declined card leaves the booking standing, unpaid, with nothing to captu
   );
 
   const after = await waitFor(
-    "the failed payment to be reconciled",
+    "the failed payment to be reconciled, job included",
     () => jobForEmail(email),
-    (snapshot) => snapshot?.payments[0].status === "failed",
+    (snapshot) => snapshot?.payments[0].status === "failed" && snapshot?.paymentStatus === "failed",
   );
 
   // The booking is intact and unpaid — not cancelled, not deleted.
@@ -49,9 +49,9 @@ test("an expired card is reported as a decline, not as a system failure", async 
   );
 
   const after = await waitFor(
-    "the expired card to be reconciled as a failure",
+    "the expired card to be reconciled as a failure, job included",
     () => jobForEmail(email),
-    (snapshot) => snapshot?.payments[0].status === "failed",
+    (snapshot) => snapshot?.payments[0].status === "failed" && snapshot?.paymentStatus === "failed",
   );
   expect(after!.status).toBe("booked");
   expect(after!.paymentStatus).toBe("failed");
@@ -101,9 +101,12 @@ test("an off-session charge the bank won't allow flags admin and leaves the job 
 
 
   const after = await waitFor(
-    "the charge to be marked failed",
+    "the charge marked failed, with the job completed and its status caught up",
     () => jobForEmail(email),
-    (snapshot) => snapshot?.status === "completed" && snapshot.payments[0].status === "failed",
+    (snapshot) =>
+      snapshot?.status === "completed" &&
+      snapshot.payments[0].status === "failed" &&
+      snapshot.paymentStatus === "failed",
   );
 
   // Completed stands; the money is outstanding, with a trail saying why.
@@ -151,9 +154,9 @@ test("a final price above the authorisation captures the maximum and leaves the 
   await row.getByRole("button", { name: /Mark complete/ }).click();
 
   const after = await waitFor(
-    "the capture and the difference row",
+    "the capture, the difference row, and the job reading part_paid",
     () => jobForEmail(email),
-    (snapshot) => (snapshot?.payments.length ?? 0) === 2,
+    (snapshot) => (snapshot?.payments.length ?? 0) === 2 && snapshot?.paymentStatus === "part_paid",
   );
 
   const captured = after!.payments.find((p) => p.status === "captured")!;

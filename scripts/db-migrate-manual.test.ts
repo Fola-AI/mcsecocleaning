@@ -87,7 +87,11 @@ describe("migrationFiles", () => {
     ]);
   });
 
-  test("exactly the three enum-label migrations run outside a transaction", () => {
+  test("every migration that adds an enum label runs outside a transaction", () => {
+    // Listed by name rather than counted, so adding one is a decision somebody
+    // makes here — `ALTER TYPE … ADD VALUE` inside a transaction that then uses
+    // the value is an error psql reports in a way that reads like a schema
+    // problem rather than a transaction one.
     const outside = files.filter(
       (name) => !needsSingleTransaction(readFileSync(`${MIGRATIONS_DIR}/${name}`, "utf8")),
     );
@@ -95,6 +99,7 @@ describe("migrationFiles", () => {
       "2026-09-20-lead-converted-quote-and-domestic-sales.sql",
       "2026-09-27-payment-status-part-paid.sql",
       "2026-09-30-payment-status-released.sql",
+      "2026-10-15-crew-pin-and-issue-types.sql",
     ]);
   });
 });

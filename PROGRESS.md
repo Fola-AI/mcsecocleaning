@@ -52,11 +52,11 @@ drafted and parked, per the L2 stage text.
 
 | | |
 | --- | --- |
-| **Current stage** | **L4 — ✅ done, 15 Oct 2026.** Capacity is off the placeholder roster and on the database, with §7.5 travel buffers and the §4 patch rule in the engine; both SETUP D2 assignment modes are built and tested. **L5 (crew mobile interface) is next** |
-| **Next action** | *(Claude Code)* start **L5** — PRD §16.3 → L5: crew PIN sign-in on a persistent, shared-device-safe session, today's jobs and job detail, clock in/out with GPS recorded (never blocking), one-tap status updates and issue reporting. *(Fola)* **merge checkpoint 1** remains ready to merge |
-| **Working branch** | `build/autonomous`, pushed — L1 → L4 ahead of `main` (`2f667ff`, untouched) |
-| **Last updated** | 15 Oct 2026 — **L4 complete.** The booking wizard now offers only slots a real crew can staff: roster, time off and diary from the database, 45/30-minute travel buffers, and a crew-day that never spans two patches. Both assignment modes built (an unanswered offer is not cover). Crew roster with DBS/insurance warnings; §7.4 daily cap and override. Unit tests 328 → 367, E2E 21 → 24 |
-| **Needs Fola?** | **Not to proceed with L5.** Checkpoint 1 is ready to merge (R-4…R-13). Four answers wanted when convenient: **Q-14** card-on-file consent wording, **Q-15** manual price on a recurring admin booking, **Q-16** dev email delivery, and **D2** itself — both modes are built, but the production value (`assignmentMode` in `src/config/availability.ts`, currently `assign`) follows from whether crews are employees or self-employed |
+| **Current stage** | **L5 — ✅ done, 15 Oct 2026.** Crews have a phone app: PIN sign-in with a real lockout, today's jobs, job detail, clock in/out with GPS that never blocks, one-tap status and issue reporting — and they can reach nothing else. **L6 (access codes) is next** |
+| **Next action** | *(Claude Code)* start **L6** — PRD §16.3 → L6: the crew reveal surface for alarm and lockbox codes, with the time window, and **refusal logging** (`recordAccessCodeView` writes only on success today, so the audit cannot tell a reveal from a refusal — it needs an `outcome` field). The encryption, the window and `canRevealAccessCode` are already built and tested. *(Fola)* **merge checkpoint 2** falls after L6 |
+| **Working branch** | `build/autonomous`, pushed — L1 → L5 ahead of `main` (`2f667ff`, untouched) |
+| **Last updated** | 15 Oct 2026 — **L5 complete.** Crew PIN sign-in (scrypt, per-identifier lockout that lengthens, same message for both failure kinds); persistent session on Auth.js's own table; sign-out that ends it server-side. Today's jobs, job detail, clock in/out recording GPS when given and its absence when not, status and issues. A crew sees only their own jobs and no money at all — asserted by asking for another crew's job id directly (404). Unit tests 367 → 389, E2E 24 → 27 |
+| **Needs Fola?** | **Not to proceed with L6.** Checkpoint 1 is still unmerged (R-4…R-14). Four answers wanted when convenient: **Q-14** card-on-file consent wording, **Q-15** manual price on a recurring admin booking, **Q-16** dev email delivery, **D2** the production assignment mode. Note L7 (media) needs the three **R2 keys**, which are empty — it will park unless they are filled |
 
 ## Stage tracker
 
@@ -66,8 +66,8 @@ drafted and parked, per the L2 stage text.
 | L2 | Real database and Stripe test-mode gate (+ Phase 2 gaps 1–3, gate D) | ✅ Done — 15 Oct 2026 (evidence below) | ✅ 1 ← **here** |
 | L3 | Admin operations core | ✅ Done — 15 Oct 2026 (evidence below) | |
 | L4 | Crew roster, capacity and availability | ✅ Done — 15 Oct 2026 (evidence below) | |
-| L5 | Crew mobile interface | ☐ Next | |
-| L6 | Access codes | ☐ Not started | ✅ 2 |
+| L5 | Crew mobile interface | ✅ Done — 15 Oct 2026 (evidence below) | |
+| L6 | Access codes | ☐ Next | ✅ 2 |
 | L7 | Media exchange | ☐ Not started | |
 | L8 | Quality checklists | ☐ Not started | |
 | L9 | Notifications and recurring self-service | ☐ Not started | |
@@ -263,6 +263,9 @@ Per SETUP D1 = A these were built, tested and committed; they wait for Fola at *
 - **R-12** · L3 · `src/app/(site)/**`, `src/app/layout.tsx`, `src/components/layout/SiteChrome.tsx` · **Route move, no behaviour change.** Every public page moved into a `(site)` route group so the admin area is not wrapped in the marketing header, footer, sticky CTA and cookie banner. Route group names never appear in URLs, so **no public path changed** — worth a glance precisely because that is a large diff for a change that should be invisible to customers. A gate asserts both sides, and the sitemap, robots and 404 were checked.
 
 - **R-13** · L4 · `prisma/manual-migrations/2026-10-15-crew-roster-and-capacity.sql`, `prisma/schema.prisma` · **New migration (#12).** Three additive changes: `CrewProfile.dbsExpiresAt` / `insuranceExpiresAt` (a "checked" date cannot drive a warning — an admin needs to know when it runs out); `JobAssignment.offeredAt` / `acceptedAt` / `declinedAt` (D2's `offer` mode needs the offer itself on the record, not only its outcome — §14.6); and a `CapacitySetting` table for §7.4's daily cap and override, which must survive a restart. *Data-safety:* every column is nullable or defaulted and the new table is empty, so no existing row changes meaning. Reverse: `DROP COLUMN` / `DROP TABLE`; the only loss is the capacity settings themselves.
+
+- **R-14** · L5 · `prisma/manual-migrations/2026-10-15-crew-pin-and-issue-types.sql`, `prisma/schema.prisma` · **New migration (#13).** An `AuthAttempt` table for the crew PIN lockout, and two new `IssueType` labels (`access_problem`, `additional_work`) for what §9.2 has a crew report from the job. *Data-safety:* a new empty table, and adding an enum label does not remap existing rows. The `ALTER TYPE` statements run **outside** a transaction (no `-1`) — the runner detects that automatically and a test pins which files it applies to. Reverse: `DROP TABLE`; enum labels cannot be dropped in Postgres without recreating the type, which is why adding one is a decision rather than a tidy-up.
+- **R-15** · L5 · `src/lib/crew-pin.ts`, `src/lib/crew-session.ts`, `src/app/actions/crew.ts` · **Auth.** A second way into the application: a PIN. Worth your eyes because it is a weaker credential than a magic link by design, and what makes it acceptable is the lockout (5 failures, lengthening), the hashing (scrypt, per-PIN salt), and the fact that it reaches only a crew member's own jobs and no money at all. One bug worth knowing about was found here by its own test: a corrupt hash decoding to an empty buffer compared **equal** to anything, so a blanked-out `passwordHash` would have authenticated every PIN. Fixed, with the test kept.
 
 ## Decisions made (by Claude Code)
 
@@ -1446,3 +1449,147 @@ $ npm run test:e2e        24 passed (2.6m)                        # 21 → 24 (+
 capacity; no crew day mixes patches; override and cap work"* — all four invariants over
 200 rosters, plus the cap and override as their own test. The existing capacity tests pass
 **unchanged**, which was the stage's other explicit requirement.
+
+---
+
+### L5 — Crew mobile interface
+
+**Started 15 Oct 2026.** Depends on L4 (done). Keys: none new. Stage text: PRD §16.3 →
+L5, with §9.2 (the interface) and §8 (lockout fee).
+
+#### Plan — written before coding
+
+**5.1 Crew PIN sign-in** — ✅ done
+- [ ] PIN **hashed** with scrypt (`node:crypto`, no new dependency), never stored or
+      logged in the clear.
+- [ ] Sign in with email **or** phone plus PIN, on a **persistent** session — §9.2 is
+      explicit that this is a phone, often on mobile data, sometimes shared.
+- [ ] **Rate-limited, with lockout after repeated failures.** A 4-digit PIN is 10,000
+      guesses; without a lockout it is not a credential. Needs a small attempts table
+      (additive migration). *(General rate limiting is L14 and SETUP D5; this is the
+      specific lockout L5 requires, and Postgres-backed so it needs no D5 answer.)*
+- [ ] **Shared-device-safe sign-out**: one tap, ends the session server-side, and the
+      next person gets a sign-in screen rather than the previous crew's day.
+
+**5.2 Today's jobs and job detail** — ✅ done
+- [ ] Today's jobs, in schedule order; job detail with property, access instructions
+      (the L6 reveal), parking, pets, product preferences, customer notes.
+- [ ] "Open in Maps" deep link — no map key is supplied, so an embedded map is out
+      (the stage text allows exactly this).
+
+**5.3 Clock in / out** — ✅ done
+- [ ] Timestamp plus GPS. **GPS denied is recorded, not blocking** — a crew who has
+      refused location permission must still be able to work, and the refusal itself is
+      the honest record.
+- [ ] Drives payroll (L10) and the §5 actual-vs-estimated loop, so `durationMinutes` is
+      summed crew-minutes, not elapsed.
+
+**5.4 One-tap status and issues** — ✅ done
+- [ ] Status updates through the same §9.1 rules as the admin board, so a crew cannot
+      make a transition an admin could not.
+- [ ] Report an issue: **damage, access problem, extra work needed**. The last two are
+      new `IssueType` values (additive `ALTER TYPE … ADD VALUE`).
+- [ ] `no_access` records the attendance; the §8 lockout fee is charged separately, so a
+      mis-tap cannot take money.
+
+**5.5 What a crew must NOT see — ✅ done, server-enforced**
+- [ ] Only their own assigned jobs. Not the diary, not another crew's day.
+- [ ] No payment details, no pay rates (their own or anyone's).
+- [ ] Enforced in the **queries**, not by hiding UI, and tested by asking for another
+      crew's job directly.
+
+**5.6 Acceptance (PRD)** — ✅ met
+- [ ] A Playwright run at **375px**: arrive, clock in, read the job, update status, clock
+      out, complete — and the capture fires.
+- [ ] RBAC tests pass.
+
+#### Work — ✅ stage complete
+
+**5.1 The PIN is a credential, not a formality.** Four digits is ten thousand guesses, so
+the lockout is what makes a PIN defensible: five failures locks the account, and each
+lockout is longer than the last — 5 minutes, then 15, then an hour. The counter resets on
+a **successful** sign-in rather than on time, so attempts spread across a day still add
+up. The failure message is the same whether the identifier is unknown or the PIN is
+wrong; saying which half was right turns one unknown into two easier ones. PINs are
+scrypt-hashed with a per-PIN salt, so the stored hashes do not reveal which accounts share
+a PIN.
+
+Sign-in creates a row in Auth.js's own `Session` table and sets its cookie, so `auth()`
+and `requireRole` work exactly as they do for a magic link — the alternative was a second
+notion of "signed in", which is how an app ends up with one gate that is checked and one
+that is forgotten. Sign-out **deletes the row** before clearing the cookie: on a shared
+phone, clearing a cookie while the token stays live is not signing out.
+
+**A real bug the tests caught.** `verifyPin` compared with `timingSafeEqual` — correct —
+but a corrupt hash can decode to an **empty** buffer, and `timingSafeEqual(empty, empty)`
+is `true`. A blanked-out `passwordHash` column would have authenticated every PIN,
+including an empty one. Lengths are now checked before the comparison, with the test that
+found it kept.
+
+**5.3 GPS never blocks.** The phone is asked for a location with a five-second timeout; a
+refusal, an error or a timeout all clock the crew member in **without** coordinates. The
+absence is the honest record — "clocked in, location not available" is true, where a
+fabricated point would not be. `durationMinutes` is summed crew-minutes across everyone on
+the job, not elapsed on-site time: §5's actual-vs-estimated loop compares against a
+crew-minutes estimate, so recording elapsed would make every two-person job read about 50%
+under and quietly corrupt the feedback loop that corrects pricing.
+
+**5.5 What a crew cannot reach**, enforced in the queries:
+
+- **Only their own assigned jobs.** One helper (`crewJobOrNull`) scopes every action by
+  the session's crew id, and the detail page scopes its own query the same way — so
+  another crew's job id returns a **404**, not a hidden link. The gate asks for one
+  directly, because "the link isn't rendered" is not access control.
+- **No money anywhere on the crew app.** No price on the list, the detail or the
+  controls — the gate asserts the £ sign appears zero times. A crew member does not need
+  the figure, and showing it on a doorstep starts a conversation about money with someone
+  who cannot settle it.
+- **`no_access` records an attendance; it does not charge.** The §8 lockout fee is a
+  separate, deliberate act by the office, so a mis-tap in the rain cannot take a
+  customer's money.
+- A crew can move a job along its own course — in progress, finished, no access, on hold —
+  and nothing else. Cancelling and closing are office decisions with money attached, and
+  the same §9.1 rules apply, so a crew cannot make a transition an admin could not.
+
+**5.6 Acceptance — the 375px run.**
+
+```
+$ npm run test:e2e -- crew-mobile
+✓ a crew member signs in, works a job and signs out, on a phone
+✓ a crew member cannot open another crew's job          # 404 on a direct id
+✓ the PIN locks out after repeated wrong guesses        # right PIN refused while locked
+```
+
+The first walks the whole day: sign in → today's list → job detail → clock in (with
+location denied) → clock out → finished → sign out, asserting the rows at each step —
+`TimeEntry` with no coordinates, `actualDurationMinutes` summed, the status event carrying
+**the crew member** as actor, and the next visit to `/crew` showing a sign-in screen rather
+than the last person's day. It also asserts the page does not scroll sideways at 375px: a
+horizontal scrollbar on a phone means a thumb cannot reach half the screen.
+
+**Two defects the gates found, both fixed in the app rather than the test:**
+
+1. **The sign-in form lost text typed before hydration.** The fields were controlled React
+   state, so anything typed in the moment before hydration was discarded when React took
+   over. §9.2's context is "a phone, often on mobile data" — exactly where that moment is
+   longest. The form is uncontrolled now and reads its values on submit.
+2. **Importing a constant from `prisma/seed-dev.ts` ran the entire seed**, deleting and
+   recreating every `@example.com` user as a side effect of an `import` — it deadlocked
+   against the test's own queries. The seed now only runs when invoked as a script, like
+   every other script in the repo.
+
+**And a flaky-test fix that was the test's fault, not the code's.** Several gates asserted
+`Job.paymentStatus` the instant a `Payment` row flipped. The inline capture and the webhook
+for the same intent both recompute that derived status, so there is a real moment where
+the row is captured and the job has not caught up. Nine assertions now wait for the state
+they then assert. Two consecutive full runs are clean.
+
+#### Evidence — the stage gate
+
+```
+$ npx tsc --noEmit        (clean)        $ npx eslint .          (clean)
+$ npm test                ℹ tests 389   ℹ pass 389   ℹ fail 0     # 367 → 389 (+22)
+$ npm run build           ✓ Compiled successfully
+$ npm run db:drift        -- This is an empty migration.  ✓ no drift
+$ npm run test:e2e        27 passed (2.9m)                        # 24 → 27 (+3)
+```

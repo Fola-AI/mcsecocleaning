@@ -37,9 +37,15 @@ test("gate B: authorise the full amount at booking, capture it on completion", a
   await confirmAllIntents(page, job, CARDS.success);
 
   const authorised = await waitFor(
-    "the charge to be authorised by the webhook",
+    "the charge to be authorised and the job's payment status to catch up",
     () => jobForEmail(email),
-    (job) => Boolean(job && job.payments.length === 1 && job.payments[0].status === "authorised"),
+    (job) =>
+      Boolean(
+        job &&
+          job.payments.length === 1 &&
+          job.payments[0].status === "authorised" &&
+          job.paymentStatus === "authorised",
+      ),
   );
   expect(authorised!.payments).toHaveLength(1);
   expect(authorised!.payments[0].gross).toBe(authorised!.gross);
@@ -57,10 +63,13 @@ test("gate B: authorise the full amount at booking, capture it on completion", a
   await expect(row).toBeVisible();
   await row.getByRole("button", { name: /Mark complete/ }).click();
 
+  // The derived status is waited for, not assumed: the inline capture and the
+  // webhook for the same intent both recompute it, so the row can be captured a
+  // beat before the job says so.
   const captured = await waitFor(
-    "the charge to be captured",
+    "the charge captured and the job's payment status caught up",
     () => jobForEmail(email),
-    (job) => Boolean(job && job.payments[0]?.status === "captured"),
+    (job) => Boolean(job && job.payments[0]?.status === "captured" && job.paymentStatus === "captured"),
   );
   expect(captured!.status).toBe("completed");
   expect(captured!.paymentStatus).toBe("captured");

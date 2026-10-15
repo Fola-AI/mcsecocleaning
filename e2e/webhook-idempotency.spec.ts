@@ -87,9 +87,9 @@ test("a paid re-charge session settles exactly its own pending rows, once", asyn
   expect((await deliver(event)).status).toBe(200);
 
   const settled = await waitFor(
-    "the re-charged row to settle",
+    "the re-charged row to settle, and the job with it",
     () => jobForEmail(email),
-    (snapshot) => snapshot?.payments[0].status === "captured",
+    (snapshot) => snapshot?.payments[0].status === "captured" && snapshot?.paymentStatus === "captured",
   );
   expect(settled!.paymentStatus).toBe("captured");
   expect(settled!.payments[0].stripePaymentIntentId).toBe(

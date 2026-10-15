@@ -102,10 +102,14 @@ test("gate A: deposit captured + balance authorised on one card through 3DS, the
   await openJobsBoard(page, context, baseURL!);
   await jobsRowFor(page, email).getByRole("button", { name: /Mark complete/ }).click();
 
+  // Wait for the DERIVED status too, not just the row. The inline capture and
+  // the webhook for the same intent both recompute Job.paymentStatus, so there
+  // is a moment where the balance row is captured and the job has not caught up.
+  // Asserting on the row alone is a race the gate loses at random.
   const settled = await waitFor(
-    "the balance to be captured on completion",
+    "the balance captured and the job's payment status caught up",
     () => jobForEmail(email),
-    (snapshot) => snapshot?.payments[1].status === "captured",
+    (snapshot) => snapshot?.payments[1].status === "captured" && snapshot?.paymentStatus === "captured",
   );
   expect(settled!.status).toBe("completed");
   expect(settled!.paymentStatus).toBe("captured");
