@@ -52,11 +52,11 @@ drafted and parked, per the L2 stage text.
 
 | | |
 | --- | --- |
-| **Current stage** | **L11 — ✅ done, 15 Oct 2026**, except three items parked on prerequisites that were **checked rather than assumed**: Bacs (the Stripe account is not configured for it), the Cal.com survey link, and invoice PDF storage (R2). A commercial enquiry now reaches an active recurring contract and an invoice that reconciles. **L12 (reviews, growth and content gaps) is next** |
-| **Next action** | *(Claude Code)* start **L12** — PRD §16.3 → L12: the review flow under DMCC 2024 (no gating), abandoned-quote recovery, the location-page publish gate, and the schema fields reviews need. `GOOGLE_REVIEW_URL` is empty, so the Google link item parks and a `TODO(business-input)` marker stands in its place. *(Fola)* **three merge checkpoints are ready** |
-| **Working branch** | `build/autonomous`, pushed — L1 → L6, L8 → L11 ahead of `main` (`2f667ff`, untouched); L7 parked |
-| **Last updated** | 15 Oct 2026 — **L11 complete** bar three parked items. Proposal acceptance reuses the domestic subscription code rather than reimplementing recurring work; invoice numbers come from the highest issued (never a count), gaps are surfaced, state is derived from dates, and the VAT number appears only when we are registered. Unit tests 491 → 510, E2E 40 → 42 |
-| **Needs Fola?** | **Not to proceed with L12.** Unblocking work, in order: **Q-16** (no dev email is delivered), **D3** (rate-card editor), **Bacs** in Stripe test mode, the **R2** keys + **D4** (unparks L7 and invoice PDFs), the **Twilio** keys, `NEXT_PUBLIC_CALCOM_URL`. Three checkpoints ready. Still open: **Q-14**, **Q-15**, **Q-17**, **D2** |
+| **Current stage** | **L12 — ✅ done, 15 Oct 2026.** Reviews are DMCC-compliant by construction (the ask cannot see a rating; an undisclosed incentive is never displayed), quote recovery picks and records a lawful basis per send, and account credit applies automatically at checkout. **L13 (issue resolution and data rights) is next, and needs no keys** |
+| **Next action** | *(Claude Code)* start **L13** — PRD §16.3 → L13: the issue thread lifecycle, the re-clean guarantee, and the data-rights work (access, erasure as anonymise/soft-delete, retention). **→ Merge checkpoint 4** after L13. *(Fola)* three checkpoints ready |
+| **Working branch** | `build/autonomous`, pushed — L1 → L6, L8 → L12 ahead of `main` (`2f667ff`, untouched); L7 parked |
+| **Last updated** | 15 Oct 2026 — **L12 complete.** `reviewAction` takes no rating by design and a test keeps it that way; an incentivised review with no disclosure is refused outright rather than shown unlabelled; quote recovery sends only on consent or soft opt-in and records the basis; credit applies itself, soonest-expiring first, never exceeding the bill. Unit tests 510 → 531, E2E 42 → 45 |
+| **Needs Fola?** | **Not to proceed with L13.** Unblocking work unchanged, in order: **Q-16** (dev email), **D3**, **Bacs**, **R2 keys + D4**, **Twilio keys**, `NEXT_PUBLIC_CALCOM_URL`, `GOOGLE_REVIEW_URL`. Still open: **Q-14**, **Q-15**, **Q-17**, **D2** |
 
 ## Stage tracker
 
@@ -73,8 +73,8 @@ drafted and parked, per the L2 stage text.
 | L9 | Notifications and recurring self-service | ✅ Done — 15 Oct 2026 (SMS delivery parked: Twilio keys) | |
 | L10 | Payroll and owner rate-card editor | ✅ Payroll done — 15 Oct 2026; editor ⛔ parked on D3 | ✅ 3 ← **here** |
 | L11 | Commercial RFQ, invoicing and Bacs | ✅ Done — 15 Oct 2026 (Bacs, Cal.com link and PDF storage parked) | |
-| L12 | Reviews, growth and content gaps | ☐ Next | |
-| L13 | Issue resolution and data rights | ☐ Not started | ✅ 4 |
+| L12 | Reviews, growth and content gaps | ✅ Done — 15 Oct 2026 (Google review link parked) | |
+| L13 | Issue resolution and data rights | ☐ Next | ✅ 4 |
 | L14 | Launch hardening | ☐ Not started | |
 | L15 | Release candidate and LAUNCH.md | ☐ Not started | ✅ 5 |
 
@@ -279,6 +279,9 @@ Per SETUP D1 = A these were built, tested and committed; they wait for Fola at *
 
 - **R-21** · L10 · `prisma/manual-migrations/2026-10-15-crew-holiday-flag.sql`, `prisma/schema.prisma` · **New migration (#17).** `CrewUnavailability.isHoliday`. §9.8 asks for holiday accrual tracking, and days *taken* have to be recorded — a free-text `reason` cannot be counted, since "hol", "annual leave" and "away" are one thing to a person and three to a query. *Data-safety:* a boolean defaulting to false, so every existing row keeps its meaning. Reverse: `DROP COLUMN`. Note it records a fact and decides no entitlement — that is **Q-17**.
 - **R-22** · L10 · `src/lib/payroll.ts`, `src/lib/payroll-db.ts`, `src/app/admin/payroll` · **Money owed to people.** Worth reading for the three judgements rather than the code: hourly pays for attended-but-not-completed work, per-job does not, and percentage counts a job once however many crew were on it. Rounding is half away from zero. Access is owner/admin only, because pay rates are one of the few things one member of staff must not read about another.
+
+- **R-23** · L12 · `prisma/manual-migrations/2026-10-15-review-provenance-and-recovery.sql`, `prisma/schema.prisma` · **New migration (#18).** `Review.wasIncentivised` / `incentiveDisclosed`, `Job.isPromotional`, `Quote.abandonedAt` / `recoveryEmailSentAt` (the §15 gaps). Two review fields rather than one because there are three real states, and the middle one — incentivised but **not** disclosed, which must never be displayed — is the one a single boolean cannot express. *Data-safety:* all five nullable or defaulted false, so every existing row keeps its meaning. Reverse: `DROP COLUMN`. Note the drift check caught two of these missing from `schema.prisma` after a botched edit, which is what it is for.
+- **R-24** · L12 · `src/lib/reviews.ts`, `src/lib/credit.ts`, `src/app/actions/booking.ts`, `src/lib/inngest/growth.ts` · **Compliance and money.** Two things worth your eyes: the DMCC decisions (the ask cannot see a rating, by construction; an undisclosed incentive is refused rather than shown unlabelled), and credit now changing what a customer is charged at checkout — applied automatically, soonest-expiring first, never exceeding the bill, drawn down only after the booking is saved.
 
 ## Decisions made (by Claude Code)
 
@@ -2346,3 +2349,126 @@ $ npm test                ℹ tests 510   ℹ pass 509   ℹ fail 0   ℹ skippe
 $ npm run build           ✓ Compiled successfully
 $ npm run test:e2e        42 passed (4.3m)                        # 40 → 42 (+2)
 ```
+
+---
+
+### L12 — Reviews, growth and content gaps
+
+**Started 15 Oct 2026.** Depends on L9 (done). **One item parks:** `GOOGLE_REVIEW_URL` is
+empty, so the Google deep link stands in as a `TODO(business-input)` marker and the review
+request asks the customer to reply instead — which the L9 template already does. Stage
+text: PRD §16.3 → L12, §10.1, §10.2, §15.
+
+#### Plan — written before coding
+
+**12.1 The schema gaps §15 names** — ✅ done (migration #18)
+- [ ] `Review.wasIncentivised`, `Review.incentiveDisclosed`, `Job.isPromotional`,
+      `Quote.abandonedAt`, `Quote.recoveryEmailSentAt`.
+- [ ] These are **provenance**, not decoration: under the DMCC 2024 an incentivised review
+      must say so, and "was this job free or discounted in exchange for a review?" has to
+      be answerable from the record rather than from memory.
+
+**12.2 The review engine** — ✅ done
+- [ ] Request at 24h (built in L9), **nudge at day 4, then stop**.
+- [ ] **No gate.** Everyone who consented is asked, whatever we expect them to say —
+      review gating is unlawful under the DMCC 2024 and the code must make it
+      *structurally* impossible rather than merely not do it today.
+- [ ] A private feedback route **in addition**, never instead: offering "tell us privately"
+      as an alternative to a public review is gating with better manners.
+- [ ] Trustpilot display only from 20 reviews; the on-site strip already needs ≥10.
+
+**12.3 Abandoned-quote recovery** — ✅ done
+- [ ] 2h, then 48h, then stop — and **the PECR basis is recorded per send**. If a send has
+      no lawful basis it does not go. A recovery email to someone who never consented and
+      is not an existing customer is a breach, however gentle.
+
+**12.4 Referrals and credit** — ✅ done
+- [ ] Referral credit applies **automatically at checkout**, which is the acceptance
+      criterion — a credit the customer has to remember to claim is a credit that creates
+      a complaint.
+
+**12.5 Content** — ✅ nothing published that states an unsupplied fact
+- [ ] Any new articles are **unpublished drafts** for Fola; location pages stay behind
+      `canPublishLocationPage`; nothing published states a business fact Fola has not
+      supplied.
+
+**12.6 Acceptance (PRD)** — ✅ met
+- [ ] The request fires at 24h and the nudge is **suppressed once a review exists**.
+- [ ] Referral credit applies automatically at checkout.
+- [ ] **No location page can publish below the gate.**
+
+#### Work — ✅ stage complete
+
+**12.2 The DMCC rules are structural, not careful.** The Act made two ordinary marketing
+habits unlawful, and both are easy to reintroduce by accident:
+
+- **Review gating.** `reviewAction` — the function that decides who gets asked — takes no
+  rating, no sentiment, no complaint history. There is nothing to filter on even if
+  someone wanted to, and a test asserts the input type stays that way: *if someone adds
+  `rating` to `ReviewCandidate`, that test is where the conversation happens.*
+- **Undisclosed incentives.** `canDisplay` refuses an incentivised review whose incentive
+  is not disclosed — **not** "displays it without the label". The offence is publishing
+  it, and a missing label is not something to fix later while the review is live. Two
+  fields rather than one, because there are three real states and one boolean cannot
+  express the middle: incentivised-and-disclosed, incentivised-and-**not**, and neither.
+
+One nudge at day four, then silence. A third message is not persuasion.
+
+**12.3 The lawful basis is picked per send, and recorded.** A quote is given by someone
+who typed their email into a pricing form; that is not consent to marketing. So recovery
+goes only where there is **consent** or an **existing customer relationship** (soft
+opt-in, PECR reg. 22(3)), the basis is named in the message's own footer, and where
+neither holds **nothing is sent** — a row is written saying why, and the quote is marked
+handled so it is not reconsidered every two hours.
+
+**12.4 Credit applies automatically**, which is the acceptance criterion and a specific
+failure mode: a credit the customer has to claim is a credit that becomes a complaint —
+they were told they had £15, they paid full price, somebody refunds it by hand. Credit
+never exceeds the bill (it is not cash; a negative charge is a refund nobody authorised),
+the **soonest-expiring** credit is spent first (otherwise a customer loses the one that
+expires while the other is used), and the draw-down happens **after** the job is persisted
+so credit is never consumed by a booking that failed to save. A credit lookup that throws
+never blocks a booking: paying full price with the credit intact is recoverable, a lost
+booking is not.
+
+#### Evidence — acceptance (PRD §16.3 → L12)
+
+```
+$ npx tsx --test src/lib/reviews.test.ts src/lib/credit.test.ts
+ℹ tests 21   ℹ pass 21   ℹ fail 0
+
+$ npm run test:e2e -- growth
+✓ account credit comes off the price at checkout, without being claimed
+✓ credit never exceeds the bill
+✓ no location page publishes below the content gate
+```
+
+- *"The request fires at 24h and the nudge is suppressed once a review exists"* — both
+  asserted directly, along with the stop after one nudge.
+- *"Referral credit applies automatically at checkout"* — the gate books through the real
+  wizard and asserts the job's price is the quoted price **less the credit**, that the
+  card is asked for exactly that, and that the trail says so (its first version asserted a
+  tautology; the fixed one compares against the stored quote).
+- *"No location page can publish below the gate"* — every area × service combination is
+  checked, and any that fails the gate must **404**.
+
+#### One item parked
+
+`GOOGLE_REVIEW_URL` is empty, so the review request asks the customer to reply by email
+instead of deep-linking to Google. The marker stands where the link will go; nothing
+pretends to have a Google Business Profile that is not yet verified.
+
+#### Evidence — the stage gate
+
+```
+$ npx tsc --noEmit        (clean)        $ npx eslint .          (clean)
+$ npm test                ℹ tests 531   ℹ pass 530   ℹ fail 0   ℹ skipped 1   # 510 → 531 (+21)
+$ npm run build           ✓ Compiled successfully
+$ npm run db:drift        -- This is an empty migration.  ✓ no drift
+$ npm run test:e2e        45 passed (3.9m)                        # 42 → 45 (+3)
+```
+
+**The drift check earned its place again**: migration #18 added two `Quote` columns that a
+botched edit had left out of `schema.prisma`, and `npm run db:drift` printed the exact
+`ALTER TABLE` that disagreed. That is the check working as designed, on the day it
+mattered rather than at the next deploy.

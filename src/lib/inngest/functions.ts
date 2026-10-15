@@ -43,6 +43,8 @@ export { sweepVerificationTokens } from "./verification-token-sweep";
 import { sweepVerificationTokens } from "./verification-token-sweep";
 export { sendVisitReminders, sendRecurringVisitNotices, sendReviewRequests, sendLapsingNotices } from "./notifications";
 import { sendVisitReminders, sendRecurringVisitNotices, sendReviewRequests, sendLapsingNotices } from "./notifications";
+export { sendReviewNudges, recoverAbandonedQuotes } from "./growth";
+import { sendReviewNudges, recoverAbandonedQuotes } from "./growth";
 
 /** All functions registered with the serve() handler. */
 export const functions = [
@@ -56,4 +58,7 @@ export const functions = [
   sendRecurringVisitNotices,
   sendReviewRequests,
   sendLapsingNotices,
+  // §10.1 / §10.2 — the growth sweeps (L12).
+  sendReviewNudges,
+  recoverAbandonedQuotes,
 ];

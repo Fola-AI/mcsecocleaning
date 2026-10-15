@@ -173,7 +173,35 @@ export async function createBooking(input: BookingInput): Promise<BookingResult>
       discountCode = outcome.code;
     }
   }
-  const chargeGross = quote.chargeNow.gross - discountAmount;
+  let chargeGross = quote.chargeNow.gross - discountAmount;
+
+  // Referral / account credit (§10.2), applied **automatically**. The acceptance
+  // criterion is that it comes off at checkout without being claimed: a credit
+  // the customer has to remember is a credit that becomes a complaint — they
+  // were told they had £15, they paid full price, and somebody refunds it by
+  // hand. Credit never exceeds the bill; the surplus stays for next time.
+  let creditApplied = 0;
+  let creditDraws: { creditId: string; amount: number }[] = [];
+  if (hasDatabase) {
+    try {
+      const existing = await db.user.findUnique({
+        where: { email: data.contact.email },
+        select: { accountCredits: { select: { id: true, amount: true, usedAmount: true, expiresAt: true } } },
+      });
+      if (existing?.accountCredits?.length) {
+        const { applyCredit } = await import("@/lib/credit");
+        const application = applyCredit(existing.accountCredits, chargeGross);
+        creditApplied = application.applied;
+        creditDraws = application.draws;
+        chargeGross = application.remainingToPay;
+      }
+    } catch (e) {
+      // Credit must never block a booking. Worst case the customer pays full
+      // price and still has the credit, which is recoverable; a failed booking
+      // is not.
+      console.error("[booking] credit lookup failed; charging full price", e);
+    }
+  }
   const charge: MoneyBreakdown = isVatRegistered() ? fromGross(chargeGross) : fromNet(chargeGross);
 
   // CCR consent record (§10.2).
@@ -191,6 +219,28 @@ export async function createBooking(input: BookingInput): Promise<BookingResult>
       ({ jobId, userId } = await persistBooking({ data, quote, ccr, reference, charge, discountAmount, discountCode }));
     } catch (e) {
       console.error("[booking] persistence failed; continuing with notifications", e);
+    }
+  }
+
+  // Draw the credit down now the booking is persisted. After the job, so credit
+  // is never consumed by a booking that failed to save.
+  if (jobId && creditDraws.length > 0) {
+    try {
+      for (const draw of creditDraws) {
+        await db.accountCredit.update({
+          where: { id: draw.creditId },
+          data: { usedAmount: { increment: draw.amount } },
+        });
+      }
+      await db.jobStatusEvent.create({
+        data: {
+          jobId,
+          toStatus: "booked",
+          note: `${formatPence(creditApplied)} of account credit applied automatically.`,
+        },
+      });
+    } catch (e) {
+      console.error("[booking] credit draw-down failed", e);
     }
   }
 

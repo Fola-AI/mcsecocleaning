@@ -319,6 +319,11 @@ model Quote {
   gross                    Int
   estimatedDurationMinutes Int
   expiresAt                DateTime
+  // Abandoned-quote recovery (§10.2). `abandonedAt` is set when a quote has sat
+  // unconverted long enough to chase; `recoveryEmailSentAt` stops it being
+  // chased twice. Nullable, because most quotes are neither.
+  abandonedAt              DateTime?
+  recoveryEmailSentAt      DateTime?
   convertedJobId           String?
   createdAt                DateTime    @default(now())
 
@@ -381,6 +386,10 @@ model Job {
   discountCode             String?
   discountAmount           Int           @default(0)
   isRecleanForJobId        String? // links a zero-price re-clean to the original (§6.11)
+  // Was this visit free or discounted as a promotion (§10.1)? A review of a
+  // promotional job is an incentivised review whether or not anyone intended it
+  // that way, so the flag lives on the job and the review inherits it.
+  isPromotional            Boolean  @default(false)
   // CCR 14-day consent: { givenAt, ip, wordingVersion } (§10.2)
   ccrConsent               Json?
   // Payment status is INDEPENDENT of the job's existence (§6.2)
@@ -780,6 +789,13 @@ model Review {
   requestedAt   DateTime?
   submittedAt   DateTime?
   displayOnSite Boolean        @default(false)
+  // Provenance (§10.1, DMCC 2024). An incentivised review MUST say so where it
+  // is shown, and "was anything given for this?" has to be answerable from the
+  // record rather than from somebody's memory. Two fields, not one: a review can
+  // be incentivised and the incentive properly disclosed, incentivised and NOT
+  // disclosed (which must never be displayed), or neither.
+  wasIncentivised    Boolean   @default(false)
+  incentiveDisclosed Boolean   @default(false)
 
   @@index([serviceAreaId])
 }
