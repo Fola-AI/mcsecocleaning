@@ -2,7 +2,7 @@
 
 import { db, hasDatabase } from "@/lib/db";
 import { requireCustomer } from "@/lib/auth";
-import { prepareOutstandingCheckoutForVerifiedJob } from "@/app/actions/payments";
+import { prepareOutstandingCheckout } from "@/lib/outstanding";
 import { encryptedCodeFieldValue } from "@/lib/account-codes";
 
 /**
@@ -23,7 +23,9 @@ export async function payMyOutstanding(jobId: string): Promise<{ ok: boolean; me
   // A cancelled booking is never payable (the shared checkout core refuses it too).
   if (owned.status === "cancelled") return { ok: false, message: "This booking was cancelled — there's nothing to pay." };
 
-  const res = await prepareOutstandingCheckoutForVerifiedJob(jobId);
+  // Ownership is established above; the shared core is server-only and is not a
+  // server action, so this is the only way a customer can reach it (gap 3).
+  const res = await prepareOutstandingCheckout(jobId);
   if (!res.ok || !res.url) return { ok: false, message: res.message };
   return { ok: true, message: res.message, url: res.url };
 }
