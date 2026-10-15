@@ -2,65 +2,68 @@
 
 > **For Fola:** this is the one file to check. The top section shows where things stand and whether anything needs you. **For Claude Code:** this is the only status file you write. Update it after every completed item.
 
-## ⛔ STOPPED — 15 Oct 2026 · `.env.local` exists but 7 of its 9 L2 keys are empty
+## ✅ Stop cleared — 15 Oct 2026 · all nine L2 keys present, D7 answered
 
-`.env.local` was created on 15 Oct 2026 from the `SETUP.md` §4 template, and the
-stale `.env` was removed. **The stop stands, for a narrower reason:** the template
-ships every externally-issued credential as an empty string, and only the three
-values that can be generated locally were filled in. L2 still cannot run.
+The 15 Oct stop (`.env.local` present but 7 of its 9 L2 keys empty) is **cleared**.
+Fola filled the six Neon/Stripe/Resend values and `DEV_EMAIL_REDIRECT`, and answered
+**SETUP D7 = A** in `f554149`. Checked this session, names and shapes only — no key
+value was read, printed or logged:
 
-| L2 key | State | How to fill it |
-| --- | --- | --- |
-| `AUTH_SECRET` | ✅ generated (44 chars) | done — `openssl rand -base64 32` |
-| `ACCESS_CODE_ENC_KEY` | ✅ generated (44 chars) | done — dev key only, never the production one |
-| `DATABASE_URL` | ❌ **empty** | Neon → `dev` branch → Connect → **pooled** string (host contains `-pooler`), append `&connect_timeout=15` · §3.1 |
-| `DIRECT_URL` | ❌ **empty** | same branch, pooling **off**, same suffix · §3.1 |
-| `DEV_DB_HOST` | ❌ **empty** | the `ep-…` host from `DIRECT_URL`, between `@` and `/`. This is the value that stops the agent reaching any other database · §3.1 |
-| `STRIPE_SECRET_KEY` | ❌ **empty** | Stripe **test mode** → Developers → API keys → `sk_test_…` · §3.3 |
-| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | ❌ **empty** | same screen → `pk_test_…` · §3.3 |
-| `RESEND_API_KEY` | ❌ **empty** | the existing Resend key · §3.4 |
-| `DEV_EMAIL_REDIRECT` | ❌ **empty** | Fola's own inbox — every non-production email is sent here instead of to the customer · §3.4 |
+| L2 key | State |
+| --- | --- |
+| `DATABASE_URL` | ✅ set — Neon pooled host (`…-pooler.c-2.eu-west-2.aws.neon.tech`) |
+| `DIRECT_URL` | ✅ set — same branch, direct host |
+| `DEV_DB_HOST` | ✅ set — equals the `DIRECT_URL` host exactly, so the L1 guard can prove its target |
+| `STRIPE_SECRET_KEY` | ✅ set — prefix `sk_test_` (test mode; a `sk_live_` prefix would be a hard stop) |
+| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | ✅ set — prefix `pk_test_` |
+| `RESEND_API_KEY` | ✅ set — prefix `re_` |
+| `DEV_EMAIL_REDIRECT` | ✅ set — a personal inbox; every non-production email goes here |
+| `AUTH_SECRET` | ✅ generated (44 chars) |
+| `ACCESS_CODE_ENC_KEY` | ✅ generated (44 chars) |
 
-`MEDIA_LINK_SECRET` was also generated (L7), and `R2_BUCKET`, `TWILIO_SENDER_ID`,
-`APP_ENV`, `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_ALLOW_INDEXING`, `VAT_REGISTERED`,
-`EMAIL_FROM` and `INNGEST_DEV` carry their documented dev defaults. Everything for
-L7, L9, L11, L12 and L14 is still empty, which is expected — those stages are far
-off and `SETUP.md` §3.7–§3.10 covers them.
-
-**The guard behaves correctly in this state** — it refuses rather than guessing:
+**The guard now confirms rather than refuses**, which is the first evidence that the
+environment is real:
 
 ```
 $ npx tsx scripts/assert-dev-db.ts
-✗ Refused — not the dev database.
-  DEV_DB_HOST is not set, so this command cannot be proven to target the dev
-  database. Set it to the Neon dev branch's DIRECT host (SETUP.md §3.1, step 3).
-  Refusing by default.
-exit: 1
+✓ dev database confirmed (ep-red-scene-zamnwn4a.c-2.eu-west-2.aws.neon.tech) — proceeding.
+exit: 0
 ```
 
-**To clear this stop:** paste the six Neon/Stripe/Resend values and the redirect
-inbox into the existing `.env.local`. Nothing needs creating or deleting now.
+The `dev` branch is **empty** (`0` tables in `public`), so the L2 baseline-then-migrate
+sequence runs on a clean database with nothing to lose:
 
-**Also still blank: SETUP D7** (Q-10), along with D3–D6. D7 is read, not inferred —
-all three boxes are unticked. So when L2 does run it builds gaps 1 and 3 in full
-and **parks gap 2** (collecting payment once a card hold lapses) as Q-10.
+```
+$ psql "$DIRECT_URL" -At -c "select count(*) from information_schema.tables where table_schema='public';"
+0
+```
+
+`STRIPE_WEBHOOK_SECRET` is still empty, which is **correct and not a block** — per
+`SETUP.md` §3.3 step 3 it is produced by `stripe listen` at the start of each local
+session, not pasted in. L7/L9/L11/L12/L14 keys remain empty as expected.
+
+**D7 = A** (`SETUP.md` §1, read not inferred: box A ticked, B and C unticked). So L2
+builds gap 2 as *save the card at booking and charge it off-session on completion* for
+any booking more than ~6 days ahead and every recurring visit. **Q-10 is answered**;
+the customer-facing consent wording that mechanism needs is legal wording, so it is
+drafted and parked, per the L2 stage text.
 
 ## Status
 
 | | |
 | --- | --- |
-| **Current stage** | **L2 — ⛔ blocked, third attempt stopped 15 Oct 2026.** L1 complete and re-verified; `.env.local` now exists but 7 of 9 L2 keys are empty strings |
-| **Next action** | **Fola: paste six real values into the existing `.env.local`** — `DATABASE_URL`, `DIRECT_URL`, `DEV_DB_HOST` (Neon `dev`), `STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` (Stripe test), `RESEND_API_KEY` — plus `DEV_EMAIL_REDIRECT`. **And answer SETUP D7.** The file and the two local secrets are done; see **⛔ STOPPED** above for where each value comes from. Then L2 — baseline the Neon `dev` branch, apply migrations #1–#9 in order, drift check, seed, Playwright, Stripe gates A/B/C/D, plus the three Phase 2 gaps from the 9 Oct review (PRD §16.1). Nothing else can start first: L3–L15 all depend on L2 |
-| **Working branch** | `build/autonomous` on GitHub — the fix-branch work plus 4 L1 commits and the 9 Oct documentation repair, 11 commits ahead of `main` (not merged) |
-| **Last updated** | 15 Oct 2026 — `.env.local` created from the §4 template and the stale `.env` removed; 2 of 9 L2 keys filled, 7 still empty, so the stop stands; gate re-run green (190 tests); Q-13 resolved — the build documents are back at the repo root (`31fa69d`). Earlier 9 Oct (second entry) — L2 attempt stopped on the missing `.env.local`; verify gate re-run green on Fola's Mac (190 tests); files deleted from the working tree restored; Q-13 raised on where the build documents live. Earlier 9 Oct — external review, documents revised to PRD v2.2.1. 8 Oct — L1 complete |
-| **Needs Fola?** | **Yes — two things, and the build cannot move without the first.** (1) the six empty credentials in `.env.local` (Q-6). (2) SETUP D7 (Q-10), or L2's gap-2 work parks. 10 live *Open questions* (Q-13 resolved); 3 items in the *Review queue* for merge checkpoint 1 |
+| **Current stage** | **L2 — ⏳ in progress, started 15 Oct 2026.** The environment block is cleared: all nine L2 keys are present, Stripe is in test mode, the dev-db guard confirms its target, and SETUP D7 is answered (A) |
+| **Next action** | *(Claude Code)* work the L2 plan in order — baseline the Neon `dev` branch at the pre-migration-#1 schema, apply manual migrations #1–#9, empty drift check, seed, then Playwright gates A/B/C/D, the payment-link reissue, and the three Phase 2 gaps from the 9 Oct review (PRD §16.1). The L2 checklist with per-item state is in the **L2 stage log** below |
+| **Working branch** | `build/autonomous` on GitHub — the fix-branch work plus 4 L1 commits, the 9 Oct documentation repair, the root move and D7 |
+| **Last updated** | 15 Oct 2026 — **L2 unblocked and started.** All nine L2 keys verified present (names and prefixes only); `sk_test_`/`pk_test_` confirm test mode; `DEV_DB_HOST` matches the `DIRECT_URL` host; the Neon `dev` branch is reachable and empty; D7 = A, so Q-10 is answered and gap 2 is built rather than parked. Earlier 15 Oct — `.env.local` created from the §4 template, stale `.env` removed, Q-13 resolved. 9 Oct — external review, documents revised to PRD v2.2.1. 8 Oct — L1 complete |
+| **Needs Fola?** | **Not to proceed.** Two things wait for a merge checkpoint or a spare moment: the drafted card-on-file consent wording (Q-14, legal — L2 does not ship it unapproved), and D3–D6 which park only later-stage items. 9 live *Open questions* (Q-6, Q-10 and Q-13 resolved); the *Review queue* grows through L2 for merge checkpoint 1 |
 
 ## Stage tracker
 
 | Stage | Title | Status | Merge checkpoint |
 | --- | --- | --- | --- |
 | L1 | Reconcile and guardrails | ✅ Done | |
-| L2 | Real database and Stripe test-mode gate (+ Phase 2 gaps 1–3, gate D — added 9 Oct) | ⛔ Blocked — `DATABASE_URL`, `DIRECT_URL`, `DEV_DB_HOST`, `STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `RESEND_API_KEY`, `DEV_EMAIL_REDIRECT`, `AUTH_SECRET`, `ACCESS_CODE_ENC_KEY` all absent | ✅ 1 |
+| L2 | Real database and Stripe test-mode gate (+ Phase 2 gaps 1–3, gate D — added 9 Oct) | ⏳ In progress — keys present, started 15 Oct 2026 | ✅ 1 |
 | L3 | Admin operations core | ⛔ Blocked by L2 | |
 | L4 | Crew roster, capacity and availability | ⛔ Blocked by L2 | |
 | L5 | Crew mobile interface | ⛔ Blocked by L2 | |
@@ -141,24 +144,22 @@ Six commits: Stripe fixes for flags 1, 2, 3 and 6 plus the flag 4/5 decisions; `
 
 ---
 
-## Environment readiness — **not ready for L2**
+## Environment readiness — **ready for L2** (15 Oct 2026)
 
 | | |
 | --- | --- |
-| `.env.local` | **Present since 15 Oct 2026**, git-ignored (`git check-ignore` confirms). Created from the `SETUP.md` §4 template, so the externally-issued credentials are empty strings — `AUTH_SECRET`, `ACCESS_CODE_ENC_KEY` and `MEDIA_LINK_SECRET` were generated locally; the six Neon/Stripe/Resend values and `DEV_EMAIL_REDIRECT` are still blank |
-| `.env` | **Removed 15 Oct 2026** per `SETUP.md` §4, once `.env.local` existed — it carried the retired `ADMIN_ACCESS_CODE` and the `localhost` placeholder that `SETUP.md` §1 warns would fight the dev-database guard. Backed up outside the repo first (it is git-ignored, so git could not restore it). Until then it was, as described: stale: it is `.env.example` with `DATABASE_URL`/`DIRECT_URL` left at `postgresql://user:password@localhost:5432/...`. `hasDatabase` correctly reads that as "no database", so the app runs DB-less. No real credential is in it and nothing sensitive is committed — `.gitignore` covers `.env*` and only `.env.example` is tracked |
-| Neon `dev` branch | Not reachable — no connection string on this machine. `DEV_DB_HOST` unset, so the L1 `assert-dev-db` guard has nothing to compare against |
-| Stripe | No key present, test or live — both names exist in `.env.local` as empty strings |
+| `.env.local` | Present and git-ignored (`git check-ignore` confirms). All nine L2 keys now carry real values; `MEDIA_LINK_SECRET` is generated too. Checked by name and prefix only |
+| `.env` | Removed 15 Oct 2026 per `SETUP.md` §4, once `.env.local` existed — it carried the retired `ADMIN_ACCESS_CODE` and the `user:password@localhost` placeholder that `SETUP.md` §1 warns would fight the dev-database guard (and, via `prisma.config.ts`, could have aimed a migration at the wrong target — see R-1). Backed up outside the repo first, since `.env*` is git-ignored |
+| Neon `dev` branch | **Reachable.** `psql "$DIRECT_URL"` connects as `neondb_owner` to `neondb` on PostgreSQL 18.6; `public` holds 0 tables, so L2 baselines a clean database |
+| Stripe | **Test mode.** `sk_test_` / `pk_test_` prefixes verified. No live key is present anywhere in the environment. `STRIPE_WEBHOOK_SECRET` is supplied per session by `stripe listen`, per `SETUP.md` §3.3 |
 | `.claude/settings.json` | Created 8 Oct 2026 from `SETUP.md` §5 so the build can run unattended. L1 validates it |
-
-**Consequence for the autonomous run:** L1 needs no keys and can run now. L2 is blocked until `SETUP.md` §3 is done. Stages L3–L13 all depend on L2, so a build started today completes L1 and then stops. Filling `.env.local` is the single highest-value thing Fola can do.
 
 ### Keys present (names only, updated each session)
 
 | Stage | Needs | Present? |
 | --- | --- | --- |
 | L1 | none | ✅ n/a |
-| L2 | `DATABASE_URL`, `DIRECT_URL`, `DEV_DB_HOST`, `AUTH_SECRET`, `ACCESS_CODE_ENC_KEY`, `STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `RESEND_API_KEY`, `DEV_EMAIL_REDIRECT` | ⚠️ **2 of 9 (15 Oct 2026)** — `AUTH_SECRET` and `ACCESS_CODE_ENC_KEY` generated; the other seven are present as empty strings. Per-key detail under **⛔ STOPPED** |
+| L2 | `DATABASE_URL`, `DIRECT_URL`, `DEV_DB_HOST`, `AUTH_SECRET`, `ACCESS_CODE_ENC_KEY`, `STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `RESEND_API_KEY`, `DEV_EMAIL_REDIRECT` | ✅ **9 of 9 (15 Oct 2026)** — per-key detail under **✅ Stop cleared**. `STRIPE_WEBHOOK_SECRET` comes from `stripe listen` per session, not from the file |
 | L7 | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `MEDIA_LINK_SECRET` | ⚠️ 2 of 5 — `R2_BUCKET` default and `MEDIA_LINK_SECRET` generated 15 Oct; the three Cloudflare credentials empty |
 | L9 | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_SENDER_ID` | ⚠️ 1 of 3 — `TWILIO_SENDER_ID` default `mcseco`; the two credentials and `DEV_SMS_REDIRECT` empty |
 | L11 | Stripe Bacs enabled (test), `NEXT_PUBLIC_CALCOM_URL` | ❌ none |
@@ -219,7 +220,8 @@ Re-measured on 8 Oct 2026. Three entries that the earlier snapshot got wrong are
 
 Format: **Q-n** · stage · question · options (none picked) · what's blocked.
 
-- **Q-6** · L2 and everything after · **`.env.local` does not exist on this machine.** `SETUP.md` §3 has not been completed here, so there is no Neon `dev` connection string, no `DEV_DB_HOST`, no Stripe test key, no `AUTH_SECRET`. Options: complete `SETUP.md` §3 now / let the build run L1 only and stop. **Blocks: L2 and, transitively, L3–L15.** Nothing else Fola can do matters as much as this one.
+- **Q-6** · L2 · ~~**`.env.local` does not exist on this machine.**~~ **Resolved 15 Oct 2026.** `.env.local` exists and all nine L2 keys carry real values; Stripe is in test mode and the dev-db guard confirms its target. L2 is unblocked and running. The original question, for the record: `SETUP.md` §3 had not been completed on this machine, so there was no Neon `dev` connection string, no `DEV_DB_HOST`, no Stripe test key and no `AUTH_SECRET`, which blocked L2 and transitively L3–L15.
+
 - **Q-1** · all · Eco positioning weight (PRD §16.7 #1, SETUP D6). Options: primary from day one / phase-two differentiator. Blocks: nothing in code; affects copy emphasis.
 - **Q-2** · L4 · ~~Employee or self-employed crews (SETUP D2).~~ **Answered 8 Oct 2026: not decided — build both.** L4 builds and tests `assign` and `offer`; the production config value is chosen before launch. The underlying employment-status question (PRD §14.6, §16.7 #2) still affects the cost floor and so Q-4.
 - **Q-3** · L1 · Trust facts: are crews DBS-checked, and what public liability cover is actually held, with which insurer? Until confirmed, L1 hides both claims across all seven files. Blocks: nothing; the claims simply stay hidden. Note the site currently asserts both to the public.
@@ -228,10 +230,13 @@ Format: **Q-n** · stage · question · options (none picked) · what's blocked.
 - **Q-4** · launch · Cost-per-crew-hour model (§16.7 #8) may change rate-card figures. Blocks: launch pricing sign-off only.
 - **Q-5** · launch · Company facts for `src/config/site.ts` (SETUP §6) — 26 placeholders. Blocks: the L15 release gate (`npm run check:launch-inputs`).
 
-- **Q-10** · L2 · **How to collect payment once a card hold lapses** — bookings more than ~7 days ahead and every recurring visit (finding 2). Options are in SETUP D7: A save card + charge off-session on completion / B save card + place the hold ~2 days before / C additionally cap one-off bookings at ~6 days ahead. Blocks: the L2 collection item and gate D's payment step only; the rest of L2 proceeds.
+- **Q-10** · L2 · ~~**How to collect payment once a card hold lapses.**~~ **Answered 15 Oct 2026 — SETUP D7 = A** (`f554149`): save the card at booking and charge it off-session on completion for any booking more than ~6 days ahead and for every recurring visit. B (place the hold ~2 days before each job) and C (cap one-off bookings at ~6 days ahead) are both unticked, so `bookingHorizonDays` stays at 21 and no scheduled pre-authorisation task is built. L2 builds mechanism A with the failure-path tests the stage requires. One piece of it is parked separately: the customer-facing wording for agreeing to a card on file is legal wording, drafted but not shipped — **Q-14**.
+
 - **Q-11** · L2 · **Quote validity period.** PRD §7.2 says 14 days; the code stores 30 (`src/app/actions/booking.ts:362`). Options: change the code to 14 / amend the PRD to 30. Blocks: nothing; it sets how long a quoted price is honoured.
 - **Q-13** · all · ~~**Where the five build documents live.**~~ **Resolved 15 Oct 2026 — option (a):** Fola moved the five back to the repo root in `31fa69d`, keeping the v2.2.1 content, so `CLAUDE.md` auto-loads again and matches its own line 24. `31fa69d` moved the five files only, so `README.md`'s three links were left pointing at `docs/` and were broken by the move; repointed at the root in the same commit as this entry. The original question, for the record: They were moved into `docs/` on 9 Oct 2026 along with the v2.2.1 revision, but `CLAUDE.md` itself still states (line 24) that the five live at the **repo root**, and decision D-0a records why: *Claude Code only auto-reads `CLAUDE.md` from the repo root*. That is not theoretical — this session was **not** given `CLAUDE.md` automatically and had to be pointed at `docs/CLAUDE.md` by hand. A future session started without that instruction runs with no rulebook and would not know it. The agent may not edit `CLAUDE.md`, so the contradiction is parked rather than resolved. Options: **(a)** move the five back to the repo root, keeping the v2.2.1 content — restores auto-loading and matches `CLAUDE.md` as written; **(b)** keep them in `docs/` and amend `CLAUDE.md` line 24 and D-0a, accepting that every future session must be told where the rulebook is. `README.md`'s links were repointed at `docs/` so the repo is at least self-consistent today; under option (a) that is one edit back. Blocks: nothing in code — but it decides whether the next unattended session reads the rules at all.
 - **Q-12** · L7 · **Media retention.** `.env.example` pre-fills `MEDIA_RETENTION_MONTHS="12"` while SETUP D4 is blank, so L7 would ship 12 months by default. Options: 12 / 18 / 24 months (answer D4). L7 reads D4, not the example default; until D4 is answered the retention value is parked. Blocks: L7 retention only.
+
+- **Q-14** · L2 · **Card-on-file consent and pre-contract wording (legal).** D7 = A means the customer's card is saved at booking and charged automatically later, which changes what they agree to at checkout. `CLAUDE.md` makes legal wording a Park item, so the mechanism is built behind a confirmed-wording flag and the draft sits in `src/config/legal.ts` marked `TODO(legal)`; nothing new is shown to a customer until Fola approves it. Options: approve the draft as written / amend it with an adviser / have the wording drafted against the CCR and Stripe's mandate requirements before any off-session charge is enabled. Blocks: switching mechanism A on for real customers (it is exercised by tests and in dev only). **This is the one L2 item that needs Fola.**
 
 ## Review queue (Fola reviews at merge checkpoints)
 
@@ -583,3 +588,97 @@ unchanged.
 into the existing `.env.local`, and answer D7. Then L2 from its revised plan in
 PRD §16.3 — baseline `dev`, migrations #1–#9, drift check, seed, Playwright, gates
 A/B/C/D and the three Phase 2 gaps.
+
+---
+
+### L2 — Real database and Stripe test-mode gate
+
+**Started 15 Oct 2026.** Depends on L1 (done). Keys: all nine present and verified
+(see **✅ Stop cleared**). Stage text: PRD §16.3 → L2, with the three Phase 2 gaps
+from §16.1 and gate D. SETUP **D7 = A**, so gap 2 is built, not parked.
+
+#### Plan — written before coding
+
+**2.1 Database baseline and migrations** (`prisma/`, `scripts/`)
+- [ ] Baseline `dev` at the schema *before* migration #1: `git show 21c895c:prisma/schema.prisma`
+      (`21c895c` is the parent of `f5a7b65`, which added `2026-09-19-service-area-patch-group.sql`)
+      → `prisma db push --skip-generate` against that schema. 33 models, no `ServiceArea.patchGroup`.
+- [ ] Apply all nine files in `prisma/manual-migrations/` in filename order with
+      `psql -v ON_ERROR_STOP=1`. The two `ALTER TYPE … ADD VALUE` files
+      (`…lead-converted-quote-and-domestic-sales.sql`, `…payment-status-part-paid.sql`,
+      plus `…payment-status-released.sql`) run **without** `-1`; the rest with `-1`.
+      Record the per-file result against `docs/DEPLOYMENT.md` §4a.
+- [ ] `prisma migrate diff --from-url "$DIRECT_URL" --to-schema-datamodel prisma/schema.prisma --script`
+      prints an **empty** migration. Any drift means a migration is wrong — fix the
+      migration and reset `dev`, never hand-fix a row.
+- [ ] `npm run db:seed`. Confirm the owner user, service types and areas land.
+- [ ] Add `npm run db:migrate:manual` (guarded, idempotent, filename order) so the
+      sequence is reproducible rather than a one-off shell session — this is what
+      `LAUNCH.md` will reference for the production run.
+
+**2.2 Local stack**
+- [ ] `next dev`, the Inngest dev server, and
+      `stripe listen --api-key $STRIPE_SECRET_KEY --forward-to localhost:3000/api/stripe/webhook`,
+      whose output sets `STRIPE_WEBHOOK_SECRET` for the session (never pasted into `.env.local`).
+
+**2.3 Playwright and the runbook gates** (`e2e/`, `package.json`)
+- [ ] Add Playwright + `npm run test:e2e` (unit tests stay on `node --test` via `tsx`).
+      Justify the dependency under *Decisions made*.
+- [ ] **Gate A** — large job: deposit + balance on the same card, including a 3DS
+      challenge, then capture on completion.
+- [ ] **Gate B** — full-amount job: authorise then capture.
+- [ ] **Gate C** — cooling-off cancel: balance released, deposit refunded.
+- [ ] Failure cases: declined card, expired card, off-session failure on the balance,
+      duplicate webhook delivery (same event id replayed), Checkout-Session re-charge
+      reconciliation.
+- [ ] Assert at each step: `Payment` rows, `Job.paymentStatus` derivation,
+      `WebhookEvent` status, audit notes, Stripe object state.
+
+**2.4 Payment-link reissue** (`src/app/admin/jobs`, `src/app/actions/admin.ts`)
+- [ ] "Copy payment link" on the `/admin/jobs` row while the saved Checkout Session
+      is open; "Reissue" once expired. (Deferred from Phase 2.)
+
+**2.5 Gap 1 — recurring bookings create a `Subscription`** (`src/app/actions/booking.ts`, `src/lib/`)
+- [ ] When frequency ≠ `one_off`, `createBooking` **and** `adminCreateBooking` create a
+      `Subscription`: `recurrenceRule` from frequency + the chosen slot's weekday and
+      Europe/London start time (via `rrule`), property, service, per-visit
+      `pricePerVisitNet`/`vatAmount`/`gross` from the quote's per-visit figures,
+      `firstCleanSurchargeApplied`.
+- [ ] The booked slot becomes the subscription's first `Job` (`subscriptionId` set, priced
+      as the first visit); the materialiser never duplicates it.
+- [ ] Test: a Tuesday 09:00 series stays 09:00 London across **both** BST/GMT changes.
+- [ ] Any missing field is an additive migration → *Review queue*. No price figure changes.
+
+**2.6 Gap 2 — collection once the hold lapses, mechanism A** (`src/lib/stripe.ts`, `src/app/actions/payments.ts`, `src/lib/inngest/`)
+- [ ] Save the card at booking for later off-session use, and charge it on completion for
+      any booking more than ~6 days ahead and for every recurring visit.
+- [ ] Tests: a one-off booked ≥ 8 days ahead; a large job's balance ≥ 8 days ahead;
+      recurring visits 2+.
+- [ ] An off-session failure (test card `4000 0027 6000 3184`) falls back to the existing
+      re-charge path and flags admin **without touching the job** (schedule ≠ billing).
+- [ ] The consent and pre-contract wording this needs is legal wording: draft it, park it
+      as **Q-14**, and keep it behind a confirmed flag — do not ship it unapproved.
+- [ ] `bookingHorizonDays` stays 21 (that would be D7 option C, which Fola did not tick).
+
+**2.7 Gap 3 — every server action authorises itself** (`src/app/actions/payments.ts` → `src/lib/`)
+- [ ] Move `prepareOutstandingCheckout` and its "verified job" wrapper into `src/lib/` with
+      `import "server-only"`, leaving `payMyOutstanding` (ownership-scoped) and
+      `rechargeOutstanding` (role-gated) as the only callable entry points.
+- [ ] A test reads every `src/app/actions/*.ts` export and fails unless it calls
+      `requireRole` or the customer ownership guard, or is on an explicit public
+      allow-list (`getSlots`, `createBooking`, `submitLead`). → *Review queue*.
+
+**2.8 Gate D — recurring booking end to end**
+- [ ] Book weekly → exactly one `Subscription` and one first `Job` → run the materialiser
+      twice → the series exists with no duplicate first visit → complete visit 2 →
+      payment collected per D7 = A.
+
+**2.9 Close the stage**
+- [ ] Full verify gate green, including `npm run test:e2e` and an empty drift check.
+- [ ] Evidence pasted per acceptance criterion; *Review queue* and *Decisions made* updated.
+- [ ] **Checkpoint 1 merge notes** written (migrations in order, new Production env var
+      names, review-queue items, a ready-to-paste PR description).
+
+#### Work
+
+*(ticked as each item lands, with commit hashes)*
