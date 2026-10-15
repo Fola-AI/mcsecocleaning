@@ -758,8 +758,19 @@ model BlackoutDate {
   date      DateTime
   reason    String?
   appliesTo String   @default("all") // all | <serviceTypeId>
+  // What happens to a recurring visit that lands on this date (§6.2, L3):
+  // "flag" leaves the visit in place as on_hold for a human to deal with;
+  // "shift" moves it to the next working day. Default "flag", because a visit
+  // silently moved is a customer who is not expecting us — the PRD's rule is
+  // that affected visits are never silently generated.
+  policy    BlackoutPolicy @default(flag)
 
   @@unique([date, appliesTo])
+}
+
+enum BlackoutPolicy {
+  flag
+  shift
 }
 
 // ───────────────────────── AI (Phase 7+) ─────────────────────────

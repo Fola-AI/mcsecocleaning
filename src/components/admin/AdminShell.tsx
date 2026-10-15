@@ -8,11 +8,16 @@ async function signOutAction() {
 }
 
 const nav = [
-  { href: "/admin", label: "Dashboard" },
+  // "Today" first and named for what it is (§9.7): it is the default screen, not
+  // a dashboard, and the label should not promise a wall of charts.
+  { href: "/admin", label: "Today" },
   { href: "/admin/jobs", label: "Jobs" },
+  { href: "/admin/payments", label: "Payments" },
+  { href: "/admin/customers", label: "Customers" },
+  { href: "/admin/blackouts", label: "Blackouts" },
   { href: "/admin/leads", label: "Leads" },
   { href: "/admin/bookings/new", label: "New booking" },
-  { href: "/admin/import", label: "Import clients" },
+  { href: "/admin/import", label: "Import" },
 ];
 
 export function AdminShell({ title, children }: { title: string; children: ReactNode }) {

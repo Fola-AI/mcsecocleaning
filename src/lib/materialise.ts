@@ -71,6 +71,8 @@ export async function materialiseDueSubscriptions(): Promise<MaterialiseResult> 
   const blackouts: Blackout[] = blackoutRows.map((b) => ({
     date: localDateString(b.date),
     reason: b.reason ?? undefined,
+    // Per-date policy (L3): hold the visit for review, or move it on purpose.
+    policy: b.policy,
   }));
 
   let created = 0;

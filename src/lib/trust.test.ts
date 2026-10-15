@@ -184,7 +184,7 @@ describe("yearsTradingLabel", () => {
  * Source scan — no claim string may be hardcoded in a rendered surface.
  *
  * `src/config/site.ts` holds the claims themselves and `src/lib/trust.ts` holds
- * the wording, so both are exempt. `src/app/terms/page.tsx` §7 is exempt for a
+ * the wording, so both are exempt. The T&Cs page §7 is exempt for a
  * different reason: it is legal wording, and changing legal wording is a Park
  * item under `CLAUDE.md` → *Decision boundary*. It is raised as an open question
  * in `PROGRESS.md` (Q-8) rather than edited here.
@@ -202,7 +202,12 @@ const EXEMPT = new Set([
   join("src", "config", "site.ts"),
   join("src", "lib", "trust.ts"),
   join("src", "lib", "trust.test.ts"),
-  join("src", "app", "terms", "page.tsx"), // legal wording — parked, see Q-8
+  // The T&Cs: legal wording, parked under Q-8 rather than edited here.
+  // Matched by route rather than by literal path — the page moved into the
+  // `(site)` route group in L3 and an exact-path exemption silently stopped
+  // matching, which the scan caught by failing. A route group's name never
+  // appears in a URL, so the route is the stable identity, not the folder.
+  join("src", "app", "(site)", "terms", "page.tsx"),
 ]);
 
 function walk(dir: string, out: string[] = []): string[] {

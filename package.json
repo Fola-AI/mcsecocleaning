@@ -17,6 +17,7 @@
     "db:migrate": "tsx scripts/assert-dev-db.ts && prisma migrate dev",
     "db:deploy": "tsx scripts/assert-dev-db.ts && prisma migrate deploy",
     "db:seed": "tsx scripts/assert-dev-db.ts && tsx prisma/seed.ts",
+    "db:seed:dev": "tsx scripts/assert-dev-db.ts && tsx prisma/seed-dev.ts",
     "db:studio": "prisma studio",
     "db:reset": "tsx scripts/assert-dev-db.ts && prisma migrate reset",
     "check:launch-inputs": "tsx scripts/check-launch-inputs.ts",

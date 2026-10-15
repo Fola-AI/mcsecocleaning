@@ -9,6 +9,9 @@ import { serviceBySlug } from "@/config/services";
 import { ROOM_KEYS, RATE_CARD_VERSION, type RoomKey } from "@/lib/pricing/rate-card";
 import { parseClientCsv } from "@/lib/csv";
 import { requireRole, currentAdminActor } from "@/lib/auth";
+import { checkTransition, label as statusLabel } from "@/lib/job-status";
+import { localDateString } from "@/lib/timezone";
+import type { JobStatus } from "@prisma/client";
 import { createSubscriptionForBooking } from "@/lib/subscriptions";
 
 const OPS_ROLES = ["owner", "admin", "supervisor"] as const;
@@ -310,4 +313,126 @@ export async function importClients(csvText: string): Promise<ImportResult> {
     }
   }
   return { status: "done", imported, skipped, errors };
+}
+
+// ---------- Job status pipeline (§9.1) ----------
+
+/**
+ * Move a job to another status (§9.1).
+ *
+ * Three things this does that a plain `update` would not:
+ *
+ *  1. **It refuses illegal transitions server-side.** The admin UI only offers
+ *     legal ones, but the UI is not the gate — every export of a `"use server"`
+ *     module is callable with any argument (`CLAUDE.md` → *Security rules*), so
+ *     the same pure rules are re-applied here.
+ *  2. **It logs every change with the actor**, which §9.1 requires outright. The
+ *     update and the event are one transaction: a status with no trail is worse
+ *     than a refused change, because it is the trail that explains a refund or a
+ *     lockout fee months later.
+ *  3. **It never touches money.** A status change is a schedule change; payments
+ *     have their own actions (§6.2). The one exception the PRD asks for is that
+ *     `no_access` is the trigger for the §8 lockout fee — which is recorded here
+ *     as the attendance it is, and charged separately, so a mis-click cannot
+ *     take a fee.
+ */
+export async function setJobStatus(
+  jobId: string,
+  to: JobStatus,
+  note?: string,
+): Promise<{ ok: boolean; message: string }> {
+  const { id: actorId } = await requireRole([...OPS_ROLES]);
+  if (!hasDatabase) return { ok: false, message: "No database configured." };
+
+  const job = await db.job.findUnique({ where: { id: jobId }, select: { id: true, status: true } });
+  if (!job) return { ok: false, message: "Job not found." };
+
+  if (job.status === to) return { ok: true, message: `Already ${statusLabel(to)}.` };
+
+  const verdict = checkTransition(job.status, to);
+  if (!verdict.ok) return { ok: false, message: verdict.reason! };
+
+  await db.$transaction(async (tx) => {
+    await tx.job.update({ where: { id: jobId }, data: { status: to } });
+    await tx.jobStatusEvent.create({
+      data: {
+        jobId,
+        fromStatus: job.status,
+        toStatus: to,
+        actorId,
+        note: note?.trim()
+          ? note.trim()
+          : to === "no_access"
+            ? "Crew attended, could not enter (§8 lockout fee applies — charge it separately)."
+            : null,
+      },
+    });
+  });
+
+  return { ok: true, message: `Moved to ${statusLabel(to)}.` };
+}
+
+// ---------- Blackout dates (§6.2, L3) ----------
+
+const blackoutSchema = z.object({
+  /** A London calendar date, YYYY-MM-DD — a date, not an instant. */
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use a date like 2026-12-25."),
+  reason: z.string().trim().max(200).optional().or(z.literal("")),
+  policy: z.enum(["flag", "shift"]).default("flag"),
+});
+
+/**
+ * Add or update a blackout date (§6.2).
+ *
+ * The date is stored at **UTC midnight of the London calendar date**, which is
+ * how `localDateString` reads it back and how the materialiser matches
+ * occurrences. Storing "now" or a local-midnight instant would put a December
+ * date on the 24th for half the year.
+ *
+ * The policy is per date, not global, because the two cases are genuinely
+ * different: a bank holiday a crew will work around should shift, while a
+ * closure needs a human to tell the customer. The default is `flag`, since a
+ * visit silently moved is a customer not expecting us.
+ */
+export async function upsertBlackoutDate(
+  input: z.input<typeof blackoutSchema>,
+): Promise<{ ok: boolean; message: string }> {
+  await requireRole([...OPS_ROLES]);
+  const parsed = blackoutSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, message: parsed.error.issues[0]?.message ?? "Invalid input" };
+  if (!hasDatabase) return { ok: false, message: "No database configured." };
+
+  const { date, reason, policy } = parsed.data;
+  const at = new Date(`${date}T00:00:00Z`);
+
+  await db.blackoutDate.upsert({
+    where: { date_appliesTo: { date: at, appliesTo: "all" } },
+    update: { reason: reason || null, policy },
+    create: { date: at, appliesTo: "all", reason: reason || null, policy },
+  });
+
+  return {
+    ok: true,
+    message:
+      policy === "shift"
+        ? `${date} blacked out — visits that land on it move to the next working day.`
+        : `${date} blacked out — visits that land on it are held for review, not moved.`,
+  };
+}
+
+/** Remove a blackout date. Visits already flagged or shifted are left alone — the
+ *  date no longer blocks anything, but what was done to a visit stays done, and
+ *  visible, rather than being quietly undone underneath a customer. */
+export async function deleteBlackoutDate(id: string): Promise<{ ok: boolean; message: string }> {
+  await requireRole([...OPS_ROLES]);
+  if (!hasDatabase) return { ok: false, message: "No database configured." };
+  const row = await db.blackoutDate.findUnique({ where: { id } });
+  if (!row) return { ok: false, message: "That date is not blacked out." };
+  await db.blackoutDate.delete({ where: { id } });
+  return {
+    ok: true,
+    message:
+      `${localDateString(row.date)} is bookable again. Visits already held or moved for it stay as they are — ` +
+      "check the job board if any need putting back.",
+  };
 }

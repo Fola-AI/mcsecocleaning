@@ -22,6 +22,16 @@ export interface Blackout {
   /** YYYY-MM-DD (local). */
   date: string;
   reason?: string;
+  /**
+   * What happens to a visit landing on this date, when the date itself says
+   * (L3's `BlackoutDate.policy`). Omitted falls back to the call's `onBlackout`.
+   *
+   * Per date rather than per call because the two cases are different
+   * instructions to the scheduler: a bank holiday the crew will work around
+   * should move, while a closure needs a human to tell the customer. One global
+   * setting forces the cautious answer onto both.
+   */
+  policy?: BlackoutPolicy;
 }
 
 export type BlackoutPolicy = "flag" | "shift";
@@ -103,17 +113,21 @@ export function materialiseSchedule(input: MaterialiseInput): Occurrence[] {
   const windowStart = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate()));
   const rawDates = rule.between(windowStart, horizonEnd, true);
 
-  const blackoutMap = new Map(blackouts.map((b) => [b.date, b.reason]));
+  const blackoutMap = new Map(blackouts.map((b) => [b.date, b]));
 
   const out: Occurrence[] = [];
   for (const raw of rawDates) {
     // Calendar date of the occurrence (UTC midnight → same Y/M/D).
     let localDate = `${pad(raw.getUTCFullYear())}-${pad(raw.getUTCMonth() + 1)}-${pad(raw.getUTCDate())}`;
     let shiftedFromDate: string | undefined;
-    let isBlackout = blackoutMap.has(localDate);
-    let blackoutReason = blackoutMap.get(localDate);
+    const hit = blackoutMap.get(localDate);
+    let isBlackout = Boolean(hit);
+    let blackoutReason = hit?.reason;
 
-    if (isBlackout && onBlackout === "shift") {
+    // The date's own policy wins over the call's default (L3). A date that says
+    // nothing keeps the caller's behaviour, so nothing changes for a caller that
+    // has not been updated.
+    if (isBlackout && (hit?.policy ?? onBlackout) === "shift") {
       // Shift forward to the next non-blackout day (max 7 days).
       let candidate = localDate;
       for (let i = 0; i < 7; i++) {
