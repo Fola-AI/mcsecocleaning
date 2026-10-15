@@ -2,37 +2,58 @@
 
 > **For Fola:** this is the one file to check. The top section shows where things stand and whether anything needs you. **For Claude Code:** this is the only status file you write. Update it after every completed item.
 
-## ⛔ STOPPED — 9 Oct 2026 · `.env.local` does not exist
+## ⛔ STOPPED — 15 Oct 2026 · `.env.local` exists but 7 of its 9 L2 keys are empty
 
-The session that was asked to start L2 could not. **`.env.local` is still absent from the repo root**, so every key L2 needs is missing. Nothing was built; the branch is unchanged except for the documentation repairs logged under *Session — 9 Oct 2026 (L2 attempt)* below.
+`.env.local` was created on 15 Oct 2026 from the `SETUP.md` §4 template, and the
+stale `.env` was removed. **The stop stands, for a narrower reason:** the template
+ships every externally-issued credential as an empty string, and only the three
+values that can be generated locally were filled in. L2 still cannot run.
 
-**The nine keys L2 needs, all absent** (checked by name, 9 Oct 2026 — no `.env.local` file, and none of them set in the shell either):
-
-| Key | What it is | SETUP.md |
+| L2 key | State | How to fill it |
 | --- | --- | --- |
-| `DATABASE_URL` | Neon `dev` **pooled** string (host contains `-pooler`), `&connect_timeout=15` appended | §3.1 |
-| `DIRECT_URL` | Neon `dev` **direct** string (pooling off), same suffix | §3.1 |
-| `DEV_DB_HOST` | the direct host, the `ep-…` part between `@` and `/` — this is what stops the agent touching any other database | §3.1 |
-| `AUTH_SECRET` | `npx auth secret` | §3.5 |
-| `ACCESS_CODE_ENC_KEY` | `openssl rand -base64 32` | §3.6 |
-| `STRIPE_SECRET_KEY` | `sk_test_…`, **test mode only** | §3.3 |
-| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | `pk_test_…` | §3.3 |
-| `RESEND_API_KEY` | existing key | §3.4 |
-| `DEV_EMAIL_REDIRECT` | Fola's own inbox — every non-production email goes here | §3.4 |
+| `AUTH_SECRET` | ✅ generated (44 chars) | done — `openssl rand -base64 32` |
+| `ACCESS_CODE_ENC_KEY` | ✅ generated (44 chars) | done — dev key only, never the production one |
+| `DATABASE_URL` | ❌ **empty** | Neon → `dev` branch → Connect → **pooled** string (host contains `-pooler`), append `&connect_timeout=15` · §3.1 |
+| `DIRECT_URL` | ❌ **empty** | same branch, pooling **off**, same suffix · §3.1 |
+| `DEV_DB_HOST` | ❌ **empty** | the `ep-…` host from `DIRECT_URL`, between `@` and `/`. This is the value that stops the agent reaching any other database · §3.1 |
+| `STRIPE_SECRET_KEY` | ❌ **empty** | Stripe **test mode** → Developers → API keys → `sk_test_…` · §3.3 |
+| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | ❌ **empty** | same screen → `pk_test_…` · §3.3 |
+| `RESEND_API_KEY` | ❌ **empty** | the existing Resend key · §3.4 |
+| `DEV_EMAIL_REDIRECT` | ❌ **empty** | Fola's own inbox — every non-production email is sent here instead of to the customer · §3.4 |
 
-**To clear this stop:** create `.env.local` at the repo root from `SETUP.md` §4, then **delete the stale `.env`** (it still carries the `.env.example` `localhost` placeholder for `DATABASE_URL`/`DIRECT_URL`, and `prisma.config.ts` loads `.env.local` first precisely so that placeholder cannot win — see R-1). Nothing else is blocking.
+`MEDIA_LINK_SECRET` was also generated (L7), and `R2_BUCKET`, `TWILIO_SENDER_ID`,
+`APP_ENV`, `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_ALLOW_INDEXING`, `VAT_REGISTERED`,
+`EMAIL_FROM` and `INNGEST_DEV` carry their documented dev defaults. Everything for
+L7, L9, L11, L12 and L14 is still empty, which is expected — those stages are far
+off and `SETUP.md` §3.7–§3.10 covers them.
 
-**Also still blank: SETUP D7** (Q-10). D7 is read, not inferred — all three boxes are unticked. So even once `.env.local` exists, L2 builds gaps 1 and 3 in full and **parks gap 2** (collecting payment once a card hold lapses) as Q-10, exactly as the revised L2 stage instructs. Answering D7 in the same sitting as `.env.local` is what avoids a second parked item.
+**The guard behaves correctly in this state** — it refuses rather than guessing:
+
+```
+$ npx tsx scripts/assert-dev-db.ts
+✗ Refused — not the dev database.
+  DEV_DB_HOST is not set, so this command cannot be proven to target the dev
+  database. Set it to the Neon dev branch's DIRECT host (SETUP.md §3.1, step 3).
+  Refusing by default.
+exit: 1
+```
+
+**To clear this stop:** paste the six Neon/Stripe/Resend values and the redirect
+inbox into the existing `.env.local`. Nothing needs creating or deleting now.
+
+**Also still blank: SETUP D7** (Q-10), along with D3–D6. D7 is read, not inferred —
+all three boxes are unticked. So when L2 does run it builds gaps 1 and 3 in full
+and **parks gap 2** (collecting payment once a card hold lapses) as Q-10.
 
 ## Status
 
 | | |
 | --- | --- |
-| **Current stage** | **L2 — ⛔ blocked, second attempt stopped 9 Oct 2026.** L1 is complete and now independently re-verified on Fola's Mac |
-| **Next action** | **Fola: create `.env.local` (SETUP.md §4), delete the stale `.env`, answer SETUP D7.** The nine missing key names are listed under **⛔ STOPPED** above. Then L2 — baseline the Neon `dev` branch, apply migrations #1–#9 in order, drift check, seed, Playwright, Stripe gates A/B/C/D, plus the three Phase 2 gaps from the 9 Oct review (PRD §16.1). Nothing else can start first: L3–L15 all depend on L2 |
+| **Current stage** | **L2 — ⛔ blocked, third attempt stopped 15 Oct 2026.** L1 complete and re-verified; `.env.local` now exists but 7 of 9 L2 keys are empty strings |
+| **Next action** | **Fola: paste six real values into the existing `.env.local`** — `DATABASE_URL`, `DIRECT_URL`, `DEV_DB_HOST` (Neon `dev`), `STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` (Stripe test), `RESEND_API_KEY` — plus `DEV_EMAIL_REDIRECT`. **And answer SETUP D7.** The file and the two local secrets are done; see **⛔ STOPPED** above for where each value comes from. Then L2 — baseline the Neon `dev` branch, apply migrations #1–#9 in order, drift check, seed, Playwright, Stripe gates A/B/C/D, plus the three Phase 2 gaps from the 9 Oct review (PRD §16.1). Nothing else can start first: L3–L15 all depend on L2 |
 | **Working branch** | `build/autonomous` on GitHub — the fix-branch work plus 4 L1 commits and the 9 Oct documentation repair, 11 commits ahead of `main` (not merged) |
-| **Last updated** | 9 Oct 2026 (second entry) — L2 attempt stopped on the missing `.env.local`; verify gate re-run green on Fola's Mac (190 tests); files deleted from the working tree restored; Q-13 raised on where the build documents live. Earlier 9 Oct — external review, documents revised to PRD v2.2.1. 8 Oct — L1 complete |
-| **Needs Fola?** | **Yes — two things, and the build cannot move without the first.** (1) `.env.local` (Q-6). (2) SETUP D7 (Q-10), or L2's gap-2 work parks. 11 live *Open questions*; 3 items in the *Review queue* for merge checkpoint 1 |
+| **Last updated** | 15 Oct 2026 — `.env.local` created from the §4 template and the stale `.env` removed; 2 of 9 L2 keys filled, 7 still empty, so the stop stands; gate re-run green (190 tests); Q-13 resolved — the build documents are back at the repo root (`31fa69d`). Earlier 9 Oct (second entry) — L2 attempt stopped on the missing `.env.local`; verify gate re-run green on Fola's Mac (190 tests); files deleted from the working tree restored; Q-13 raised on where the build documents live. Earlier 9 Oct — external review, documents revised to PRD v2.2.1. 8 Oct — L1 complete |
+| **Needs Fola?** | **Yes — two things, and the build cannot move without the first.** (1) the six empty credentials in `.env.local` (Q-6). (2) SETUP D7 (Q-10), or L2's gap-2 work parks. 10 live *Open questions* (Q-13 resolved); 3 items in the *Review queue* for merge checkpoint 1 |
 
 ## Stage tracker
 
@@ -124,10 +145,10 @@ Six commits: Stripe fixes for flags 1, 2, 3 and 6 plus the flag 4/5 decisions; `
 
 | | |
 | --- | --- |
-| `.env.local` | **Absent — re-checked 9 Oct 2026, still not there.** The ignition prompt assumes it exists and is filled. This is the whole of the blockage |
-| `.env` | Present, git-ignored, **stale**: it is `.env.example` with `DATABASE_URL`/`DIRECT_URL` left at `postgresql://user:password@localhost:5432/...`. `hasDatabase` correctly reads that as "no database", so the app runs DB-less. No real credential is in it and nothing sensitive is committed — `.gitignore` covers `.env*` and only `.env.example` is tracked |
+| `.env.local` | **Present since 15 Oct 2026**, git-ignored (`git check-ignore` confirms). Created from the `SETUP.md` §4 template, so the externally-issued credentials are empty strings — `AUTH_SECRET`, `ACCESS_CODE_ENC_KEY` and `MEDIA_LINK_SECRET` were generated locally; the six Neon/Stripe/Resend values and `DEV_EMAIL_REDIRECT` are still blank |
+| `.env` | **Removed 15 Oct 2026** per `SETUP.md` §4, once `.env.local` existed — it carried the retired `ADMIN_ACCESS_CODE` and the `localhost` placeholder that `SETUP.md` §1 warns would fight the dev-database guard. Backed up outside the repo first (it is git-ignored, so git could not restore it). Until then it was, as described: stale: it is `.env.example` with `DATABASE_URL`/`DIRECT_URL` left at `postgresql://user:password@localhost:5432/...`. `hasDatabase` correctly reads that as "no database", so the app runs DB-less. No real credential is in it and nothing sensitive is committed — `.gitignore` covers `.env*` and only `.env.example` is tracked |
 | Neon `dev` branch | Not reachable — no connection string on this machine. `DEV_DB_HOST` unset, so the L1 `assert-dev-db` guard has nothing to compare against |
-| Stripe | No key present, test or live |
+| Stripe | No key present, test or live — both names exist in `.env.local` as empty strings |
 | `.claude/settings.json` | Created 8 Oct 2026 from `SETUP.md` §5 so the build can run unattended. L1 validates it |
 
 **Consequence for the autonomous run:** L1 needs no keys and can run now. L2 is blocked until `SETUP.md` §3 is done. Stages L3–L13 all depend on L2, so a build started today completes L1 and then stops. Filling `.env.local` is the single highest-value thing Fola can do.
@@ -137,9 +158,9 @@ Six commits: Stripe fixes for flags 1, 2, 3 and 6 plus the flag 4/5 decisions; `
 | Stage | Needs | Present? |
 | --- | --- | --- |
 | L1 | none | ✅ n/a |
-| L2 | `DATABASE_URL`, `DIRECT_URL`, `DEV_DB_HOST`, `AUTH_SECRET`, `ACCESS_CODE_ENC_KEY`, `STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `RESEND_API_KEY`, `DEV_EMAIL_REDIRECT` | ❌ **none — all nine, re-checked 9 Oct 2026.** Named individually under **⛔ STOPPED** |
-| L7 | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `MEDIA_LINK_SECRET` | ❌ none |
-| L9 | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_SENDER_ID` | ❌ none |
+| L2 | `DATABASE_URL`, `DIRECT_URL`, `DEV_DB_HOST`, `AUTH_SECRET`, `ACCESS_CODE_ENC_KEY`, `STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `RESEND_API_KEY`, `DEV_EMAIL_REDIRECT` | ⚠️ **2 of 9 (15 Oct 2026)** — `AUTH_SECRET` and `ACCESS_CODE_ENC_KEY` generated; the other seven are present as empty strings. Per-key detail under **⛔ STOPPED** |
+| L7 | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `MEDIA_LINK_SECRET` | ⚠️ 2 of 5 — `R2_BUCKET` default and `MEDIA_LINK_SECRET` generated 15 Oct; the three Cloudflare credentials empty |
+| L9 | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_SENDER_ID` | ⚠️ 1 of 3 — `TWILIO_SENDER_ID` default `mcseco`; the two credentials and `DEV_SMS_REDIRECT` empty |
 | L11 | Stripe Bacs enabled (test), `NEXT_PUBLIC_CALCOM_URL` | ❌ none |
 | L12 | `GOOGLE_REVIEW_URL` | ❌ none |
 | L14 | `NEXT_PUBLIC_SENTRY_DSN`; Upstash optional | ❌ none |
@@ -209,7 +230,7 @@ Format: **Q-n** · stage · question · options (none picked) · what's blocked.
 
 - **Q-10** · L2 · **How to collect payment once a card hold lapses** — bookings more than ~7 days ahead and every recurring visit (finding 2). Options are in SETUP D7: A save card + charge off-session on completion / B save card + place the hold ~2 days before / C additionally cap one-off bookings at ~6 days ahead. Blocks: the L2 collection item and gate D's payment step only; the rest of L2 proceeds.
 - **Q-11** · L2 · **Quote validity period.** PRD §7.2 says 14 days; the code stores 30 (`src/app/actions/booking.ts:362`). Options: change the code to 14 / amend the PRD to 30. Blocks: nothing; it sets how long a quoted price is honoured.
-- **Q-13** · all · **Where the five build documents live.** They were moved into `docs/` on 9 Oct 2026 along with the v2.2.1 revision, but `CLAUDE.md` itself still states (line 24) that the five live at the **repo root**, and decision D-0a records why: *Claude Code only auto-reads `CLAUDE.md` from the repo root*. That is not theoretical — this session was **not** given `CLAUDE.md` automatically and had to be pointed at `docs/CLAUDE.md` by hand. A future session started without that instruction runs with no rulebook and would not know it. The agent may not edit `CLAUDE.md`, so the contradiction is parked rather than resolved. Options: **(a)** move the five back to the repo root, keeping the v2.2.1 content — restores auto-loading and matches `CLAUDE.md` as written; **(b)** keep them in `docs/` and amend `CLAUDE.md` line 24 and D-0a, accepting that every future session must be told where the rulebook is. `README.md`'s links were repointed at `docs/` so the repo is at least self-consistent today; under option (a) that is one edit back. Blocks: nothing in code — but it decides whether the next unattended session reads the rules at all.
+- **Q-13** · all · ~~**Where the five build documents live.**~~ **Resolved 15 Oct 2026 — option (a):** Fola moved the five back to the repo root in `31fa69d`, keeping the v2.2.1 content, so `CLAUDE.md` auto-loads again and matches its own line 24. `31fa69d` moved the five files only, so `README.md`'s three links were left pointing at `docs/` and were broken by the move; repointed at the root in the same commit as this entry. The original question, for the record: They were moved into `docs/` on 9 Oct 2026 along with the v2.2.1 revision, but `CLAUDE.md` itself still states (line 24) that the five live at the **repo root**, and decision D-0a records why: *Claude Code only auto-reads `CLAUDE.md` from the repo root*. That is not theoretical — this session was **not** given `CLAUDE.md` automatically and had to be pointed at `docs/CLAUDE.md` by hand. A future session started without that instruction runs with no rulebook and would not know it. The agent may not edit `CLAUDE.md`, so the contradiction is parked rather than resolved. Options: **(a)** move the five back to the repo root, keeping the v2.2.1 content — restores auto-loading and matches `CLAUDE.md` as written; **(b)** keep them in `docs/` and amend `CLAUDE.md` line 24 and D-0a, accepting that every future session must be told where the rulebook is. `README.md`'s links were repointed at `docs/` so the repo is at least self-consistent today; under option (a) that is one edit back. Blocks: nothing in code — but it decides whether the next unattended session reads the rules at all.
 - **Q-12** · L7 · **Media retention.** `.env.example` pre-fills `MEDIA_RETENTION_MONTHS="12"` while SETUP D4 is blank, so L7 would ship 12 months by default. Options: 12 / 18 / 24 months (answer D4). L7 reads D4, not the example default; until D4 is answered the retention value is parked. Blocks: L7 retention only.
 
 ## Review queue (Fola reviews at merge checkpoints)
@@ -473,3 +494,92 @@ parked as **Q-13** rather than retried. The documents' current location in
 
 **Next action:** unchanged — `.env.local`, then delete `.env`, then L2 from its
 revised plan in PRD §16.3.
+
+---
+
+### Session — 15 Oct 2026 (L2 attempt, stopped again)
+
+Fola supplied the `SETUP.md` §4 `.env.local` template as a command to run. It was
+run; `.env.local` now exists. **L2 still did not start** — the template carries
+every externally-issued credential as an empty string, so 7 of the 9 keys L2 needs
+are blank. Detail and per-key instructions are in **⛔ STOPPED** at the top.
+No application code was touched.
+
+**Session-start checks.**
+
+```
+$ ls CLAUDE.md PRD.md PROGRESS.md SETUP.md CLAUDE_CODE_PROMPT.md
+all five present at the repo root          # Q-13 resolved, option (a)
+
+$ git log --oneline -2
+31fa69d docs: move build documents to repo root (per CLAUDE.md)
+b929149 docs: L2 stop — .env.local absent; restore deleted docs, repair links
+
+$ git status --short
+(clean)
+
+$ git branch -vv | grep -E "autonomous|main"
+* build/autonomous  31fa69d [origin/build/autonomous]
+  main              2f667ff [origin/main]            # untouched
+```
+
+`⛔ STOPPED` was present and unresolved at session start, so per `CLAUDE.md` →
+*Session protocol* the only work done was on the stop itself.
+
+**What was done.**
+
+- [x] `.env.local` created at the repo root from the §4 template. `git check-ignore`
+      confirms it is ignored. `AUTH_SECRET`, `ACCESS_CODE_ENC_KEY` and
+      `MEDIA_LINK_SECRET` were generated by the template (44 chars each); no key
+      value was read, printed or logged at any point.
+- [x] Stale `.env` removed, per `SETUP.md` §4 and §1 note 2. It held the retired
+      `ADMIN_ACCESS_CODE` and the `user:password@localhost` placeholder. Copied
+      outside the repo first, because `.env*` is git-ignored and git could not have
+      restored it.
+- [x] `README.md` links repointed at the repo root. `31fa69d` moved the five
+      documents without touching README, so its three links were left aimed at
+      `docs/` and were broken. A repo-wide grep now finds no link to a moved path.
+- [x] Q-13 marked resolved; the keys and environment-readiness tables now show
+      per-key state rather than "none".
+
+**The dev-db guard was checked against the new file and refuses correctly** — this
+is the behaviour that matters most while `DEV_DB_HOST` is blank, because a guard
+that read "empty" as "fine" would be worse than no guard:
+
+```
+$ npx tsx scripts/assert-dev-db.ts
+✗ Refused — not the dev database.
+  DEV_DB_HOST is not set, so this command cannot be proven to target the dev
+  database. Set it to the Neon dev branch's DIRECT host (SETUP.md §3.1, step 3).
+  Refusing by default.
+exit: 1
+```
+
+**Verify gate — re-run after the environment change, all green.** Worth running
+because `DATABASE_URL` went from the `localhost` placeholder to an empty string and
+`.env` disappeared, and the app must still render DB-less. `hasDatabase`
+(`src/lib/db.ts:18`) is `Boolean(DATABASE_URL && !includes("user:password@localhost"))`,
+so an empty string reads as "no database" exactly as the placeholder did:
+
+```
+$ npx tsc --noEmit            → clean
+$ npx eslint .                → clean
+$ node --import tsx --test "src/**/*.test.ts" "scripts/**/*.test.ts"
+ℹ tests 190   ℹ pass 190   ℹ fail 0   ℹ duration_ms 384.580625
+$ npx prisma generate         → ✔ Generated Prisma Client (v6.19.3) in 81ms
+$ npx tsx scripts/check-price-parity.ts
+✓ price parity: every 'from' surface matches the rate card
+$ npx next build              → ✓ Compiled successfully in 976ms (no warnings)
+```
+
+The drift check still cannot run — it needs `DIRECT_URL`. It remains L2's first job.
+
+**SETUP decisions, re-read.** D7 blank (all three boxes unticked) → Q-10 stands and
+L2's gap-2 item will park. D3, D4, D5, D6 also still blank → Q-1, Q-12 and the L10
+rate-card editor stay parked as already recorded. D1 = A and D2 = build both are
+unchanged.
+
+**Next action:** paste the six Neon/Stripe/Resend values plus `DEV_EMAIL_REDIRECT`
+into the existing `.env.local`, and answer D7. Then L2 from its revised plan in
+PRD §16.3 — baseline `dev`, migrations #1–#9, drift check, seed, Playwright, gates
+A/B/C/D and the three Phase 2 gaps.
