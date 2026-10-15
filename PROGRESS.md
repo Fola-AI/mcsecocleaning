@@ -52,11 +52,11 @@ drafted and parked, per the L2 stage text.
 
 | | |
 | --- | --- |
-| **Current stage** | **L14 — ✅ done, 15 Oct 2026.** Hardening found four real defects and fixed them: an inbound-SMS webhook that verified nothing, a CTA heading at 2.57:1 on five pages, invalid list markup on `/book`, and a skip link that took focus while one pixel wide. Rate limiting now covers the sign-in forms per mailbox as well as per caller, and every server error is reported through one redaction function. **L15 is next and cannot complete** — see *Next action* |
-| **Next action** | *(Claude Code)* **L15** — write `LAUNCH.md` as far as it can go and record, with the command's output, that the release gate **cannot pass**: `npm run check:launch-inputs` needs the 26 business placeholders in `src/config/site.ts` (**Q-5**). *(Fola)* **four merge checkpoints are ready**, and **Q-5** is the one answer that unblocks launch |
-| **Working branch** | `build/autonomous`, pushed — L1 → L6, L8 → L14 ahead of `main` (`2f667ff`, untouched); L7 parked |
-| **Last updated** | 15 Oct 2026 — **L14 complete.** Four defects found and fixed (unauthenticated SMS webhook, 2.57:1 heading, invalid `<dl>`, a 1-pixel skip link); sign-in rate-limited per mailbox; redacted error reporting with no Sentry dependency; `docs/SECURITY-REVIEW.md` written, including what it does not cover. Unit tests 550 → 575, E2E 47 → 70 |
-| **Needs Fola?** | **Yes — L15 stops without it.** **Q-5** (the 26 business facts) is the release gate. Also: **Q-16** (dev email), **D3**, **D5** (rate-limiting backend), **Bacs**, **R2 keys + D4**, **Twilio keys**, a Sentry DSN, `INNGEST_SIGNING_KEY` (an unsigned `/api/inngest` in production would accept requests that *run functions*), Cal.com and Google review URLs. Four checkpoints ready. Still open: **Q-14**, **Q-15**, **Q-17**, **D2** |
+| **Current stage** | **L15 — ✅ done, 15 Oct 2026. The build plan is finished.** L1–L15 are complete except **L7** (parked on R2 keys + D4) and L10's rate-card editor (parked on D3). `LAUNCH.md` is written and executable; `npm run release:gate` is green on typecheck, lint, 589 unit tests, build and 71 end-to-end gates, and red on `check:launch-inputs` — 39 markers that are the business's own information, not code |
+| **Next action** | *(Fola)* **answer Q-5** — the 26 business facts in `src/config/site.ts` — then work through `LAUNCH.md` §0. **Five merge checkpoints are ready**; checkpoint 5's notes name the one migration, the new env vars and the three things to read first. *(Claude Code)* nothing is queued: every stage that can be built without a key or a decision is built. The next work is whatever Q-5, D3, D4 or D5 unblocks |
+| **Working branch** | `build/autonomous`, pushed — L1 → L6, L8 → L15 ahead of `main` (`2f667ff`, untouched); L7 parked |
+| **Last updated** | 15 Oct 2026 — **L14 and L15 complete.** L14 found four real defects and fixed them, then a cold second reading found eight more, three of which were claims the code did not support. L15 found that this build's own dev-database guard made `LAUNCH.md` unexecutable and gave production its own door rather than disarming the guard. Unit tests 550 → 589, E2E 47 → 71 |
+| **Needs Fola?** | **It is now all that is left.** **Q-5** (26 business facts) is the release gate; then the manual Stripe card pass, a tested restore, and `INNGEST_SIGNING_KEY`. Choices rather than blockers: **D3** (price editing in the UI), **D4** + R2 keys (L7, photos), **D5** (limiter backend), **D2**, **Q-9** (VAT display), **Q-14** (card-on-file wording), **Q-15**, **Q-16** (verify the Resend domain or no customer receives anything), **Q-17**, Bacs, Twilio, Sentry, Cal.com, the Google review URL |
 
 ## Stage tracker
 
@@ -76,7 +76,7 @@ drafted and parked, per the L2 stage text.
 | L12 | Reviews, growth and content gaps | ✅ Done — 15 Oct 2026 (Google review link parked) | |
 | L13 | Issue resolution and data rights | ✅ Done — 15 Oct 2026 (evidence below) | ✅ 4 ← **here** |
 | L14 | Launch hardening | ✅ Done — 15 Oct 2026 (evidence below; Sentry SDK, load tests and Lighthouse parked) | |
-| L15 | Release candidate and LAUNCH.md | ⏳ Next — **cannot complete**: the release gate needs `npm run check:launch-inputs` to pass (26 placeholders, **Q-5**) | ✅ 5 |
+| L15 | Release candidate and LAUNCH.md | ✅ Done — 15 Oct 2026. `LAUNCH.md` written and executable; the release gate is green on all five code steps and red on `check:launch-inputs` (39 markers, **Q-5**), which is the business's information rather than the build's | ✅ 5 ← **here** |
 
 Legend: ☐ not started · ⏳ in progress · ✅ done (evidence below) · ⛔ blocked (reason in stage log)
 
@@ -340,6 +340,102 @@ Decisions taken during L14:
 - **D-29** · L14 · `getSlots` returns a **discriminated** `SlotsResult` instead of a bare map. Why: `{}` meant two different things — no availability, and you are rate limited — and the wizard rendered both as "no slots in the next few weeks, please call us". Customers behind one office or carrier NAT share an address, so the limiter could tell a real customer the business was fully booked for a fortnight. Alternative: exempt `getSlots` from the limit — rejected, it is the easiest endpoint to scrape. Reverse: return the map and accept the ambiguity.
 - **D-30** · L14 · Two smaller limiter decisions. `rateLimitIdentifier` prefers **`x-vercel-forwarded-for`** over `x-forwarded-for`: Vercel sets its own header and a caller cannot prepend to it, whereas the first entry of a plain `x-forwarded-for` is caller-chosen behind any proxy that appends — and a limiter keyed on a value the caller picks is not a limiter. And `sweepRateLimitCounters` (hourly Inngest, keeps 24 hours) deletes spent windows, because `expiresAt` existed "for a sweep" and the sweep did not: the table grew by a row per caller per minute for ever. Reverse: drop the header preference; remove the function from `functions.ts`.
 
+### L15 — Release candidate and LAUNCH.md
+
+**Started and completed 15 Oct 2026.** Depends on L14.
+
+#### Plan — written before coding
+
+- [x] Run the release gate and record what it says, including the part that fails.
+- [x] Write `LAUNCH.md`: every step Fola runs, in order, executable without the agent.
+- [x] Checkpoint 5 merge notes.
+
+#### What L15 found
+
+**`LAUNCH.md` could not have been executed as first written, and the reason was one
+of this build's own guardrails.** Every `db:*` script and `prisma/seed.ts` assert
+`assertDevDatabase()`, which is deny-by-default: no `DEV_DB_HOST`, no run. That is
+exactly right for an autonomous build — it is what kept the agent off every real
+database for fifteen stages — but it also means **there was no way to seed
+production**. The runbook's natural instruction ("point `DEV_DB_HOST` at
+production for this one command") would leave the guard disarmed and aimed at the
+live database afterwards, which is worse than the problem.
+
+So the guard is untouched and production got its own door with a different lock:
+
+| File | Role |
+| --- | --- |
+| `prisma/seed-core.ts` | the reference data, extracted — one piece of code seeds either database |
+| `prisma/seed.ts` | the dev entry: `assertDevDatabase()` in front of it, unchanged in behaviour |
+| `scripts/seed-production.ts` | Fola's entry. Refuses unless `CONFIRM_PRODUCTION_SEED=yes` **and** `APP_ENV=production`, refuses the host in `DEV_DB_HOST` (including its `-pooler` form), refuses a host that is not a hostname, and prints the host and the owner email **before** writing |
+
+The confirmation is not security — the agent could type it, and reaching production
+is a hard stop whether it does or not. It is the difference between an accident and
+a decision, which is the only thing a guard at this layer can be.
+
+Two smaller things fell out of it: the owner account is now `OWNER_EMAIL` with the
+committed address as a fallback the script warns about (only a seeded role reaches
+`/admin`, and the committed one is a business fact nobody has confirmed), and
+`npm run release:gate` now exists — `typecheck → lint → test → build → test:e2e →
+check:launch-inputs`, stopping at the first failure, so the gate PRD §16.3 asks for
+is one command rather than a list somebody retypes.
+
+#### One more thing L15 found, in L14's tests
+
+The first `release:gate` run failed two specs, and one of them was this stage's own
+doing: two of L14's rate-limit tests asserted the refusal index **exactly**
+(`=== limit + 1`) against a limiter that is documented to **fail open**. Under load
+its store errors, an attempt goes uncounted, and refusal arrives a request later —
+so the test fails on a busy machine and passes on a quiet one, which is the worst
+kind. Both now assert the properties rather than the arithmetic: never refuse early,
+and do refuse within twice the limit. The other failure (`admin-crew`, the daily cap)
+passes alone and was a timeout under contention.
+
+#### The release gate, in full
+
+```
+$ npm run release:gate
+✓ typecheck        tsc --noEmit, no output
+✓ lint             eslint, no output
+✓ unit tests       ℹ tests 589   ℹ pass 588   ℹ fail 0   ℹ skipped 1
+✓ build            price parity green, compiled successfully
+✓ end-to-end       71 passed (Stripe test mode, real 3-D Secure)
+✗ launch inputs    39 markers outstanding, 4 trust claims unconfirmed  → exit 1
+```
+
+The last line is the state of the business's own information, not of the code:
+
+```
+TODO(business-input) — 6     TODO(legal) — 2     TODO(ops) — 2
+TODO(pricing) — 0            PLACEHOLDER — 29    (26 of them in src/config/site.ts)
+Unconfirmed trust claims — 4: publicLiability, dbsChecked, insured, yearsTrading
+```
+
+#### Acceptance (PRD §16.3 → L15)
+
+| Criterion | State |
+| --- | --- |
+| *"Full regression on a Vercel preview of `build/autonomous` against `dev`"* | **Fola's step.** The regression itself is green here (71 gates, Stripe test mode, against the real `dev` branch). Running it against a *preview deployment* needs a deploy and its URL; the agent has no Vercel access and a production deploy is a hard stop either way. `LAUNCH.md` §11 says exactly what to run and in what order |
+| *"`npm run check:launch-inputs` reports what Fola must still supply"* | ✅ — it does, it exits 1, and it is wired into `release:gate` rather than into `build` |
+| *"Write `LAUNCH.md`"* | ✅ — 11 sections: the blockers, migrate-before-deploy with confirm queries and the drift check, the six files that must run without `-1`, production env vars by name, Stripe live mode and the six webhook events, DNS and SPF/DKIM/DMARC, Inngest, monitoring, launch day in order, ten smoke tests, rollback, and the first week's daily and weekly checks with the SQL to run |
+| *"complete and executable by Fola without the agent"* | ✅ for everything the repository controls. Two things in it are gates the agent could not pass on anyone's behalf: the manual Stripe card pass (the Payment Element is canvas-drawn — D-14) and a tested restore |
+| **→ Merge checkpoint 5** | Notes below |
+
+#### What launch now waits on
+
+Not code. **Q-5** — the 26 business facts — and then §0 of `LAUNCH.md`. Everything
+else on the list is a choice rather than a blocker: L7 (R2 keys + D4) means no
+before/after photos, the L10 editor (D3) means a price change is a deploy, D5 means
+the limiter stays on Postgres, Q-14 means no card on file, and Q-16 means verifying
+the Resend domain before a customer ever receives anything.
+
+Decisions taken during L15:
+
+- **D-31** · L15 · The dev-database guard is **not** relaxed for launch; production gets a separate entry point (`scripts/seed-production.ts`) that refuses unless `CONFIRM_PRODUCTION_SEED=yes` **and** `APP_ENV=production`, refuses the host in `DEV_DB_HOST` (including its `-pooler` form), and prints the host and owner email before writing. Why: `prisma/seed.ts` asserts the dev guard, which is deny-by-default, so there was **no way to seed production** — and the obvious workaround, pointing `DEV_DB_HOST` at production for one command, leaves the guard disarmed and aimed at the live database. The confirmation is not security (the agent could type it; reaching production is a hard stop regardless) — it is the line between an accident and a decision. Alternative considered: document the `DEV_DB_HOST` swap in `LAUNCH.md` — rejected for the reason above. Reverse: delete the script and the npm entry; the dev path is untouched either way.
+- **D-32** · L15 · The seed body moved to `prisma/seed-core.ts`, imported by both entry points. Why: two copies of the reference data would diverge, and the one that diverges silently is the production one. Reverse: inline it back into `prisma/seed.ts`.
+- **D-33** · L15 · The owner account reads `OWNER_EMAIL`, falling back to the committed address with a warning printed. Why: only a seeded role reaches `/admin`, and the committed address is a business fact nobody has confirmed — launch day is exactly when that has to be right. Reverse: hardcode it again.
+- **D-34** · L15 · `npm run release:gate` added — `typecheck → lint → test → build → test:e2e → check:launch-inputs`, stopping at the first failure. Why: PRD §16.3 calls `check:launch-inputs` "the L15 release gate" and nothing made the gate a thing you could run; a gate that is a list somebody retypes is a gate that gets partly run. `check:launch-inputs` is last so the code is proven before the one step that is expected to fail. Reverse: delete the script entry.
+
 ## Checkpoint merge notes
 
 ### Checkpoint 1 — after L2 · ready for Fola
@@ -531,7 +627,7 @@ reading anyway because of what they commit the business to:
 
 ---
 
-#### Ready-to-paste PR description
+#### Ready-to-paste PR description — checkpoint 1 (L1 + L2)
 
 > **L1 + L2 — guardrails, a real database, and the Stripe test-mode gate**
 >
@@ -591,6 +687,120 @@ reading anyway because of what they commit the business to:
 > Unit tests 190 → 396, E2E gates 14 → 30. Typecheck, lint, build and the drift check
 > are clean. Nothing was run against production, live Stripe keys or any database but
 > the Neon `dev` branch.
+>
+> 🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+---
+
+### Checkpoint 5 — after L15 · ready for Fola · **the last one**
+
+**What is on the branch since checkpoint 4.** L14 (launch hardening) and L15 (the
+release candidate and `LAUNCH.md`).
+
+**Migrations to apply before merging** — one, after checkpoint 4's:
+
+```
+  2026-10-15-rate-limit-counters.sql              psql -1    ← L14
+```
+
+A new empty table (`RateLimitCounter`), `CREATE TABLE IF NOT EXISTS`, no foreign
+keys, independent of every other migration. Applied to `dev`; drift empty.
+
+**New Production environment variables**
+
+| Name | Required? | What happens without it |
+| --- | --- | --- |
+| `INNGEST_SIGNING_KEY` | **Yes, before launch** | `/api/inngest` accepts unsigned requests — and that endpoint *runs functions*. It was already on the list as a launch step; L14 is why it is now called a blocker |
+| `TWILIO_WEBHOOK_URL` | Only if needed | Set it if inbound-SMS signature verification fails behind the proxy; the forwarded headers are used otherwise, which is right on Vercel |
+| `OWNER_EMAIL` | At seed time | The owner account falls back to the committed `mcsecocleaning@gmail.com`, which nobody has confirmed. Only a seeded role reaches `/admin` |
+| `CONFIRM_PRODUCTION_SEED` | At seed time only | `npm run db:seed:production` refuses. Deliberate — see L15 |
+| `NEXT_PUBLIC_SENTRY_DSN` | No | Errors still reach the Vercel function log, redacted, through one function. The DSN only adds alerting |
+
+**Review-queue items in scope:** R-25 (the migration), R-26 (the webhook that
+verified nothing), R-27 (the sign-in rate limits), R-28 (the redaction). R-26 and
+R-28 are the two worth your time.
+
+**Three things to read before merging, in this order:**
+
+1. **`docs/SECURITY-REVIEW.md` §7 and §9** — the CSP. `script-src 'unsafe-inline'`
+   is open, which means the policy is not XSS mitigation; closing it costs the
+   static rendering the marketing site's Core Web Vitals depend on. That trade is
+   yours, it is written down as a residual risk rather than papered over, and a
+   gate stops the document and the code drifting apart.
+2. **`docs/SECURITY-REVIEW.md` §10** — what a second, cold reading of L14 found in
+   L14's own work. Three of the eight findings were claims the code did not
+   support. It is the most useful page in the document.
+3. **`LAUNCH.md` §0** — the four blockers, of which **Q-5** is the only one that
+   needs you rather than a command.
+
+**What merging this means.** `main` would then hold the whole of L1–L15 except L7,
+and the repository would be launch-ready in the sense that nothing further is owed
+by the build. What stands between it and a public site is the business's own
+information (§0.1), the manual Stripe card pass (§0.2), a tested restore (§0.3) and
+your decision on the two parked stages (§0.4).
+
+#### Ready-to-paste PR description — checkpoint 5 (L14 + L15)
+
+> **L14 + L15 — launch hardening, and a runbook somebody can actually follow**
+>
+> **L14 is the stage that is meant to find things.** It found four, and the
+> fourth is the one worth knowing about:
+>
+> 1. `POST /api/sms/inbound` verified **no signature at all** — any POST could
+>    set a customer's marketing consent to false. Out, never in, so the damage
+>    was limited, but it changed a customer record for anyone who could guess a
+>    phone number. It now verifies `X-Twilio-Signature`, and the HMAC is tested
+>    against Twilio's own published vector rather than one this code generated.
+> 2. The closing CTA heading rendered at **2.57:1** on five pages — the band sets
+>    `text-white`, and the base layer colours every `h1`–`h4` with `--color-ink`,
+>    which beats an inherited colour.
+> 3. A bare `<p>` inside the price summary's `<dl>` on `/book` — a screen reader
+>    announces a list whose contents do not match.
+> 4. **The skip link was one pixel wide.** `sr-only focus:not-sr-only` depends on
+>    stylesheet order and lost here, so the link took focus first, exactly as it
+>    should, and showed nothing. The markup was correct and the accessibility tree
+>    was correct; axe cannot see this. The keyboard test found it on its first run,
+>    which is the argument for writing the "manual" WCAG checks as tests.
+>
+> **Also built:** rate limiting on quote, booking, auth and the lead forms
+> (Postgres counters, fails open, generous enough not to catch a customer), sign-in
+> limited per mailbox as well as per caller, security headers and a CSP, a
+> secret-exposure scan, redacted structured error reporting with no Sentry
+> dependency, and `docs/SECURITY-REVIEW.md` — which names the gate behind every
+> enforced claim and devotes a section to what it does **not** cover.
+>
+> **The second, cold review then found eight more**, three of which were claims
+> the code did not support. The worst was a comment asserting that inline script
+> "is not allowed" directly above `'unsafe-inline'` in `script-src`. It is now
+> written down as the accepted residual risk it is — closing it means per-request
+> nonces and losing static rendering — and a gate keeps the comment, the policy
+> and the document from drifting apart. It also caught a gate that proved the
+> limiter counts while nothing proved anything called it, and a rate-limited
+> customer being told the business had no availability for a fortnight.
+>
+> **L15 found that this build's own guardrail made the runbook unexecutable.**
+> Every `db:*` script asserts the dev-database guard, which is deny-by-default —
+> so there was no way to seed production. Rather than tell you to point
+> `DEV_DB_HOST` at the live database for one command and leave the guard disarmed,
+> production got its own door: `npm run db:seed:production` refuses unless you
+> have typed a confirmation, refuses the dev host, and prints the host and the
+> owner email before it writes anything.
+>
+> **`LAUNCH.md`** is 11 sections: the blockers, migrate-before-deploy with confirm
+> queries and the drift check, the six migrations that must run without `-1`,
+> production env vars by name, Stripe live mode and the six webhook events, DNS and
+> SPF/DKIM/DMARC, Inngest, monitoring, launch day in order, ten smoke tests,
+> rollback, and the first week's checks with the SQL to run.
+>
+> **`npm run release:gate`** — typecheck, lint, 589 unit tests, build, 71
+> end-to-end gates against Stripe test mode — is green, and then red on
+> `check:launch-inputs`: 39 markers, 26 of them the business facts in
+> `src/config/site.ts`. That last step is the only thing between this repository
+> and a launch, and it is information rather than code.
+>
+> One migration to apply first: `2026-10-15-rate-limit-counters.sql` (a new empty
+> table, `psql -1`). Nothing was run against production, live Stripe keys or any
+> database but the Neon `dev` branch.
 >
 > 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 
@@ -2744,7 +2954,7 @@ that press keys as well as tests that read the tree.
 | Server-action authorisation scan (every export decides, or is allow-listed with a reason) | `src/app/actions/actions-authorise.test.ts` |
 | Redacted structured error reporting + the page a customer sees | `src/lib/monitoring.ts`, `src/instrumentation.ts`, `src/app/global-error.tsx` |
 | The written review, including what it does **not** cover | `docs/SECURITY-REVIEW.md` |
-| 10 hardening gates · 14 accessibility gates | `e2e/hardening.spec.ts`, `e2e/accessibility.spec.ts` |
+| 10 hardening gates · 14 accessibility gates (assertions written as ranges where the limiter's fail-open makes an exact count a flake) | `e2e/hardening.spec.ts`, `e2e/accessibility.spec.ts` |
 
 The redaction is the part worth defending: `CLAUDE.md` forbids an access code in "any
 log, email, SMS, error or analytics payload", and an error message is the easiest way
@@ -2837,13 +3047,21 @@ $ npm run test:e2e
   71 passed (4.0m)
 ```
 
-One earlier full run of the suite reported **5 failures** — the four Stripe gates and
-one issues spec — and took 10.3 minutes rather than 4. Each of them passes alone, and
-the clean re-run above passes all 71 in the usual time; the failures were timeouts
-while this machine was running two other things at once, not a defect. Recorded
-rather than quietly re-run, because "it passed the second time" is exactly the
-sentence that hides a real flake: if these five fail again on a quiet machine, start
-with the Stripe gates' use of one shared caller identifier against the booking rule.
+Two full runs of the suite did report failures, and they are recorded rather than
+quietly re-run, because "it passed the second time" is the sentence that hides a real
+flake. One run reported the four Stripe gates and an issues spec (10.3 minutes rather
+than 4, while this machine was running two other things); each passes alone and the
+clean re-run above passes all 71 in the usual time, so those were timeouts under
+contention.
+
+The second run pointed at something that **was** mine. Two of this stage's new rate-limit
+tests asserted the refusal index exactly — `refusedAt === limit + 1`. The limiter
+**fails open** by design, so when its own store errors under load an attempt goes
+uncounted and refusal arrives a request or two later than the arithmetic says. An
+exact assertion against deliberately lossy behaviour is a brittle test, not a defect
+found, and it would have cost somebody an afternoon in six months. Both now assert
+the two properties that actually matter — it never refuses **early** (that would be a
+real customer turned away) and it does refuse within twice the limit.
 
 The two accessibility and hardening suites in detail:
 

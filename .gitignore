@@ -40,3 +40,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Playwright artefacts — committed once by accident (test-results/.last-run.json),
+# which makes every gate run show a dirty tree.
+/test-results/
+/playwright-report/

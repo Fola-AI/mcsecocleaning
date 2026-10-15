@@ -247,7 +247,7 @@ a stale page reaching the next person; `no-store` additionally keeps it off disk
 The gate therefore asserts the property that matters — never `public`, always
 revalidated — rather than a literal string it cannot control.
 
-*Gate:* `e2e/hardening.spec.ts` (9 checks), including one that loads `/`, `/prices`
+*Gate:* `e2e/hardening.spec.ts` (10 checks), including one that loads `/`, `/prices`
 and `/book` and fails on a CSP console violation. A CSP that blocks your own
 scripts is a worse outage than the attack it prevents.
 

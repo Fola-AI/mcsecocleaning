@@ -1,17 +1,16 @@
 /**
- * Seed script — populates ServiceType, AddOn, ServiceArea and LocationPage rows
- * from the typed config so the database mirrors the marketing site.
+ * Seed the **dev** database (`npm run db:seed`).
  *
- * Run once a real DATABASE_URL is provisioned:  npm run db:seed
- * Safe to re-run (idempotent upserts).
+ * The data itself lives in `prisma/seed-core.ts`, shared with the production
+ * entry point; this file is the dev guard in front of it.
  *
- * The dev-database guard is asserted here as well as in the npm script, because
- * `prisma db seed` invokes this file directly through prisma.config.ts and so
- * never passes through the script.
+ * The guard is asserted here as well as in the npm script because `prisma db
+ * seed` invokes this file directly through `prisma.config.ts` and so never
+ * passes through the script.
  *
  * It also loads the env files itself, for the mirror-image reason: `npm run
  * db:seed` runs `tsx prisma/seed.ts` as its own process, which does NOT go
- * through prisma.config.ts, so nothing would have loaded `.env.local` and both
+ * through `prisma.config.ts`, so nothing would have loaded `.env.local` and both
  * the guard and PrismaClient would see no connection string. The guard then
  * refuses — correctly, since it cannot prove the target — and the seed cannot
  * run at all. `scripts/load-env.ts` does the loading, and the order it uses is
@@ -19,125 +18,16 @@
  */
 import "../scripts/load-env";
 
-import { PrismaClient, PricingModel } from "@prisma/client";
-import { services } from "../src/config/services";
-import { getRateCard } from "../src/lib/pricing/rate-card";
-import { fromPriceFor } from "../src/lib/pricing/from-price";
-import { areas, canPublishLocationPage, locationWordCount } from "../src/config/areas";
-import { serviceTemplates } from "../src/config/checklists";
+import { PrismaClient } from "@prisma/client";
+
 import { assertDevDatabase } from "../scripts/assert-dev-db";
+import { seedReferenceData } from "./seed-core";
 
 const db = new PrismaClient();
 
 async function main() {
   assertDevDatabase();
-
-  // Owner (RBAC, §3) — only seeded roles reach /admin. This is the single owner
-  // account; the rate-card editor (§9.7) is owner-only. Additional admin/ops users
-  // are added later. Idempotent: re-seeding keeps the role owner.
-  await db.user.upsert({
-    where: { email: "mcsecocleaning@gmail.com" },
-    update: { role: "owner" },
-    create: { email: "mcsecocleaning@gmail.com", name: "Owner", role: "owner" },
-  });
-
-  // Service types
-  for (const s of services) {
-    await db.serviceType.upsert({
-      where: { slug: s.slug },
-      update: {
-        name: s.name,
-        pricingModel: s.pricingModel as PricingModel,
-        minimumValue: fromPriceFor(s.slug).pence ?? 0,
-        remedyWindowHours: s.remedyWindowHours,
-        active: true,
-      },
-      create: {
-        slug: s.slug,
-        name: s.name,
-        pricingModel: s.pricingModel as PricingModel,
-        baseRates: {},
-        durationRates: {},
-        minimumValue: fromPriceFor(s.slug).pence ?? 0,
-        remedyWindowHours: s.remedyWindowHours,
-        active: true,
-      },
-    });
-  }
-
-  // Add-ons — from the rate card (single source). `durationMinutes` stores the
-  // add-on's crew-minutes (total labour); `price` is the VAT-inclusive pence.
-  for (const a of getRateCard().addOns) {
-    await db.addOn.upsert({
-      where: { slug: a.slug },
-      update: { name: a.name, price: a.pricePence, durationMinutes: a.crewMinutes, serviceTypeIds: a.appliesTo },
-      create: {
-        slug: a.slug,
-        name: a.name,
-        price: a.pricePence,
-        durationMinutes: a.crewMinutes,
-        serviceTypeIds: a.appliesTo,
-      },
-    });
-  }
-
-  // Service templates (checklists, §6.12)
-  for (const tpl of serviceTemplates) {
-    const st = await db.serviceType.findUnique({ where: { slug: tpl.serviceSlug } });
-    if (!st) continue;
-    const existing = await db.serviceTemplate.findFirst({
-      where: { serviceTypeId: st.id, name: tpl.name },
-    });
-    const data = {
-      serviceTypeId: st.id,
-      name: tpl.name,
-      items: tpl.items as unknown as object,
-    };
-    if (existing) {
-      await db.serviceTemplate.update({ where: { id: existing.id }, data });
-    } else {
-      await db.serviceTemplate.create({ data });
-    }
-  }
-
-  // Service areas + gated location pages
-  for (const area of areas) {
-    for (const district of area.postcodeDistricts) {
-      const sa = await db.serviceArea.upsert({
-        where: { postcodeDistrict: district.toUpperCase() },
-        update: { areaName: area.name, slug: area.slug, active: area.active, patchGroup: area.patchGroup },
-        create: {
-          postcodeDistrict: district.toUpperCase(),
-          areaName: area.name,
-          slug: area.slug,
-          active: area.active,
-          patchGroup: area.patchGroup,
-        },
-      });
-
-      for (const sc of area.serviceContent ?? []) {
-        const st = await db.serviceType.findUnique({ where: { slug: sc.serviceSlug } });
-        if (!st) continue;
-        const gate = canPublishLocationPage(area, sc.serviceSlug);
-        await db.locationPage.upsert({
-          where: { serviceTypeId_serviceAreaId: { serviceTypeId: st.id, serviceAreaId: sa.id } },
-          update: {
-            wordCount: locationWordCount(area, sc.serviceSlug),
-            published: gate.ok,
-          },
-          create: {
-            serviceTypeId: st.id,
-            serviceAreaId: sa.id,
-            slug: `${sc.serviceSlug}-${area.slug}`,
-            content: sc.intro,
-            wordCount: locationWordCount(area, sc.serviceSlug),
-            published: gate.ok,
-          },
-        });
-      }
-    }
-  }
-
+  await seedReferenceData(db, { ownerEmail: process.env.OWNER_EMAIL });
   console.log("Seed complete.");
 }
 
