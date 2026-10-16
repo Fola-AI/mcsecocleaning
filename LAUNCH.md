@@ -123,33 +123,43 @@ run `psql` directly, in this order, with `DIRECT_URL` set to the production
 **direct** (non-pooled) host:
 
 ```bash
+# The four that must NOT be wrapped in a transaction (see below).
+NO_TX="2026-09-20-lead-converted-quote-and-domestic-sales.sql
+2026-09-27-payment-status-part-paid.sql
+2026-09-30-payment-status-released.sql
+2026-10-15-crew-pin-and-issue-types.sql"
+
 for f in prisma/manual-migrations/*.sql; do
-  echo "→ $f"
-  psql "$DIRECT_URL" -v ON_ERROR_STOP=1 -1 -f "$f" || break
+  name=$(basename "$f")
+  if echo "$NO_TX" | grep -qx "$name"; then tx=""; else tx="-1"; fi
+  echo "→ $name ${tx:-(no transaction)}"
+  psql "$DIRECT_URL" -v ON_ERROR_STOP=1 $tx -f "$f" || break
 done
 ```
 
-**Six files must run WITHOUT `-1`** — Postgres refuses `ALTER TYPE … ADD VALUE`
-inside a transaction block:
+That loop is the whole job — it stops at the first failure and it puts each file in
+the right mode, so you do not have to remember which is which.
 
-```
-2026-09-20-lead-converted-quote-and-domestic-sales.sql
-2026-09-24-payments-reconciliation-webhook-status.sql
-2026-09-27-payment-status-part-paid.sql
-2026-09-30-payment-status-released.sql
-2026-10-15-access-code-audit-outcome.sql
-2026-10-15-crew-pin-and-issue-types.sql
-```
+**Why four of them run without `-1`:** Postgres refuses `ALTER TYPE … ADD VALUE`
+inside a transaction block, so those four are applied unwrapped.
 
-For those six, drop the `-1`:
+Two others *mention* `ALTER TYPE` in a comment and a careless `grep` lists them as
+well — `2026-09-24-payments-reconciliation-webhook-status.sql` and
+`2026-10-15-access-code-audit-outcome.sql`. Both are plain `CREATE TYPE`, which is
+transactional, so both **do** take `-1` and want it: a `CREATE TABLE` that fails
+half way without a transaction leaves the half it managed.
+
+To run one of the four on its own, it is the same command without `-1`:
 
 ```bash
 psql "$DIRECT_URL" -v ON_ERROR_STOP=1 -f prisma/manual-migrations/<file>.sql
 ```
 
-(`scripts/db-migrate-manual.ts` decides this automatically from the file's contents
-and `scripts/db-migrate-manual.test.ts` pins which six they are — if that list ever
-disagrees with this one, the test is right.)
+(`scripts/db-migrate-manual.ts` decides this per file — it strips `--` comments
+before looking for `ADD VALUE`, which is why the comment-only mentions do not fool
+it — and `scripts/db-migrate-manual.test.ts` pins which four they are. If that list
+ever disagrees with this one, **the test is right**; this paragraph exists because
+the first draft of it was wrong for exactly that reason.)
 
 ### 1.2 Confirm the schema, don't assume it
 

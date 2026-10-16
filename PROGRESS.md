@@ -417,7 +417,7 @@ Unconfirmed trust claims — 4: publicLiability, dbsChecked, insured, yearsTradi
 | --- | --- |
 | *"Full regression on a Vercel preview of `build/autonomous` against `dev`"* | **Fola's step.** The regression itself is green here (71 gates, Stripe test mode, against the real `dev` branch). Running it against a *preview deployment* needs a deploy and its URL; the agent has no Vercel access and a production deploy is a hard stop either way. `LAUNCH.md` §11 says exactly what to run and in what order |
 | *"`npm run check:launch-inputs` reports what Fola must still supply"* | ✅ — it does, it exits 1, and it is wired into `release:gate` rather than into `build` |
-| *"Write `LAUNCH.md`"* | ✅ — 11 sections: the blockers, migrate-before-deploy with confirm queries and the drift check, the six files that must run without `-1`, production env vars by name, Stripe live mode and the six webhook events, DNS and SPF/DKIM/DMARC, Inngest, monitoring, launch day in order, ten smoke tests, rollback, and the first week's daily and weekly checks with the SQL to run |
+| *"Write `LAUNCH.md`"* | ✅ — 11 sections: the blockers, migrate-before-deploy with confirm queries and the drift check, the four files that must run without `-1`, production env vars by name, Stripe live mode and the six webhook events, DNS and SPF/DKIM/DMARC, Inngest, monitoring, launch day in order, ten smoke tests, rollback, and the first week's daily and weekly checks with the SQL to run |
 | *"complete and executable by Fola without the agent"* | ✅ for everything the repository controls. Two things in it are gates the agent could not pass on anyone's behalf: the manual Stripe card pass (the Payment Element is canvas-drawn — D-14) and a tested restore |
 | **→ Merge checkpoint 5** | Notes below |
 
@@ -437,6 +437,111 @@ Decisions taken during L15:
 - **D-34** · L15 · `npm run release:gate` added — `typecheck → lint → test → build → test:e2e → check:launch-inputs`, stopping at the first failure. Why: PRD §16.3 calls `check:launch-inputs` "the L15 release gate" and nothing made the gate a thing you could run; a gate that is a list somebody retypes is a gate that gets partly run. `check:launch-inputs` is last so the code is proven before the one step that is expected to fail. Reverse: delete the script entry.
 
 ## Checkpoint merge notes
+
+### Checkpoints 1–5 in one merge — the order, 16 Oct 2026
+
+Fola asked to take all five to `main` at once. The five checkpoints are review
+points on **one branch**, not five branches, so "all five" is a single merge — and
+because `main` (`2f667ff`) is an **ancestor** of `build/autonomous`, it is a
+fast-forward: 39 commits, no merge commit, no conflicts to resolve.
+
+The per-checkpoint sections below still hold for *what to review*. This section is
+the combined running order.
+
+**One correction to those sections, found while writing this.** Checkpoint 1 and 2
+each list the migrations that must run **without** `-1`, and between them they get
+two files wrong (`2026-09-24-payments-reconciliation-webhook-status.sql` and
+`2026-10-15-access-code-audit-outcome.sql` are shown as needing it). The authority
+is `scripts/db-migrate-manual.ts`, which strips `--` comments before looking for
+`ALTER TYPE … ADD VALUE`, and the test that pins its answer. **Four** files run
+without `-1`:
+
+```
+2026-09-20-lead-converted-quote-and-domestic-sales.sql
+2026-09-27-payment-status-part-paid.sql
+2026-09-30-payment-status-released.sql
+2026-10-15-crew-pin-and-issue-types.sql
+```
+
+The other fifteen take `-1` and want it: an unwrapped `CREATE TABLE` that fails half
+way leaves the half it managed. The first draft of `LAUNCH.md` §1.1 repeated the
+same mistake, from the same careless `grep`, and is corrected.
+
+#### The order
+
+**0. Decide what Production's database is.** This is the branch point and the agent
+cannot see it — only the Neon `dev` branch is confirmed from here.
+
+- **No production database yet, or an empty one** → do **not** apply the 19 files.
+  `npx prisma db push` against the production branch creates the whole schema in one
+  step; the migrations exist to evolve a database that already holds rows. Then skip
+  to step 3.
+- **A production database with rows** → step 1.
+
+**1. Apply the migrations, before the merge, in filename order.** All 19, which is
+checkpoint 1's ten, then checkpoint 2's four, then 3's three, then 4's one, then
+5's one — but **filename order is not checkpoint order**, so run the directory
+sorted rather than the checkpoint lists concatenated:
+
+```bash
+# DIRECT_URL = the production DIRECT (non-pooled) host
+NO_TX="2026-09-20-lead-converted-quote-and-domestic-sales.sql
+2026-09-27-payment-status-part-paid.sql
+2026-09-30-payment-status-released.sql
+2026-10-15-crew-pin-and-issue-types.sql"
+
+for f in prisma/manual-migrations/*.sql; do
+  name=$(basename "$f")
+  if echo "$NO_TX" | grep -qx "$name"; then tx=""; else tx="-1"; fi
+  echo "→ $name ${tx:-(no transaction)}"
+  psql "$DIRECT_URL" -v ON_ERROR_STOP=1 $tx -f "$f" || break
+done
+```
+
+`npm run db:migrate:manual` does exactly this and is **refused** against anything but
+`dev` by design, so the loop above is the production form of it.
+
+**2. Prove the schema rather than assuming it.**
+
+```bash
+npx prisma migrate diff --from-url "$DIRECT_URL" \
+  --to-schema-datamodel prisma/schema.prisma --script
+```
+
+Must print `-- This is an empty migration.` Anything else means Production and
+`schema.prisma` disagree — stop there. The spot checks are in `LAUNCH.md` §1.2.
+
+**3. Seed.** `LAUNCH.md` §1.3 — `npm run db:seed:production`, which needs
+`CONFIRM_PRODUCTION_SEED=yes`, `APP_ENV=production` and ideally `OWNER_EMAIL`.
+Idempotent, reference data only.
+
+**4. Set the Production environment variables.** Cumulatively across the five
+checkpoints there is **one new required** name — `INNGEST_SIGNING_KEY` (checkpoint
+5) — plus `TWILIO_WEBHOOK_URL` only if inbound-SMS verification fails behind the
+proxy, and the seed-time names above. Everything else was already on the list.
+`LAUNCH.md` §2 is the full set by name. Leave
+`NEXT_PUBLIC_ALLOW_INDEXING=true` until last, and note the build **fails** without
+it on a real custom domain.
+
+**5. Merge.** `main` fast-forwards. Either open a PR from `build/autonomous` and
+merge it (the ready-to-paste descriptions for checkpoint 1 and checkpoint 5 are
+below; for one combined PR, use checkpoint 5's and add a line that it also carries
+L1–L13), or fast-forward locally. **Fola merges — the agent never pushes to `main`.**
+
+**6. Deploy, then smoke-test on the real domain.** `LAUNCH.md` §8, ten items.
+
+#### What is being accepted in one go
+
+| | |
+| --- | --- |
+| Commits | 39, `main` → `build/autonomous`, fast-forward |
+| Stages | L1–L15 except **L7** (parked: R2 keys + D4) and L10's rate-card editor (parked: D3) |
+| Migrations | 19, all additive — new tables, nullable or defaulted columns, new enum values. Old code runs against the new schema, which is what makes the rollback in `LAUNCH.md` §9 a redeploy rather than a restore |
+| Review queue | R-1 to R-28. The four worth the time are **R-26** (a webhook that verified nothing), **R-28** (the redaction in front of every error log), **R-17** (access codes) and **R-24** (reviews and credit) |
+| Gate | `npm run release:gate` — typecheck, lint, 589 unit tests, build, 71 end-to-end gates green; `check:launch-inputs` red with 39 markers (**Q-5**) |
+| Not proven | the Vercel preview regression, the manual Stripe card pass, a tested restore, and a penetration test. All four are `LAUNCH.md` §0 and §11 |
+
+---
 
 ### Checkpoint 1 — after L2 · ready for Fola
 
@@ -787,7 +892,7 @@ your decision on the two parked stages (§0.4).
 > owner email before it writes anything.
 >
 > **`LAUNCH.md`** is 11 sections: the blockers, migrate-before-deploy with confirm
-> queries and the drift check, the six migrations that must run without `-1`,
+> queries and the drift check, the four migrations that must run without `-1`,
 > production env vars by name, Stripe live mode and the six webhook events, DNS and
 > SPF/DKIM/DMARC, Inngest, monitoring, launch day in order, ten smoke tests,
 > rollback, and the first week's checks with the SQL to run.
